@@ -160,27 +160,7 @@ export function LoginView({ onLogin }: LoginViewProps) {
                 </Button>
               </form>
 
-              <div className="mt-4 flex flex-col gap-2">
-                <p className="text-xs font-medium text-muted-foreground">Acceso rapido demo:</p>
-                {quickAccess.map((cred) => {
-                  const RIcon = roleIcons[cred.rol]
-                  return (
-                    <button
-                      key={cred.email}
-                      type="button"
-                      onClick={() => handleQuickLogin(cred)}
-                      disabled={loading}
-                      className="flex items-center gap-3 rounded-lg border border-dashed p-2.5 text-left transition-colors hover:bg-muted/50 disabled:opacity-50"
-                    >
-                      <RIcon className="h-4 w-4 text-muted-foreground shrink-0" />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs font-medium text-foreground truncate">{cred.nombre}</p>
-                        <p className="text-[10px] text-muted-foreground capitalize">{cred.rol} - {cred.email}</p>
-                      </div>
-                    </button>
-                  )
-                })}
-              </div>
+
             </CardContent>
           </Card>
         ) : (
