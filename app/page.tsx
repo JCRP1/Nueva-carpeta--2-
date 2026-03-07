@@ -9,6 +9,7 @@ import { DashboardView } from "@/components/dashboard-view"
 import { ZonesView } from "@/components/zones-view"
 import { AlertsView } from "@/components/alerts-view"
 import { ReportsView } from "@/components/reports-view"
+import { GreenhousesView } from "@/components/greenhouses-view"
 import { UsersView } from "@/components/users-view"
 import { SettingsView } from "@/components/settings-view"
 import { Separator } from "@/components/ui/separator"
@@ -35,15 +36,16 @@ const viewLabels: Record<string, string> = {
   dashboard: "Dashboard",
   zonas: "Zonas de Riego",
   alertas: "Alertas",
+  invernaderos: "Invernaderos",
   reportes: "Reportes",
   usuarios: "Usuarios",
   configuracion: "Configuracion",
 }
 
 const roleAccess: Record<UserRole, string[]> = {
-  administrador: ["dashboard", "zonas", "alertas", "reportes", "usuarios", "configuracion"],
-  tecnico: ["dashboard", "zonas", "alertas", "reportes"],
-  agricultor: ["dashboard", "zonas", "alertas", "reportes"],
+  administrador: ["dashboard", "zonas", "alertas", "invernaderos", "reportes", "usuarios", "configuracion"],
+  tecnico: ["dashboard", "zonas", "alertas", "invernaderos", "reportes"],
+  agricultor: ["dashboard", "zonas", "alertas", "invernaderos", "reportes"],
 }
 
 export default function Page() {
@@ -161,6 +163,8 @@ export default function Page() {
         return <ZonesView selectedGreenhouse={selectedGreenhouse} userRole={currentUser!.rol} />
       case "alertas":
         return <AlertsView userRole={currentUser!.rol} />
+      case "invernaderos":
+        return <GreenhousesView userRole={currentUser!.rol} />
       case "reportes":
         return <ReportsView userRole={currentUser!.rol} />
       case "usuarios":

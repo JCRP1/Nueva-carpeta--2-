@@ -12,6 +12,7 @@ import {
   LogOut,
   ChevronDown,
   User,
+  Warehouse,
 } from "lucide-react"
 import {
   Sidebar,
@@ -59,6 +60,7 @@ const navItems = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
   { id: "zonas", label: "Zonas de Riego", icon: Droplets },
   { id: "alertas", label: "Alertas", icon: Bell, badge: true },
+  { id: "invernaderos", label: "Invernaderos", icon: Warehouse },
   { id: "reportes", label: "Reportes", icon: BarChart3 },
 ]
 

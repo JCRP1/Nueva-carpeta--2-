@@ -31,6 +31,24 @@ export const api = {
   greenhouses: () =>
     request<Array<Record<string, unknown>>>("/greenhouses"),
 
+  createGreenhouses: (data: Record<string, unknown>) =>
+    request<Record<string, unknown>>("/greenhouses", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  updateGreenhouses: (id: string, data: Record<string, unknown>) =>
+    request<Record<string, unknown>>("/greenhouses", {
+      method: "PATCH",
+      body: JSON.stringify({ id, ...data }),
+    }),
+
+  deleteGreenhouses: (id: string) =>
+    request<Record<string, unknown>>("/greenhouses", {
+      method: "DELETE",
+      body: JSON.stringify({ id }),
+    }),
+
   dashboard: (greenhouse: string) =>
     request<Record<string, unknown>>(`/dashboard?greenhouse=${greenhouse}`),
 
