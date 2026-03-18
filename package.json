@@ -5,6 +5,8 @@
   "scripts": {
     "dev": "next dev",
     "db:seed": "tsx scripts/seed.ts",
+    "run-migration": "tsx scripts/run-migration.ts",
+    "simple-migration": "tsx scripts/simple-migration.ts",
     "build": "next build",
     "start": "next start",
     "lint": "eslint ."
