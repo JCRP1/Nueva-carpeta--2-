@@ -101,6 +101,10 @@ export async function PATCH(req: Request) {
       setClauses.push("rol = @rol")
       params.rol = updates.rol
     }
+if (updates.activo !== undefined) {
+  setClauses.push("activo = @activo")
+  params.activo = updates.activo ? 1 : 0
+    }
     if (updates.password) {
       setClauses.push("[contraseña] = @pass")
       params.pass = hashSync(updates.password, 10)

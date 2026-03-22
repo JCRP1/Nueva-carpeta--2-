@@ -526,7 +526,7 @@ export function SettingsView() {
         </TabsContent>
 
         {/* ALERTAS TAB */}
-        <TabsContent value="alertas" className="mt-4">
+        <TabsContent value="s" className="mt-4">
           <Card>
             <CardHeader>
               <CardTitle className="text-sm text-foreground">Configuracion de Notificaciones</CardTitle>

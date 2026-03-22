@@ -48,6 +48,7 @@ interface GreenhousesViewProps {
   userRole: UserRole
 }
 
+
 export function GreenhousesView({ userRole }: GreenhousesViewProps) {
   const isReadOnly = userRole === "agricultor"
   const { data: greenhouses, mutate, isLoading } = useSWR<Invernadero[]>("/api/greenhouses", fetcher)
@@ -84,6 +85,7 @@ export function GreenhousesView({ userRole }: GreenhousesViewProps) {
     })
     setDialogOpen(true)
   }
+  
 
   async function handleSave() {
     if (!formData.nombre || !formData.ubicacion || !formData.area) {
@@ -200,6 +202,7 @@ export function GreenhousesView({ userRole }: GreenhousesViewProps) {
                   <Label htmlFor="estado">Estado</Label>
                   <select
                     id="estado"
+                    aria-label="Estado del invernadero"
                     value={formData.estado}
                     onChange={(e) => setFormData({ ...formData, estado: e.target.value as any })}
                     className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background"

@@ -119,6 +119,7 @@ export function UsersView() {
 
   // Confirm dialogs
   const [confirmAction, setConfirmAction] = useState<{ type: "toggle" | "reset"; user: UserData } | null>(null)
+  const [confirming, setConfirming] = useState(false)
 
   const userList = users || []
   const filtered = userList.filter((u) => {
@@ -176,6 +177,7 @@ export function UsersView() {
   }
 
   async function handleToggleActive(user: UserData) {
+    setConfirming(true)
     try {
       await api.updateUser(user.id, { activo: !user.activo })
       mutate()
@@ -183,12 +185,24 @@ export function UsersView() {
       toast.success(user.activo ? "Usuario desactivado" : "Usuario activado", { description: user.nombre })
     } catch (err) {
       toast.error("Error", { description: err instanceof Error ? err.message : "Error" })
+    } finally {
+      setConfirming(false)
     }
   }
 
-  function handleResetPassword(user: UserData) {
-    setConfirmAction(null)
-    toast.success("Contrasena restablecida", { description: `Se envio un enlace de recuperacion a ${user.email}` })
+  async function handleResetPassword(user: UserData) {
+    setConfirming(true)
+    try {
+      const tempPassword = Math.random().toString(36).slice(-10) + "A1!"
+      await api.updateUser(user.id, { password: tempPassword })
+      mutate()
+      setConfirmAction(null)
+      toast.success("Contrasena restablecida", { description: `Contrasena temporal: ${tempPassword}` })
+    } catch (err) {
+      toast.error("Error al restablecer", { description: err instanceof Error ? err.message : "Error" })
+    } finally {
+      setConfirming(false)
+    }
   }
 
   if (isLoading && !users) {
@@ -439,14 +453,15 @@ export function UsersView() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogCancel disabled={confirming}>Cancelar</AlertDialogCancel>
             <AlertDialogAction
+              disabled={confirming}
               onClick={() => {
                 if (confirmAction?.type === "toggle") handleToggleActive(confirmAction.user)
                 else if (confirmAction?.type === "reset") handleResetPassword(confirmAction.user)
               }}
             >
-              Confirmar
+              {confirming ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Confirmando...</> : "Confirmar"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

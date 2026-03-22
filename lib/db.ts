@@ -1,4 +1,4 @@
-import sql from "mssql"
+import * as sql from "mssql"
 
 // Connection config from environment variables
 const config: sql.config = {
