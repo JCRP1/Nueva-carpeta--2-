@@ -27,6 +27,22 @@ export interface Invernadero {
   estado: "activo" | "inactivo" | "mantenimiento"
 }
 
+export interface Cultivo {
+  id: string
+  nombre: string
+  variedad: string
+  invernaderoId: string
+  fechaSiembra: string
+  detalle?: {
+    id: string
+    fechaCosechaEstimada: string
+    tiempoGerminacionDias: number
+    tiempoCrecimientoDias: number
+    tiempoCosechaDias: number
+    notas: string
+  }
+}
+
 export interface Sensor {
   id: string
   tipo: "humedad_suelo" | "temperatura" | "humedad_ambiental" | "tds" | "ph"

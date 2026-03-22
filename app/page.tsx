@@ -10,8 +10,10 @@ import { ZonesView } from "@/components/zones-view"
 import { AlertsView } from "@/components/alerts-view"
 import { ReportsView } from "@/components/reports-view"
 import { GreenhousesView } from "@/components/greenhouses-view"
+import { CropsView } from "@/components/crops-view"
 import { UsersView } from "@/components/users-view"
 import { SettingsView } from "@/components/settings-view"
+import { SensorsView } from "@/components/sensors-view"
 import { Separator } from "@/components/ui/separator"
 import {
   Breadcrumb,
@@ -35,6 +37,8 @@ import { toast } from "sonner"
 const viewLabels: Record<string, string> = {
   dashboard: "Dashboard",
   zonas: "Zonas de Riego",
+  cultivos: "Cultivos",
+  sensores: "Sensores",
   alertas: "Alertas",
   invernaderos: "Invernaderos",
   reportes: "Reportes",
@@ -43,15 +47,15 @@ const viewLabels: Record<string, string> = {
 }
 
 const roleAccess: Record<UserRole, string[]> = {
-  administrador: ["dashboard", "zonas", "alertas", "invernaderos", "reportes", "usuarios", "configuracion"],
-  tecnico: ["dashboard", "zonas", "alertas", "invernaderos", "reportes"],
-  agricultor: ["dashboard", "zonas", "alertas", "invernaderos", "reportes"],
+  administrador: ["dashboard", "zonas", "cultivos", "sensores", "alertas", "invernaderos", "reportes", "usuarios", "configuracion"],
+  tecnico: ["dashboard", "zonas", "cultivos", "sensores", "alertas", "invernaderos", "reportes"],
+  agricultor: ["dashboard", "zonas", "cultivos", "alertas", "invernaderos", "reportes"],
 }
 
 export default function Page() {
   const [currentUser, setCurrentUser] = useState<User | null>(null)
   const [activeView, setActiveView] = useState("dashboard")
-  const [selectedGreenhouse, setSelectedGreenhouse] = useState("inv1")
+  const [selectedGreenhouse, setSelectedGreenhouse] = useState<string>("")
   const [currentTime, setCurrentTime] = useState(new Date())
   const [mqttConnected, setMqttConnected] = useState(true)
   const [checkingSession, setCheckingSession] = useState(true)
@@ -61,6 +65,13 @@ export default function Page() {
     currentUser ? "/api/greenhouses" : null,
     fetcher
   )
+
+  // Auto-select first greenhouse when greenhouses load
+  useEffect(() => {
+    if (greenhouses && greenhouses.length > 0 && !selectedGreenhouse) {
+      setSelectedGreenhouse(greenhouses[0].id)
+    }
+  }, [greenhouses, selectedGreenhouse])
 
   // Check existing session on mount
   useEffect(() => {
@@ -101,6 +112,7 @@ export default function Page() {
   function handleLogin(user: User) {
     setCurrentUser(user)
     setActiveView("dashboard")
+    setSelectedGreenhouse("")
     toast.success(`Bienvenido, ${user.nombre}`, {
       description: `Sesion iniciada como ${user.rol}`,
     })
@@ -155,12 +167,16 @@ export default function Page() {
   const isReadOnly = currentUser.rol === "agricultor"
   const ghList = greenhouses || []
 
-  function renderView() {
+function renderView() {
     switch (activeView) {
       case "dashboard":
         return <DashboardView selectedGreenhouse={selectedGreenhouse} userRole={currentUser!.rol} />
       case "zonas":
         return <ZonesView selectedGreenhouse={selectedGreenhouse} userRole={currentUser!.rol} />
+      case "cultivos":
+        return <CropsView selectedGreenhouse={selectedGreenhouse} userRole={currentUser!.rol} />
+      case "sensores":
+        return <SensorsView selectedGreenhouse={selectedGreenhouse} userRole={currentUser!.rol} />
       case "alertas":
         return <AlertsView userRole={currentUser!.rol} />
       case "invernaderos":
@@ -223,11 +239,16 @@ export default function Page() {
           )}
 
           <div className="ml-auto flex items-center gap-3">
-            <Select value={selectedGreenhouse} onValueChange={handleGreenhouseChange}>
+            <Select value={selectedGreenhouse || "placeholder"} onValueChange={handleGreenhouseChange}>
               <SelectTrigger className="w-52 h-8 text-xs">
-                <SelectValue />
+                <SelectValue placeholder="Sin invernadero" />
               </SelectTrigger>
               <SelectContent>
+                {ghList.length === 0 && (
+                  <SelectItem value="placeholder" disabled>
+                    No hay invernaderos
+                  </SelectItem>
+                )}
                 {ghList.map((inv) => (
                   <SelectItem key={inv.id} value={inv.id}>
                     <div className="flex items-center gap-2">

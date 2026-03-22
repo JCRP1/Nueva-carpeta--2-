@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback } from "react"
+import { useState, useCallback, useEffect } from "react"
 import useSWR from "swr"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -44,6 +44,7 @@ import {
 } from "@/components/ui/select"
 import { toast } from "sonner"
 import type { Invernadero } from "@/lib/greensense-data"
+import type { Cultivo } from "@/lib/greensense-data"
 
 interface SensorReading {
   valor: number
@@ -192,6 +193,7 @@ function SensorMiniCard({ tipo, reading }: { tipo: string; reading?: SensorReadi
 function ZoneCard({
   zona,
   greenhouses,
+  crops,
   onToggleIrrigation,
   onSaveConfig,
   onToggleAuto,
@@ -199,11 +201,13 @@ function ZoneCard({
 }: {
   zona: ZoneData
   greenhouses: Invernadero[]
+  crops: Cultivo[]
   onToggleIrrigation: (id: string) => void
-  onSaveConfig: (id: string, cultivo: string, umbral: number) => void
+  onSaveConfig: (id: string, nombre: string, cultivo: string, umbral: number) => void
   onToggleAuto: (id: string) => void
   userRole: UserRole
 }) {
+  const [configNombre, setConfigNombre] = useState(zona.nombre)
   const [configCultivo, setConfigCultivo] = useState(zona.cultivoActual)
   const [configUmbral, setConfigUmbral] = useState(zona.umbralHumedad)
   const [saving, setSaving] = useState(false)
@@ -217,11 +221,18 @@ function ZoneCard({
 
   function handleSaveConfig() {
     setSaving(true)
-    onSaveConfig(zona.id, configCultivo, configUmbral)
+    onSaveConfig(zona.id, configNombre, configCultivo, configUmbral)
     setTimeout(() => {
       setSaving(false)
       setConfigOpen(false)
     }, 800)
+  }
+
+  function handleOpenConfig() {
+    setConfigNombre(zona.nombre)
+    setConfigCultivo(zona.cultivoActual)
+    setConfigUmbral(zona.umbralHumedad)
+    setConfigOpen(true)
   }
 
   return (
@@ -305,18 +316,33 @@ function ZoneCard({
             {isAdmin && (
               <Dialog open={configOpen} onOpenChange={setConfigOpen}>
                 <DialogTrigger asChild>
-                  <Button variant="outline" size="sm" className="h-8 bg-transparent">
+                  <Button variant="outline" size="sm" className="h-8 bg-transparent" onClick={handleOpenConfig}>
                     <Settings className="mr-1 h-3.5 w-3.5" />Config
                   </Button>
                 </DialogTrigger>
                 <DialogContent>
                   <DialogHeader>
-                    <DialogTitle className="text-foreground">Configurar {zona.nombre}</DialogTitle>
+                    <DialogTitle className="text-foreground">Configurar Zona</DialogTitle>
                   </DialogHeader>
                   <div className="flex flex-col gap-4 py-4">
                     <div className="flex flex-col gap-2">
+                      <Label>Nombre de la Zona</Label>
+                      <Input value={configNombre} onChange={(e) => setConfigNombre(e.target.value)} placeholder="Ej: Zona 1 - Tomates" />
+                    </div>
+                    <div className="flex flex-col gap-2">
                       <Label>Cultivo Actual</Label>
-                      <Input value={configCultivo} onChange={(e) => setConfigCultivo(e.target.value)} />
+                      <Select value={configCultivo} onValueChange={setConfigCultivo}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Seleccionar cultivo" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {crops.map((crop) => (
+                            <SelectItem key={crop.id} value={crop.nombre}>
+                              {crop.nombre} {crop.variedad ? `(${crop.variedad})` : ""}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </div>
                     <div className="flex flex-col gap-2">
                       <Label>Umbral de Humedad: {configUmbral}%</Label>
@@ -368,6 +394,10 @@ export function ZonesView({ selectedGreenhouse, userRole }: ZonesViewProps) {
     { refreshInterval: 15000 }
   )
   const { data: greenhouses } = useSWR<Invernadero[]>("/api/greenhouses", fetcher)
+  const { data: selectedGreenhouseCrops } = useSWR<Cultivo[]>(
+    selectedGreenhouse ? `/api/crops?greenhouse=${selectedGreenhouse}` : null,
+    fetcher
+  )
 
   const [newZoneOpen, setNewZoneOpen] = useState(false)
   const [newZoneName, setNewZoneName] = useState("")
@@ -375,6 +405,15 @@ export function ZonesView({ selectedGreenhouse, userRole }: ZonesViewProps) {
   const [newZoneGreenhouse, setNewZoneGreenhouse] = useState(selectedGreenhouse)
   const [newZoneUmbral, setNewZoneUmbral] = useState(40)
   const [creatingZone, setCreatingZone] = useState(false)
+
+  const { data: newZoneCrops } = useSWR<Cultivo[]>(
+    newZoneGreenhouse ? `/api/crops?greenhouse=${newZoneGreenhouse}` : null,
+    fetcher
+  )
+
+  useEffect(() => {
+    setNewZoneCultivo("")
+  }, [newZoneGreenhouse])
 
   const isAdmin = userRole === "administrador"
   const ghList = greenhouses || []
@@ -406,11 +445,11 @@ export function ZonesView({ selectedGreenhouse, userRole }: ZonesViewProps) {
     }
   }, [zoneList, mutate])
 
-  const handleSaveConfig = useCallback(async (id: string, cultivo: string, umbral: number) => {
+  const handleSaveConfig = useCallback(async (id: string, nombre: string, cultivo: string, umbral: number) => {
     try {
-      await api.updateZone(id, { cultivoActual: cultivo, umbralHumedad: umbral })
+      await api.updateZone(id, { nombre, cultivoActual: cultivo, umbralHumedad: umbral })
       mutate()
-      toast.success("Configuracion guardada", { description: `Cultivo: ${cultivo}, Umbral: ${umbral}%` })
+      toast.success("Configuracion guardada", { description: `Zona: ${nombre}` })
     } catch (err) {
       toast.error("Error al guardar", { description: err instanceof Error ? err.message : "Error" })
     }
@@ -476,16 +515,27 @@ export function ZonesView({ selectedGreenhouse, userRole }: ZonesViewProps) {
                   <Input placeholder="Ej: Zona 5 - Pepinos" value={newZoneName} onChange={(e) => setNewZoneName(e.target.value)} />
                 </div>
                 <div className="flex flex-col gap-2">
-                  <Label>Cultivo</Label>
-                  <Input placeholder="Ej: Pepino" value={newZoneCultivo} onChange={(e) => setNewZoneCultivo(e.target.value)} />
-                </div>
-                <div className="flex flex-col gap-2">
                   <Label>Invernadero</Label>
                   <Select value={newZoneGreenhouse} onValueChange={setNewZoneGreenhouse}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectTrigger><SelectValue placeholder="Seleccionar invernadero" /></SelectTrigger>
                     <SelectContent>
                       {ghList.map((inv) => (
                         <SelectItem key={inv.id} value={inv.id}>{inv.nombre}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Label>Cultivo</Label>
+                  <Select value={newZoneCultivo} onValueChange={setNewZoneCultivo} disabled={!newZoneGreenhouse}>
+                    <SelectTrigger>
+                      <SelectValue placeholder={newZoneGreenhouse ? "Seleccionar cultivo" : "Primero seleccione un invernadero"} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(newZoneCrops || []).map((crop: Cultivo) => (
+                        <SelectItem key={crop.id} value={crop.nombre}>
+                          {crop.nombre} {crop.variedad ? `(${crop.variedad})` : ""}
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -532,6 +582,7 @@ export function ZonesView({ selectedGreenhouse, userRole }: ZonesViewProps) {
               key={zona.id}
               zona={zona}
               greenhouses={ghList}
+              crops={selectedGreenhouseCrops || []}
               onToggleIrrigation={handleToggleIrrigation}
               onSaveConfig={handleSaveConfig}
               onToggleAuto={handleToggleAuto}

@@ -49,11 +49,45 @@ export const api = {
       body: JSON.stringify({ id }),
     }),
 
+  // Crops
+  crops: (greenhouse?: string) =>
+    request<Array<Record<string, unknown>>>(`/crops${greenhouse ? `?greenhouse=${greenhouse}` : ""}`),
+
+  createCrop: (data: Record<string, unknown>) =>
+    request<Record<string, unknown>>("/crops", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  updateCrop: (id: string, data: Record<string, unknown>) =>
+    request<Record<string, unknown>>("/crops", {
+      method: "PUT",
+      body: JSON.stringify({ id, ...data }),
+    }),
+
+  deleteCrop: (id: string) =>
+    request<Record<string, unknown>>("/crops", {
+      method: "DELETE",
+      body: JSON.stringify({ id }),
+    }),
+
   dashboard: (greenhouse: string) =>
     request<Record<string, unknown>>(`/dashboard?greenhouse=${greenhouse}`),
 
   sensors: (greenhouse?: string) =>
     request<Array<Record<string, unknown>>>(`/sensors${greenhouse ? `?greenhouse=${greenhouse}` : ""}`),
+
+  createSensor: (data: Record<string, unknown>) =>
+    request<Record<string, unknown>>("/sensors", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  updateSensor: (id: string, data: Record<string, unknown>) =>
+    request<Record<string, unknown>>("/sensors", {
+      method: "PUT",
+      body: JSON.stringify({ id, ...data }),
+    }),
 
   // Zones
   zones: (greenhouse?: string) =>
