@@ -15,6 +15,8 @@ import { UsersView } from "@/components/users-view"
 import { SettingsView } from "@/components/settings-view"
 import { SensorsView } from "@/components/sensors-view"
 import { Separator } from "@/components/ui/separator"
+import { PersonalView } from "@/components/personal-view"
+
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -42,12 +44,13 @@ const viewLabels: Record<string, string> = {
   alertas: "Alertas",
   invernaderos: "Invernaderos",
   reportes: "Reportes",
+  personal: "Personal",
   usuarios: "Usuarios",
   configuracion: "Configuracion",
 }
 
 const roleAccess: Record<UserRole, string[]> = {
-  administrador: ["dashboard", "zonas", "cultivos", "sensores", "alertas", "invernaderos", "reportes", "usuarios", "configuracion"],
+  administrador: ["dashboard", "zonas", "cultivos", "sensores", "alertas", "personal", "invernaderos", "reportes", "usuarios", "configuracion"],
   tecnico: ["dashboard", "zonas", "cultivos", "sensores", "alertas", "invernaderos", "reportes"],
   agricultor: ["dashboard", "zonas", "cultivos", "alertas", "invernaderos", "reportes"],
 }
@@ -183,6 +186,17 @@ function renderView() {
         return <GreenhousesView userRole={currentUser!.rol} />
       case "reportes":
         return <ReportsView userRole={currentUser!.rol} />
+      case "personal":
+        if (!isAdmin) {
+          return (
+            <div className="flex flex-col items-center justify-center gap-4 py-20">
+              <ShieldAlert className="h-12 w-12 text-destructive" />
+              <h2 className="text-lg font-semibold text-foreground">Acceso Restringido</h2>
+              <p className="text-sm text-muted-foreground">Solo los administradores pueden gestionar el personal</p>
+            </div>
+          )
+        }
+        return <PersonalView />
       case "usuarios":
         if (!isAdmin) {
           return (

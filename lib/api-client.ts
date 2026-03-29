@@ -130,6 +130,9 @@ export const api = {
   // Users
   users: () =>
     request<Array<Record<string, unknown>>>("/users"),
+  
+  personal: () =>
+    request<Array<Record<string, unknown>>>("/users?type=personal"),
 
   createUser: (data: Record<string, unknown>) =>
     request<Record<string, unknown>>("/users", {
@@ -141,8 +144,16 @@ export const api = {
     request<Record<string, unknown>>("/users", {
       method: "PATCH",
       body: JSON.stringify({ id, ...data }),
+      
     }),
 
+
+deleteUser: (id: string) =>
+  request<Record<string, unknown>>("/users", {
+    method: "DELETE",
+    body: JSON.stringify({ id }),
+  }),
+  
   // Settings
   settings: () =>
     request<Record<string, unknown>>("/settings"),

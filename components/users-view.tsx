@@ -1,5 +1,6 @@
 "use client"
 
+
 import { useState } from "react"
 import useSWR from "swr"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -65,6 +66,7 @@ import {
 import type { UserRole } from "@/lib/greensense-data"
 import { api, fetcher } from "@/lib/api-client"
 import { toast } from "sonner"
+import React from "react"
 
 interface UserData {
   id: string
@@ -101,14 +103,21 @@ export function UsersView() {
   const { data: users, isLoading, mutate } = useSWR<UserData[]>("/api/users", fetcher)
   const [search, setSearch] = useState("")
   const [roleFilter, setRoleFilter] = useState<string>("all")
+  
 
   // Create user
   const [createOpen, setCreateOpen] = useState(false)
-  const [newName, setNewName] = useState("")
   const [newEmail, setNewEmail] = useState("")
   const [newRole, setNewRole] = useState<UserRole>("agricultor")
   const [newPassword, setNewPassword] = useState("")
   const [creating, setCreating] = useState(false)
+  type Persona = {
+    id_persona: number
+    nombre: string
+  }
+
+  const { data: personas = [] } = useSWR<Persona[]>("/api/personas", fetcher)
+  const [selectedPersona, setSelectedPersona] = useState("")
 
   // Edit user
   const [editUser, setEditUser] = useState<UserData | null>(null)
@@ -129,20 +138,26 @@ export function UsersView() {
   })
 
   async function handleCreate() {
-    if (!newName || !newEmail || !newPassword) {
+    if ( !newEmail || !newPassword) {
       toast.error("Complete todos los campos", { description: "Nombre, email y contrasena son requeridos" })
       return
     }
+    if (!selectedPersona) {
+    toast.error("Seleccione un nombre de la lista de personas")
+    return
+  }
     if (newPassword.length < 8) {
       toast.error("Contrasena muy corta", { description: "Minimo 8 caracteres" })
       return
     }
     setCreating(true)
     try {
-      await api.createUser({ nombre: newName, email: newEmail, password: newPassword, rol: newRole })
+      await api.createUser({ nombre: selectedPersona,
+      email: newEmail, 
+      password: newPassword, 
+      rol: newRole })
       mutate()
       setCreateOpen(false)
-      setNewName("")
       setNewEmail("")
       setNewPassword("")
       setNewRole("agricultor")
@@ -212,6 +227,7 @@ export function UsersView() {
       </div>
     )
   }
+  
 
   return (
     <div className="flex flex-col gap-6">
@@ -231,8 +247,20 @@ export function UsersView() {
             <div className="flex flex-col gap-4 py-4">
               <div className="flex flex-col gap-2">
                 <Label>Nombre Completo</Label>
-                <Input placeholder="Nombre del usuario" value={newName} onChange={(e) => setNewName(e.target.value)} />
-              </div>
+                <Select value={selectedPersona} onValueChange={(v) => setSelectedPersona(v)}>
+                    <SelectTrigger><SelectValue placeholder="Nombre del usuario" /></SelectTrigger>
+                    <SelectContent>
+                      {personas.length === 0 ? (
+                        <SelectItem value="">Cargando...</SelectItem>
+                      ) : (
+                        personas.map((p) => (
+        <SelectItem key={p.id_persona} value={p.id_persona.toString()}>
+          {p.nombre}
+        </SelectItem>)))}
+                    </SelectContent>
+                  </Select> 
+                               
+                  </div>
               <div className="flex flex-col gap-2">
                 <Label>Correo Electronico</Label>
                 <Input type="email" placeholder="usuario@greensense.io" value={newEmail} onChange={(e) => setNewEmail(e.target.value)} />
@@ -249,7 +277,7 @@ export function UsersView() {
                 </Select>
               </div>
               <div className="flex flex-col gap-2">
-                <Label>Contrasena Temporal</Label>
+                <Label>Contrasena </Label>
                 <Input type="password" placeholder="Min. 8 caracteres" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
               </div>
             </div>
@@ -293,7 +321,7 @@ export function UsersView() {
             </TableHeader>
             <TableBody>
               {filtered.map((user) => {
-                const RoleIcon = getRoleIcon(user.rol)
+                getRoleColor(user.rol)
                 return (
                   <TableRow key={user.id}>
                     <TableCell>
@@ -311,7 +339,8 @@ export function UsersView() {
                     </TableCell>
                     <TableCell>
                       <Badge className={getRoleColor(user.rol)}>
-                        <RoleIcon className="mr-1 h-3 w-3" /><span className="capitalize">{user.rol}</span>
+                         {React.createElement(getRoleIcon(user.rol), { className: "mr-1 h-4 w-4 inline" })}
+                         {user.rol.charAt(0).toUpperCase() + user.rol.slice(1)}
                       </Badge>
                     </TableCell>
                     <TableCell>
