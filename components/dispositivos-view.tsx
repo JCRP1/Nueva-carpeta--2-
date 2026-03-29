@@ -1,0 +1,350 @@
+"use client"
+
+import { useState, useCallback } from "react"
+import useSWR from "swr"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogClose,
+} from "@/components/ui/dialog"
+import { Label } from "@/components/ui/label"
+import { Input } from "@/components/ui/input"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
+import { toast } from "sonner"
+import { api, fetcher } from "@/lib/api-client"
+import { Loader2, Plus, Pencil, Trash2, Cpu, Wifi } from "lucide-react"
+import type { Invernadero } from "@/lib/greensense-data"
+
+interface DispositivoData {
+  id: string
+  nombre: string
+  tipo: string
+  estado: string
+  invernaderoId: string
+  nombreInvernadero?: string
+  firmwareVersion?: string
+  ipLocal?: string
+  ultimoReporte?: string
+}
+
+const DEVICE_TYPES = [
+  { value: "gateway", label: "Gateway" },
+  { value: "controlador", label: "Controlador" },
+  { value: "modulo", label: "Modulo" },
+  { value: "repetidor", label: "Repetidor" },
+]
+
+const DEVICE_STATUS = [
+  { value: "Activo", label: "Activo" },
+  { value: "Inactivo", label: "Inactivo" },
+  { value: "Mantenimiento", label: "Mantenimiento" },
+]
+
+export function DispositivosView() {
+  const { data: devices, isLoading, mutate } = useSWR<DispositivoData[]>("/api/devices", fetcher)
+  const { data: greenhouses } = useSWR<Invernadero[]>("/api/greenhouses", fetcher)
+
+  const [dialogOpen, setDialogOpen] = useState(false)
+  const [editMode, setEditMode] = useState(false)
+  const [editingDevice, setEditingDevice] = useState<DispositivoData | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [deletingDevice, setDeletingDevice] = useState<DispositivoData | null>(null)
+  const [deleting, setDeleting] = useState(false)
+
+  const [formData, setFormData] = useState({
+    nombre: "",
+    tipo: "gateway",
+    estado: "Activo",
+    idInvernadero: "",
+    firmwareVersion: "",
+    ipLocal: "",
+  })
+
+  const ghList = greenhouses || []
+  const deviceList = devices || []
+
+  const resetForm = useCallback(() => {
+    setFormData({
+      nombre: "",
+      tipo: "gateway",
+      estado: "Activo",
+      idInvernadero: "",
+      firmwareVersion: "",
+      ipLocal: "",
+    })
+    setEditingDevice(null)
+    setEditMode(false)
+  }, [])
+
+  const openCreateDialog = useCallback(() => {
+    resetForm()
+    setDialogOpen(true)
+  }, [resetForm])
+
+  const openEditDialog = useCallback((device: DispositivoData) => {
+    setFormData({
+      nombre: device.nombre || "",
+      tipo: device.tipo || "gateway",
+      estado: device.estado || "Activo",
+      idInvernadero: String(device.invernaderoId),
+      firmwareVersion: device.firmwareVersion || "",
+      ipLocal: device.ipLocal || "",
+    })
+    setEditingDevice(device)
+    setEditMode(true)
+    setDialogOpen(true)
+  }, [])
+
+  const handleSubmit = useCallback(async () => {
+    if (!formData.nombre || !formData.idInvernadero) {
+      toast.error("Complete los campos requeridos", { description: "Nombre e invernadero son requeridos" })
+      return
+    }
+
+    setSaving(true)
+    try {
+      const payload = {
+        nombre: formData.nombre,
+        tipo: formData.tipo,
+        estado: formData.estado,
+        idInvernadero: Number(formData.idInvernadero),
+        firmwareVersion: formData.firmwareVersion || undefined,
+        ipLocal: formData.ipLocal || undefined,
+      }
+
+      if (editMode && editingDevice) {
+        await api.updateDevice(editingDevice.id, payload)
+        toast.success("Dispositivo actualizado", { description: formData.nombre })
+      } else {
+        await api.createDevice(payload)
+        toast.success("Dispositivo creado", { description: formData.nombre })
+      }
+      mutate()
+      setDialogOpen(false)
+      resetForm()
+    } catch (err) {
+      toast.error("Error al guardar", { description: err instanceof Error ? err.message : "Error" })
+    } finally {
+      setSaving(false)
+    }
+  }, [formData, editMode, editingDevice, mutate, resetForm])
+
+  const handleDelete = useCallback(async () => {
+    if (!deletingDevice) return
+
+    setDeleting(true)
+    try {
+      await api.deleteDevice(deletingDevice.id)
+      toast.success("Dispositivo eliminado", { description: deletingDevice.nombre })
+      mutate()
+      setDeleteDialogOpen(false)
+      setDeletingDevice(null)
+    } catch (err) {
+      toast.error("Error al eliminar", { description: err instanceof Error ? err.message : "Error" })
+    } finally {
+      setDeleting(false)
+    }
+  }, [deletingDevice, mutate])
+
+  const openDeleteDialog = useCallback((device: DispositivoData) => {
+    setDeletingDevice(device)
+    setDeleteDialogOpen(true)
+  }, [])
+
+  if (isLoading && !devices) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex flex-col gap-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-lg font-semibold text-foreground">Dispositivos IoT</h2>
+          <p className="text-sm text-muted-foreground">
+            Gestion de dispositivos conectados ({deviceList.length} dispositivos)
+          </p>
+        </div>
+        <Button size="sm" onClick={openCreateDialog}>
+          <Plus className="mr-2 h-4 w-4" />Nuevo Dispositivo
+        </Button>
+      </div>
+
+      <Card>
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Nombre</TableHead>
+                <TableHead>Tipo</TableHead>
+                <TableHead>Invernadero</TableHead>
+                <TableHead>IP Local</TableHead>
+                <TableHead>Firmware</TableHead>
+                <TableHead>Estado</TableHead>
+                <TableHead className="text-right">Acciones</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {deviceList.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                    No hay dispositivos registrados
+                  </TableCell>
+                </TableRow>
+              ) : (
+                deviceList.map((device) => (
+                  <TableRow key={device.id}>
+                    <TableCell className="font-medium">
+                      <div className="flex items-center gap-2">
+                        <Cpu className="h-4 w-4 text-muted-foreground" />
+                        {device.nombre}
+                      </div>
+                    </TableCell>
+                    <TableCell className="capitalize">{device.tipo}</TableCell>
+                    <TableCell>{device.nombreInvernadero || "-"}</TableCell>
+                    <TableCell className="font-mono text-xs">
+                      {device.ipLocal || "-"}
+                    </TableCell>
+                    <TableCell className="text-xs">{device.firmwareVersion || "-"}</TableCell>
+                    <TableCell>
+                      <Badge className={
+                        device.estado === "Activo" ? "bg-green-500/20 text-green-400 border-0" :
+                        device.estado === "Inactivo" ? "bg-red-500/20 text-red-400 border-0" :
+                        "bg-amber-500/20 text-amber-400 border-0"
+                      }>
+                        {device.estado}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex justify-end gap-1">
+                        <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => openEditDialog(device)}>
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-destructive hover:text-destructive" onClick={() => openDeleteDialog(device)}>
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+
+      <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) resetForm() }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="text-foreground">
+              {editMode ? "Editar Dispositivo" : "Nuevo Dispositivo"}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-col gap-4 py-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="flex flex-col gap-2">
+                <Label>Nombre *</Label>
+                <Input placeholder="Ej: Gateway Principal" value={formData.nombre} onChange={(e) => setFormData({ ...formData, nombre: e.target.value })} />
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label>Tipo</Label>
+                <Select value={formData.tipo} onValueChange={(v) => setFormData({ ...formData, tipo: v })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {DEVICE_TYPES.map((t) => (
+                      <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="flex flex-col gap-2">
+                <Label>Invernadero *</Label>
+                <Select value={formData.idInvernadero || "placeholder"} onValueChange={(v) => setFormData({ ...formData, idInvernadero: v })}>
+                  <SelectTrigger><SelectValue placeholder="Seleccionar" /></SelectTrigger>
+                  <SelectContent>
+                    {ghList.map((gh) => (
+                      <SelectItem key={gh.id} value={String(gh.id)}>{gh.nombre}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label>Estado</Label>
+                <Select value={formData.estado} onValueChange={(v) => setFormData({ ...formData, estado: v })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {DEVICE_STATUS.map((s) => (
+                      <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="flex flex-col gap-2">
+                <Label>IP Local</Label>
+                <Input placeholder="Ej: 192.168.1.100" value={formData.ipLocal} onChange={(e) => setFormData({ ...formData, ipLocal: e.target.value })} />
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label>Version Firmware</Label>
+                <Input placeholder="Ej: 1.2.3" value={formData.firmwareVersion} onChange={(e) => setFormData({ ...formData, firmwareVersion: e.target.value })} />
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <DialogClose asChild><Button variant="outline">Cancelar</Button></DialogClose>
+            <Button onClick={handleSubmit} disabled={saving}>
+              {saving ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Guardando...</> : editMode ? "Actualizar" : "Crear"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={deleteDialogOpen} onOpenChange={(open) => { setDeleteDialogOpen(open); if (!open) setDeletingDevice(null) }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="text-foreground">Eliminar Dispositivo</DialogTitle>
+          </DialogHeader>
+          <div className="py-4">
+            <p className="text-sm text-muted-foreground">
+              Esta seguro de eliminar el dispositivo <strong>{deletingDevice?.nombre}</strong>? 
+              Esta accion no se puede deshacer.
+            </p>
+          </div>
+          <DialogFooter>
+            <DialogClose asChild><Button variant="outline">Cancelar</Button></DialogClose>
+            <Button variant="destructive" onClick={handleDelete} disabled={deleting}>
+              {deleting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Eliminando...</> : "Eliminar"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}

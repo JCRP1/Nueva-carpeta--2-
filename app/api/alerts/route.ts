@@ -2,16 +2,19 @@ import { NextResponse } from "next/server"
 import { requireAuth } from "@/lib/auth"
 import { query, execute } from "@/lib/db"
 
-export async function GET() {
+export async function GET(req: Request) {
   try {
     const session = await requireAuth()
+    const { searchParams } = new URL(req.url)
+    const sensorId = searchParams.get("sensor")
 
-    const rows = (await query(
-      `SELECT
+    let sqlText = `
+      SELECT
         a.id_alerta AS id,
         a.tipo_alerta,
         a.nivel,
         a.valor_detectado,
+        a.fecha_hora AS fecha_hora,
         a.fecha_hora AS timestamp,
         a.estado,
         a.accion_recomendada,
@@ -21,9 +24,17 @@ export async function GET() {
       LEFT JOIN Sensores s ON s.id_sensor = a.id_sensor
       LEFT JOIN Invernaderos i ON i.id_invernadero = s.id_invernadero
       WHERE i.id_empresa = @empresaId
-      ORDER BY a.fecha_hora DESC`,
-      { empresaId: session.empresaId }
-    )) as Record<string, unknown>[]
+    `
+    const params: Record<string, unknown> = { empresaId: session.empresaId }
+
+    if (sensorId) {
+      sqlText += " AND a.id_sensor = @sensorId"
+      params.sensorId = Number(sensorId)
+    }
+
+    sqlText += " ORDER BY a.fecha_hora DESC"
+
+    const rows = (await query(sqlText, params)) as Record<string, unknown>[]
 
     const alerts = rows.map((a) => ({
       id: String(a.id),

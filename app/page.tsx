@@ -16,6 +16,7 @@ import { SettingsView } from "@/components/settings-view"
 import { SensorsView } from "@/components/sensors-view"
 import { Separator } from "@/components/ui/separator"
 import { PersonalView } from "@/components/personal-view"
+import { DispositivosView } from "@/components/dispositivos-view"
 
 import {
   Breadcrumb,
@@ -46,11 +47,12 @@ const viewLabels: Record<string, string> = {
   reportes: "Reportes",
   personal: "Personal",
   usuarios: "Usuarios",
+  dispositivos: "Dispositivos",
   configuracion: "Configuracion",
 }
 
 const roleAccess: Record<UserRole, string[]> = {
-  administrador: ["dashboard", "zonas", "cultivos", "sensores", "alertas", "personal", "invernaderos", "reportes", "usuarios", "configuracion"],
+  administrador: ["dashboard", "zonas", "cultivos", "sensores", "alertas", "personal", "invernaderos", "reportes", "usuarios", "dispositivos", "configuracion"],
   tecnico: ["dashboard", "zonas", "cultivos", "sensores", "alertas", "invernaderos", "reportes"],
   agricultor: ["dashboard", "zonas", "cultivos", "alertas", "invernaderos", "reportes"],
 }
@@ -219,6 +221,8 @@ function renderView() {
           )
         }
         return <SettingsView />
+      case "dispositivos":
+        return <DispositivosView />
       default:
         return <DashboardView selectedGreenhouse={selectedGreenhouse} userRole={currentUser!.rol} />
     }

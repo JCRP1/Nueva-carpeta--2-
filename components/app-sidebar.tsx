@@ -15,6 +15,7 @@ import {
   Warehouse,
   Activity,
   HardHat,
+  Cpu,
 } from "lucide-react"
 import {
   Sidebar,
@@ -71,6 +72,7 @@ const navItems = [
 const adminItems = [
   { id: "personal", label: "Personal", icon: HardHat },
   { id: "usuarios", label: "Usuarios", icon: Users },
+  { id: "dispositivos", label: "Dispositivos", icon: Cpu },
   { id: "configuracion", label: "Configuracion", icon: Settings },
 ]
 

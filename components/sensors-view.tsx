@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback } from "react"
+import { useState, useCallback, useEffect } from "react"
 import useSWR from "swr"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -14,9 +14,11 @@ import {
   Plus,
   Loader2,
   Pencil,
+  Eye,
 } from "lucide-react"
 import type { UserRole } from "@/lib/greensense-data"
 import { api, fetcher } from "@/lib/api-client"
+import { SensorDetailView } from "./sensor-detail-view"
 import {
   Dialog,
   DialogContent,
@@ -37,6 +39,13 @@ import {
 } from "@/components/ui/select"
 import { toast } from "sonner"
 import type { Invernadero } from "@/lib/greensense-data"
+
+interface Dispositivo {
+  id: string
+  nombre: string
+  tipo: string
+  estado: string
+}
 
 interface SensorData {
   id: string
@@ -59,6 +68,7 @@ interface SensorData {
   unidad?: string
   umbralMin?: number
   umbralMax?: number
+  history?: { timestamp: string; valor: number }[]
 }
 
 const SENSOR_TYPES = [
@@ -92,17 +102,6 @@ interface SensorsViewProps {
 }
 
 export function SensorsView({ selectedGreenhouse, userRole }: SensorsViewProps) {
-  const { data: sensors, isLoading, mutate } = useSWR<SensorData[]>(
-    selectedGreenhouse ? `/api/sensors?greenhouse=${selectedGreenhouse}` : null,
-    fetcher,
-    { refreshInterval: 30000 }
-  )
-  const { data: greenhouses } = useSWR<Invernadero[]>("/api/greenhouses", fetcher)
-
-  const [dialogOpen, setDialogOpen] = useState(false)
-  const [editMode, setEditMode] = useState(false)
-  const [editingSensor, setEditingSensor] = useState<SensorData | null>(null)
-
   const [formData, setFormData] = useState({
     tipo: "",
     modelo: "",
@@ -119,11 +118,46 @@ export function SensorsView({ selectedGreenhouse, userRole }: SensorsViewProps) 
     idInvernadero: selectedGreenhouse,
     idDispositivo: "",
   })
+
+  const { data: sensors, isLoading, mutate } = useSWR<SensorData[]>(
+    selectedGreenhouse ? `/api/sensors?greenhouse=${selectedGreenhouse}` : null,
+    fetcher,
+    { refreshInterval: 30000 }
+  )
+  const { data: greenhouses } = useSWR<Invernadero[]>("/api/greenhouses", fetcher)
+  const { data: devices, isLoading: devicesLoading } = useSWR<Dispositivo[]>("/api/devices", fetcher)
+
+  const [dialogOpen, setDialogOpen] = useState(false)
+  const [editMode, setEditMode] = useState(false)
+  const [editingSensor, setEditingSensor] = useState<SensorData | null>(null)
   const [saving, setSaving] = useState(false)
+  const [selectedSensor, setSelectedSensor] = useState<SensorData | null>(null)
 
   const isAdmin = userRole === "administrador" || userRole === "tecnico"
   const ghList = greenhouses || []
   const sensorList = sensors || []
+  const deviceList = devices || []
+
+  useEffect(() => {
+    console.log("Devices cargados:", JSON.stringify(deviceList, null, 2))
+    console.log("Devices loading:", devicesLoading)
+  }, [deviceList, devicesLoading])
+
+  useEffect(() => {
+    if (dialogOpen) {
+      console.log("=== Dialog abierto ===")
+      console.log("formData.idDispositivo:", formData.idDispositivo, "tipo:", typeof formData.idDispositivo)
+      console.log("deviceList:", deviceList.map(d => ({ id: d.id, idType: typeof d.id, nombre: d.nombre })))
+    }
+  }, [dialogOpen, deviceList, formData.idDispositivo])
+
+  useEffect(() => {
+    if (ghList.length > 0 && !formData.idInvernadero) {
+      setFormData(prev => ({ ...prev, idInvernadero: ghList[0].id }))
+    } else if (ghList.length > 0 && formData.idInvernadero && !ghList.find(g => g.id === formData.idInvernadero)) {
+      setFormData(prev => ({ ...prev, idInvernadero: ghList[0].id }))
+    }
+  }, [ghList, formData.idInvernadero])
 
   const resetForm = useCallback(() => {
     setFormData({
@@ -147,9 +181,27 @@ export function SensorsView({ selectedGreenhouse, userRole }: SensorsViewProps) 
   }, [selectedGreenhouse])
 
   const openCreateDialog = useCallback(() => {
-    resetForm()
+    const defaultGh = selectedGreenhouse || (ghList.length > 0 ? ghList[0].id : "")
+    setFormData({
+      tipo: "",
+      modelo: "",
+      estado: "activo",
+      marca: "",
+      rangoMin: "",
+      rangoMax: "",
+      unidadMedida: "",
+      precision: "",
+      fechaInstalacion: "",
+      ubicacionFisica: "",
+      ultimoCalibrado: "",
+      observaciones: "",
+      idInvernadero: defaultGh,
+      idDispositivo: "",
+    })
+    setEditingSensor(null)
+    setEditMode(false)
     setDialogOpen(true)
-  }, [resetForm])
+  }, [resetForm, selectedGreenhouse, ghList])
 
   const openEditDialog = useCallback((sensor: SensorData) => {
     setFormData({
@@ -215,11 +267,22 @@ export function SensorsView({ selectedGreenhouse, userRole }: SensorsViewProps) 
     }
   }, [formData, editMode, editingSensor, mutate, resetForm])
 
-  if (isLoading && !sensors) {
+  if (isLoading && !sensors && !selectedSensor) {
     return (
       <div className="flex items-center justify-center py-20">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
       </div>
+    )
+  }
+
+  if (selectedSensor) {
+    return (
+      <SensorDetailView
+        sensor={selectedSensor}
+        historialPreload={selectedSensor.history}
+        onBack={() => setSelectedSensor(null)}
+        userRole={userRole}
+      />
     )
   }
 
@@ -288,8 +351,16 @@ export function SensorsView({ selectedGreenhouse, userRole }: SensorsViewProps) 
                   <Input placeholder="Ej: DHT22-AM2302" value={formData.modelo} onChange={(e) => setFormData({ ...formData, modelo: e.target.value })} />
                 </div>
                 <div className="flex flex-col gap-2">
-                  <Label>ID Dispositivo</Label>
-                  <Input type="number" placeholder="Opcional" value={formData.idDispositivo} onChange={(e) => setFormData({ ...formData, idDispositivo: e.target.value })} />
+                  <Label>Dispositivo</Label>
+                  <Select value={formData.idDispositivo || "none"} onValueChange={(v) => setFormData({ ...formData, idDispositivo: v === "none" ? "" : v })}>
+                    <SelectTrigger><SelectValue placeholder="Sin dispositivo" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Sin dispositivo</SelectItem>
+                      {deviceList.map((d) => (
+                        <SelectItem key={String(d.id)} value={String(d.id)}>{d.nombre}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="flex flex-col gap-2">
                   <Label>Ubicación Física</Label>
@@ -366,13 +437,16 @@ export function SensorsView({ selectedGreenhouse, userRole }: SensorsViewProps) 
                   {sensor.rangoMin !== undefined && sensor.rangoMax !== undefined && (
                     <div className="flex justify-between"><span className="text-muted-foreground">Rango:</span><span>{sensor.rangoMin} - {sensor.rangoMax}</span></div>
                   )}
-                  {isAdmin && (
-                    <div className="mt-2 flex justify-end border-t pt-2">
+                  <div className="mt-2 flex justify-end gap-2 border-t pt-2">
+                    <Button variant="outline" size="sm" className="h-7" onClick={() => setSelectedSensor(sensor)}>
+                      <Eye className="mr-1 h-3 w-3" />Ver
+                    </Button>
+                    {isAdmin && (
                       <Button variant="outline" size="sm" className="h-7" onClick={() => openEditDialog(sensor)}>
                         <Pencil className="mr-1 h-3 w-3" />Editar
                       </Button>
-                    </div>
-                  )}
+                    )}
+                  </div>
                 </CardContent>
               </Card>
             )

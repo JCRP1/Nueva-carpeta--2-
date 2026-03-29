@@ -131,11 +131,22 @@ export async function GET(req: Request) {
           invernaderoId: String(s.invernaderoId),
           zonaRiegoId: "",
           estado: s.estado || "activo",
+          marca: s.marca || undefined,
+          modelo: s.modelo || undefined,
+          ubicacionFisica: s.ubicacionFisica || undefined,
+          rangoMin: s.rangoMin != null ? Number(s.rangoMin) : undefined,
+          rangoMax: s.rangoMax != null ? Number(s.rangoMax) : undefined,
+          unidadMedida: s.unidadMedida || undefined,
+          precision: s.precision != null ? Number(s.precision) : undefined,
+          fechaInstalacion: s.fechaInstalacion || undefined,
+          ultimoCalibrado: s.ultimoCalibrado || undefined,
+          observaciones: s.observaciones || undefined,
+          idDispositivo: s.idDispositivo != null ? Number(s.idDispositivo) : undefined,
           ultimaLectura: latest ? Number(latest.valor) : 0,
           unidad: (latest?.unidad as string) || (s.unidad as string) || "",
           umbralMin: Number(s.umbralMin) || 0,
           umbralMax: Number(s.umbralMax) || 100,
-          ultimaActualizacion: latest
+          ultimoReporte: latest
             ? (latest.fecha_hora as string)
             : new Date().toISOString(),
           history: historyRows.reverse().map((h) => ({

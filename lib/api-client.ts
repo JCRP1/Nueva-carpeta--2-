@@ -163,6 +163,28 @@ deleteUser: (id: string) =>
       method: "PATCH",
       body: JSON.stringify(data),
     }),
+
+  // Devices
+  devices: () =>
+    request<Array<Record<string, unknown>>>("/devices"),
+
+  createDevice: (data: Record<string, unknown>) =>
+    request<Record<string, unknown>>("/devices", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  updateDevice: (id: string, data: Record<string, unknown>) =>
+    request<Record<string, unknown>>("/devices", {
+      method: "PUT",
+      body: JSON.stringify({ id, ...data }),
+    }),
+
+  deleteDevice: (id: string) =>
+    request<Record<string, unknown>>("/devices", {
+      method: "DELETE",
+      body: JSON.stringify({ id }),
+    }),
 }
 
 // SWR fetcher
