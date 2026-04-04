@@ -112,12 +112,13 @@ export function UsersView() {
   const [newPassword, setNewPassword] = useState("")
   const [creating, setCreating] = useState(false)
   type Persona = {
-    id_persona: number
+    id: string
     nombre: string
   }
 
-  const { data: personas = [] } = useSWR<Persona[]>("/api/personas", fetcher)
-  const [selectedPersona, setSelectedPersona] = useState("")
+  const { data: personas = [] } = useSWR<Persona[]>("/api/people", fetcher)
+  const [selectedPersonaId, setSelectedPersonaId] = useState("")
+  const [selectedPersonaNombre, setSelectedPersonaNombre] = useState("")
 
   // Edit user
   const [editUser, setEditUser] = useState<UserData | null>(null)
@@ -142,7 +143,7 @@ export function UsersView() {
       toast.error("Complete todos los campos", { description: "Nombre, email y contrasena son requeridos" })
       return
     }
-    if (!selectedPersona) {
+    if (!selectedPersonaId) {
     toast.error("Seleccione un nombre de la lista de personas")
     return
   }
@@ -152,15 +153,20 @@ export function UsersView() {
     }
     setCreating(true)
     try {
-      await api.createUser({ nombre: selectedPersona,
-      email: newEmail, 
-      password: newPassword, 
-      rol: newRole })
+      await api.createUser({ 
+        nombre: selectedPersonaNombre,
+        email: newEmail, 
+        password: newPassword, 
+        rol: newRole,
+        id_persona: selectedPersonaId
+      })
       mutate()
       setCreateOpen(false)
       setNewEmail("")
       setNewPassword("")
       setNewRole("agricultor")
+      setSelectedPersonaId("")
+      setSelectedPersonaNombre("")
       toast.success("Usuario creado")
     } catch (err) {
       toast.error("Error al crear usuario", { description: err instanceof Error ? err.message : "Error" })
@@ -247,14 +253,18 @@ export function UsersView() {
             <div className="flex flex-col gap-4 py-4">
               <div className="flex flex-col gap-2">
                 <Label>Nombre Completo</Label>
-                <Select value={selectedPersona} onValueChange={(v) => setSelectedPersona(v)}>
+                <Select value={selectedPersonaId} onValueChange={(v) => {
+                  const persona = personas.find(p => p.id === v)
+                  setSelectedPersonaId(v)
+                  setSelectedPersonaNombre(persona?.nombre || "")
+                }}>
                     <SelectTrigger><SelectValue placeholder="Nombre del usuario" /></SelectTrigger>
                     <SelectContent>
                       {personas.length === 0 ? (
-                        <SelectItem value="">Cargando...</SelectItem>
+                        <div className="relative flex w-full cursor-default select-none items-center rounded-sm py-1.5 pl-8 pr-2 text-sm text-muted-foreground">Cargando personas...</div>
                       ) : (
                         personas.map((p) => (
-        <SelectItem key={p.id_persona} value={p.id_persona.toString()}>
+        <SelectItem key={p.id} value={p.id}>
           {p.nombre}
         </SelectItem>)))}
                     </SelectContent>
