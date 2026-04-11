@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { requireAuth } from "@/lib/auth"
 import { query } from "@/lib/db"
+import { registrarBitacora } from "@/lib/bitacora"
 
 /* =========================
    CREAR
@@ -54,6 +55,17 @@ export async function POST(req: Request) {
         observaciones: observaciones || null,
       }
     )
+
+    await registrarBitacora({
+      session,
+      req,
+      descripcion: `Se creo el sensor ${tipo}`,
+      modulo: "sensores",
+      entidad: "Sensores",
+      accion: "CREATE",
+      idDispositivo: idDispositivo ? Number(idDispositivo) : null,
+      valorNuevo: body,
+    })
 
     return NextResponse.json({ ok: true })
 
@@ -188,11 +200,44 @@ export async function PUT(req: Request) {
       observaciones,
       idInvernadero,
       idDispositivo,
+      umbralMin,
+      umbralMax,
     } = body
 
     if (!id) {
       return NextResponse.json({ error: "ID requerido" }, { status: 400 })
     }
+
+    const existingRows = (await query(
+      `SELECT
+        s.id_sensor AS id,
+        s.id_invernadero AS idInvernadero,
+        s.id_dispositivo AS idDispositivo,
+        s.tipo,
+        s.modelo,
+        s.estado,
+        s.marca,
+        s.rango_min AS rangoMin,
+        s.rango_max AS rangoMax,
+        s.unidad_medida AS unidadMedida,
+        s.precision,
+        s.fecha_instalacion AS fechaInstalacion,
+        s.ubicacion_fisica AS ubicacionFisica,
+        s.ultimo_calibrado AS ultimoCalibrado,
+        s.observaciones
+       FROM Sensores s
+       INNER JOIN Invernaderos i ON i.id_invernadero = s.id_invernadero
+       WHERE s.id_sensor = @id AND i.id_empresa = @empresaId`,
+      { id: Number(id), empresaId: session.empresaId }
+    )) as Record<string, unknown>[]
+
+    const existing = existingRows[0]
+    if (!existing) {
+      return NextResponse.json({ error: "Sensor no encontrado" }, { status: 404 })
+    }
+
+    const mergedRangoMin = rangoMin !== undefined ? rangoMin : umbralMin
+    const mergedRangoMax = rangoMax !== undefined ? rangoMax : umbralMax
 
     await query(
       `UPDATE Sensores
@@ -211,25 +256,42 @@ export async function PUT(req: Request) {
         ubicacion_fisica = @ubicacionFisica,
         ultimo_calibrado = @ultimoCalibrado,
         observaciones = @observaciones
-       WHERE id_sensor = @id`,
+      WHERE id_sensor = @id`,
       {
-        id,
-        idInvernadero,
-        idDispositivo: idDispositivo ? Number(idDispositivo) : null,
-        tipo,
-        modelo,
-        estado,
-        marca,
-        rangoMin,
-        rangoMax,
-        unidadMedida,
-        precision,
-        fechaInstalacion,
-        ubicacionFisica,
-        ultimoCalibrado,
-        observaciones,
+        id: Number(id),
+        idInvernadero: idInvernadero !== undefined ? Number(idInvernadero) : Number(existing.idInvernadero),
+        idDispositivo: idDispositivo !== undefined
+          ? (idDispositivo ? Number(idDispositivo) : null)
+          : (existing.idDispositivo != null ? Number(existing.idDispositivo) : null),
+        tipo: tipo !== undefined ? tipo : existing.tipo,
+        modelo: modelo !== undefined ? modelo : existing.modelo,
+        estado: estado !== undefined ? estado : existing.estado,
+        marca: marca !== undefined ? marca : existing.marca,
+        rangoMin: mergedRangoMin !== undefined ? mergedRangoMin : existing.rangoMin,
+        rangoMax: mergedRangoMax !== undefined ? mergedRangoMax : existing.rangoMax,
+        unidadMedida: unidadMedida !== undefined ? unidadMedida : existing.unidadMedida,
+        precision: precision !== undefined ? precision : existing.precision,
+        fechaInstalacion: fechaInstalacion !== undefined ? fechaInstalacion : existing.fechaInstalacion,
+        ubicacionFisica: ubicacionFisica !== undefined ? ubicacionFisica : existing.ubicacionFisica,
+        ultimoCalibrado: ultimoCalibrado !== undefined ? ultimoCalibrado : existing.ultimoCalibrado,
+        observaciones: observaciones !== undefined ? observaciones : existing.observaciones,
       }
     )
+
+    await registrarBitacora({
+      session,
+      req,
+      descripcion: `Se actualizo el sensor ${existing.tipo || id}`,
+      modulo: "sensores",
+      entidad: "Sensores",
+      entidadId: id,
+      accion: "UPDATE",
+      idDispositivo: idDispositivo !== undefined
+        ? (idDispositivo ? Number(idDispositivo) : null)
+        : (existing.idDispositivo != null ? Number(existing.idDispositivo) : null),
+      valorAnterior: existing,
+      valorNuevo: body,
+    })
 
     return NextResponse.json({ ok: true })
 

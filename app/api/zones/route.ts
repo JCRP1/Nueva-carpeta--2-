@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { requireAuth } from "@/lib/auth"
 import { query, execute } from "@/lib/db"
+import { registrarBitacora } from "@/lib/bitacora"
 
 export async function GET(req: Request) {
   try {
@@ -119,6 +120,16 @@ export async function POST(req: Request) {
       }
     )
     const newId = result.recordset?.[0]?.id_zona
+    await registrarBitacora({
+      session,
+      req,
+      descripcion: `Se creo la zona ${body.nombre || "Nueva Zona"}`,
+      modulo: "zonas",
+      entidad: "ZonasRiego",
+      entidadId: newId as string | number | undefined,
+      accion: "CREATE",
+      valorNuevo: body,
+    })
     return NextResponse.json({
       id: String(newId),
       nombre: body.nombre || "Nueva Zona",
@@ -150,6 +161,13 @@ export async function PATCH(req: Request) {
     if (!id) {
       return NextResponse.json({ error: "ID requerido" }, { status: 400 })
     }
+
+    const previousRows = await query<Record<string, unknown>[]>(
+      `SELECT nombre, umbral_humedad AS umbralHumedad, tipo_cultivo AS cultivoActual, metodo_riego AS modoRiego, estado AS estadoRiego
+       FROM ZonasRiego
+       WHERE id_zona = @id`,
+      { id: Number(id) }
+    )
 
     const fieldMap: Record<string, string> = {
       nombre: "nombre",
@@ -184,6 +202,18 @@ export async function PATCH(req: Request) {
         { zoneId: Number(id), userId: session.userId, tipo: updates.modoRiego || "automatico" }
       )
     }
+
+    await registrarBitacora({
+      session,
+      req,
+      descripcion: `Se actualizo la zona ${id}`,
+      modulo: "zonas",
+      entidad: "ZonasRiego",
+      entidadId: id,
+      accion: "UPDATE",
+      valorAnterior: previousRows[0] || null,
+      valorNuevo: updates,
+    })
 
     return NextResponse.json({ ok: true, id })
   } catch {

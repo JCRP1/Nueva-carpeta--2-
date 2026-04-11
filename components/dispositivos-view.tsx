@@ -39,6 +39,7 @@ interface DispositivoData {
   id: string
   nombre: string
   tipo: string
+  codigoDispositivo: string
   estado: string
   invernaderoId: string
   nombreInvernadero?: string
@@ -75,6 +76,7 @@ export function DispositivosView() {
   const [formData, setFormData] = useState({
     nombre: "",
     tipo: "gateway",
+    codigoDispositivo: "",
     estado: "Activo",
     idInvernadero: "",
     firmwareVersion: "",
@@ -88,6 +90,7 @@ export function DispositivosView() {
     setFormData({
       nombre: "",
       tipo: "gateway",
+      codigoDispositivo: "",
       estado: "Activo",
       idInvernadero: "",
       firmwareVersion: "",
@@ -106,6 +109,7 @@ export function DispositivosView() {
     setFormData({
       nombre: device.nombre || "",
       tipo: device.tipo || "gateway",
+      codigoDispositivo: device.codigoDispositivo || "",
       estado: device.estado || "Activo",
       idInvernadero: String(device.invernaderoId),
       firmwareVersion: device.firmwareVersion || "",
@@ -117,8 +121,8 @@ export function DispositivosView() {
   }, [])
 
   const handleSubmit = useCallback(async () => {
-    if (!formData.nombre || !formData.idInvernadero) {
-      toast.error("Complete los campos requeridos", { description: "Nombre e invernadero son requeridos" })
+    if (!formData.nombre || !formData.idInvernadero || !formData.codigoDispositivo.trim()) {
+      toast.error("Complete los campos requeridos", { description: "Nombre, invernadero y codigo son requeridos" })
       return
     }
 
@@ -127,6 +131,7 @@ export function DispositivosView() {
       const payload = {
         nombre: formData.nombre,
         tipo: formData.tipo,
+        codigoDispositivo: formData.codigoDispositivo.trim().toUpperCase(),
         estado: formData.estado,
         idInvernadero: Number(formData.idInvernadero),
         firmwareVersion: formData.firmwareVersion || undefined,
@@ -200,6 +205,7 @@ export function DispositivosView() {
             <TableHeader>
               <TableRow>
                 <TableHead>Nombre</TableHead>
+                <TableHead>Codigo</TableHead>
                 <TableHead>Tipo</TableHead>
                 <TableHead>Invernadero</TableHead>
                 <TableHead>IP Local</TableHead>
@@ -211,7 +217,7 @@ export function DispositivosView() {
             <TableBody>
               {deviceList.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
                     No hay dispositivos registrados
                   </TableCell>
                 </TableRow>
@@ -224,6 +230,7 @@ export function DispositivosView() {
                         {device.nombre}
                       </div>
                     </TableCell>
+                    <TableCell className="font-mono text-xs">{device.codigoDispositivo}</TableCell>
                     <TableCell className="capitalize">{device.tipo}</TableCell>
                     <TableCell>{device.nombreInvernadero || "-"}</TableCell>
                     <TableCell className="font-mono text-xs">
@@ -271,6 +278,16 @@ export function DispositivosView() {
                 <Input placeholder="Ej: Gateway Principal" value={formData.nombre} onChange={(e) => setFormData({ ...formData, nombre: e.target.value })} />
               </div>
               <div className="flex flex-col gap-2">
+                <Label>Codigo Dispositivo *</Label>
+                <Input
+                  placeholder="Ej: ESP32-INV-A-01"
+                  value={formData.codigoDispositivo}
+                  onChange={(e) => setFormData({ ...formData, codigoDispositivo: e.target.value.toUpperCase() })}
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="flex flex-col gap-2">
                 <Label>Tipo</Label>
                 <Select value={formData.tipo} onValueChange={(v) => setFormData({ ...formData, tipo: v })}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
@@ -281,8 +298,6 @@ export function DispositivosView() {
                   </SelectContent>
                 </Select>
               </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
               <div className="flex flex-col gap-2">
                 <Label>Invernadero *</Label>
                 <Select value={formData.idInvernadero || "placeholder"} onValueChange={(v) => setFormData({ ...formData, idInvernadero: v })}>

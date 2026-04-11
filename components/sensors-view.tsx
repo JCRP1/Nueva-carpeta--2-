@@ -43,6 +43,7 @@ import type { Invernadero } from "@/lib/greensense-data"
 interface Dispositivo {
   id: string
   nombre: string
+  codigoDispositivo?: string
   tipo: string
   estado: string
 }
@@ -357,7 +358,9 @@ export function SensorsView({ selectedGreenhouse, userRole }: SensorsViewProps) 
                     <SelectContent>
                       <SelectItem value="none">Sin dispositivo</SelectItem>
                       {deviceList.map((d) => (
-                        <SelectItem key={String(d.id)} value={String(d.id)}>{d.nombre}</SelectItem>
+                        <SelectItem key={String(d.id)} value={String(d.id)}>
+                          {d.codigoDispositivo ? `${d.nombre} (${d.codigoDispositivo})` : d.nombre}
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>

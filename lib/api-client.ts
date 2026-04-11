@@ -27,6 +27,23 @@ export const api = {
   me: () =>
     request<{ user: Record<string, unknown> | null }>("/auth/me"),
 
+  forgotPassword: (email: string) =>
+    request<{ ok: boolean; message: string }>("/auth/forgot-password", {
+      method: "POST",
+      body: JSON.stringify({ email }),
+    }),
+
+  validateResetPasswordToken: (token: string) =>
+    request<{ valid: boolean; email?: string; nombre?: string }>(
+      "/auth/reset-password?token=" + encodeURIComponent(token)
+    ),
+
+  resetPassword: (token: string, password: string) =>
+    request<{ ok: boolean }>("/auth/reset-password", {
+      method: "POST",
+      body: JSON.stringify({ token, password }),
+    }),
+
   // Data
   greenhouses: () =>
     request<Array<Record<string, unknown>>>("/greenhouses"),
@@ -89,6 +106,15 @@ export const api = {
       body: JSON.stringify({ id, ...data }),
     }),
 
+  getSensorProgramming: (sensorId: string) =>
+    request<{ programacion: Record<string, unknown> | null }>(`/sensors/${sensorId}/program`),
+
+  programSensor: (sensorId: string, data: Record<string, unknown>) =>
+    request<Record<string, unknown>>(`/sensors/${sensorId}/program`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
   // Zones
   zones: (greenhouse?: string) =>
     request<Array<Record<string, unknown>>>(`/zones${greenhouse ? `?greenhouse=${greenhouse}` : ""}`),
@@ -130,9 +156,6 @@ export const api = {
   // Users
   users: () =>
     request<Array<Record<string, unknown>>>("/users"),
-  
-  personal: () =>
-    request<Array<Record<string, unknown>>>("/users?type=personal"),
 
   createUser: (data: Record<string, unknown>) =>
     request<Record<string, unknown>>("/users", {
@@ -153,6 +176,28 @@ deleteUser: (id: string) =>
     method: "DELETE",
     body: JSON.stringify({ id }),
   }),
+
+  // People
+  people: () =>
+    request<Array<Record<string, unknown>>>("/people"),
+
+  createPerson: (data: Record<string, unknown>) =>
+    request<Record<string, unknown>>("/people", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  updatePerson: (id: string, data: Record<string, unknown>) =>
+    request<Record<string, unknown>>("/people", {
+      method: "PATCH",
+      body: JSON.stringify({ id, ...data }),
+    }),
+
+  deletePerson: (id: string) =>
+    request<Record<string, unknown>>("/people", {
+      method: "DELETE",
+      body: JSON.stringify({ id }),
+    }),
   
   // Settings
   settings: () =>

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { requireAuth } from "@/lib/auth"
 import { query, execute } from "@/lib/db"
+import { registrarBitacora } from "@/lib/bitacora"
 
 export async function GET(req: Request) {
   try {
@@ -81,6 +82,15 @@ export async function PATCH(req: Request) {
            (SELECT id_invernadero FROM Invernaderos WHERE id_empresa = @empresaId))`,
         { userId: session.userId, empresaId: session.empresaId }
       )
+      await registrarBitacora({
+        session,
+        req,
+        descripcion: "Se resolvieron todas las alertas activas",
+        modulo: "alertas",
+        entidad: "Alertas",
+        accion: "RESOLVE_ALL",
+        severidad: "advertencia",
+      })
       return NextResponse.json({ ok: true })
     }
 
@@ -95,6 +105,15 @@ export async function PATCH(req: Request) {
            (SELECT id_invernadero FROM Invernaderos WHERE id_empresa = @empresaId))`,
         { empresaId: session.empresaId }
       )
+      await registrarBitacora({
+        session,
+        req,
+        descripcion: "Se limpio el historial de alertas resueltas",
+        modulo: "alertas",
+        entidad: "Alertas",
+        accion: "CLEAR_RESOLVED",
+        severidad: "advertencia",
+      })
       return NextResponse.json({ ok: true })
     }
 
@@ -108,6 +127,16 @@ export async function PATCH(req: Request) {
        WHERE id_alerta = @id`,
       { id: Number(id), userId: session.userId }
     )
+    await registrarBitacora({
+      session,
+      req,
+      descripcion: `Se resolvio la alerta ${id}`,
+      modulo: "alertas",
+      entidad: "Alertas",
+      entidadId: id,
+      accion: "RESOLVE",
+      severidad: "advertencia",
+    })
     return NextResponse.json({ ok: true, id })
   } catch {
     return NextResponse.json({ error: "No autorizado" }, { status: 401 })

@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev --hostname 0.0.0.0",
     "db:setup": "tsx scripts/setup-prisma.ts",
     "db:seed": "tsx scripts/seed.ts",
     "db:generate": "prisma generate",
@@ -15,7 +15,7 @@
     "run-migration": "tsx scripts/run-migration.ts",
     "simple-migration": "tsx scripts/simple-migration.ts",
     "build": "next build",
-    "start": "next start",
+    "start": "next start --hostname 0.0.0.0",
     "lint": "eslint ."
   },
   "dependencies": {
@@ -47,6 +47,7 @@
     "@radix-ui/react-toggle": "1.1.1",
     "@radix-ui/react-toggle-group": "1.1.1",
     "@radix-ui/react-tooltip": "1.1.6",
+    "@types/nodemailer": "^8.0.0",
     "autoprefixer": "^10.4.20",
     "bcryptjs": "^2.4.3",
     "class-variance-authority": "^0.7.1",
@@ -60,6 +61,7 @@
     "mssql": "^11.0.1",
     "next": "16.1.6",
     "next-themes": "^0.4.6",
+    "nodemailer": "^8.0.4",
     "react": "^19",
     "react-day-picker": "^9.5.0",
     "react-dom": "^19",

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { compareSync } from "bcryptjs"
 import { getUserByEmail, createSession, sanitizeUser } from "@/lib/auth"
+import { registrarBitacora } from "@/lib/bitacora"
 
 export async function POST(req: Request) {
   try {
@@ -14,12 +15,22 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Credenciales invalidas" }, { status: 401 })
     }
 
-    // Compare with bcrypt hash stored in contraseña column
-    if (!compareSync(password, user.contraseña)) {
+    if (!compareSync(password, user.passwordHash)) {
       return NextResponse.json({ error: "Credenciales invalidas" }, { status: 401 })
     }
 
     await createSession(user)
+    await registrarBitacora({
+      req,
+      descripcion: `Inicio de sesion de ${user.correo}`,
+      modulo: "autenticacion",
+      entidad: "Usuarios",
+      entidadId: user.id_usuario,
+      accion: "LOGIN",
+      severidad: "info",
+      origen: "web",
+      valorNuevo: { correo: user.correo, rol: user.rol },
+    })
     return NextResponse.json({ user: sanitizeUser(user) })
   } catch (err) {
     console.error("[GreenSense] Login error:", err)

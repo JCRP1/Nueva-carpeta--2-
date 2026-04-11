@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { requireAdmin } from "@/lib/auth"
 import { query, execute } from "@/lib/db"
+import { registrarBitacora } from "@/lib/bitacora"
 
 export async function GET() {
   try {
@@ -30,6 +31,7 @@ export async function PATCH(req: Request) {
   try {
     const session = await requireAdmin()
     const updates = await req.json()
+    const cambios: Array<{ parametro: string; anterior: unknown; nuevo: unknown }> = []
 
     // Upsert each key-value pair into ConfiguracionesSistema
     for (const [parametro, valor] of Object.entries(updates)) {
@@ -40,19 +42,39 @@ export async function PATCH(req: Request) {
       )) as Record<string, unknown>[]
 
       if (existing.length > 0) {
+        const oldRows = (await query(
+          `SELECT valor FROM ConfiguracionesSistema
+           WHERE id_empresa = @empresaId AND parametro = @parametro`,
+          { empresaId: session.empresaId, parametro }
+        )) as Record<string, unknown>[]
+
         await execute(
           `UPDATE ConfiguracionesSistema
            SET valor = @valor, fecha_modificacion = GETDATE()
            WHERE id_empresa = @empresaId AND parametro = @parametro`,
           { empresaId: session.empresaId, parametro, valor: String(valor) }
         )
+        cambios.push({ parametro, anterior: oldRows[0]?.valor ?? null, nuevo: valor })
       } else {
         await execute(
           `INSERT INTO ConfiguracionesSistema (id_empresa, parametro, valor, creado_por, fecha_creacion)
            VALUES (@empresaId, @parametro, @valor, @userId, GETDATE())`,
           { empresaId: session.empresaId, parametro, valor: String(valor), userId: session.userId }
         )
+        cambios.push({ parametro, anterior: null, nuevo: valor })
       }
+    }
+
+    if (cambios.length > 0) {
+      await registrarBitacora({
+        session,
+        req,
+        descripcion: "Se actualizaron configuraciones del sistema",
+        modulo: "configuracion",
+        entidad: "ConfiguracionesSistema",
+        accion: "UPDATE",
+        valorNuevo: cambios,
+      })
     }
 
     return NextResponse.json({ ok: true })

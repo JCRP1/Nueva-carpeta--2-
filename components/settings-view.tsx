@@ -27,6 +27,8 @@ import {
   RotateCcw,
   Loader2,
   RefreshCw,
+  PlugZap,
+  Radio,
 } from "lucide-react"
 import type { Invernadero } from "@/lib/greensense-data"
 import { api, fetcher } from "@/lib/api-client"
@@ -91,23 +93,24 @@ const defaultSettings: SettingsState = {
 interface DeviceState {
   id: string
   nombre: string
-  online: boolean
-  ip: string
-  pinging: boolean
+  tipo: string
+  codigoDispositivo?: string
+  estado: string
+  ipLocal?: string
+  firmwareVersion?: string
+  ultimoReporte?: string
+  invernaderoId?: string
+  nombreInvernadero?: string
 }
 
 export function SettingsView() {
   const { data: serverSettings, mutate: mutateSettings } = useSWR<Record<string, unknown>>("/api/settings", fetcher)
   const { data: greenhouses } = useSWR<Invernadero[]>("/api/greenhouses", fetcher)
+  const { data: iotDevices, mutate: mutateDevices } = useSWR<DeviceState[]>("/api/devices", fetcher)
 
   const [settings, setSettings] = useState<SettingsState>({ ...defaultSettings })
   const [saving, setSaving] = useState(false)
   const [savingSection, setSavingSection] = useState<string | null>(null)
-  const [devices, setDevices] = useState<DeviceState[]>([
-    { id: "ESP32-001", nombre: "Controlador Inv. A", online: true, ip: "192.168.1.101", pinging: false },
-    { id: "ESP32-002", nombre: "Controlador Inv. B", online: true, ip: "192.168.1.102", pinging: false },
-    { id: "ESP32-003", nombre: "Controlador Inv. C", online: false, ip: "192.168.1.103", pinging: false },
-  ])
 
   // Hydrate local form from server settings
   useEffect(() => {
@@ -183,28 +186,44 @@ export function SettingsView() {
     }
   }
 
-  function handlePingDevice(deviceId: string) {
-    setDevices((prev) =>
-      prev.map((d) => (d.id === deviceId ? { ...d, pinging: true } : d))
-    )
-    setTimeout(() => {
-      setDevices((prev) =>
-        prev.map((d) => {
-          if (d.id !== deviceId) return d
-          const wasOffline = !d.online
-          const nowOnline = wasOffline ? Math.random() > 0.3 : true
-          if (wasOffline && nowOnline) {
-            toast.success(`${d.nombre} reconectado`, { description: `${d.id} ahora esta en linea` })
-          } else if (wasOffline && !nowOnline) {
-            toast.error(`${d.nombre} no responde`, { description: `${d.id} sigue sin conexion` })
-          } else {
-            toast.success(`${d.nombre} responde`, { description: `Ping exitoso a ${d.ip}` })
-          }
-          return { ...d, pinging: false, online: nowOnline }
-        })
-      )
-    }, 1500)
+  function isDeviceOnline(device: DeviceState) {
+    if (!device.ultimoReporte) return false
+    const lastReport = new Date(device.ultimoReporte)
+    if (Number.isNaN(lastReport.getTime())) return false
+    return Date.now() - lastReport.getTime() <= settings.sensorInterval * 4000
   }
+
+  async function handlePingDevice(device: DeviceState) {
+    await mutateDevices()
+
+    if (isDeviceOnline(device)) {
+      toast.success(`${device.nombre} reporta correctamente`, {
+        description: device.ipLocal ? `Ultima IP registrada: ${device.ipLocal}` : "El dispositivo tiene reportes recientes",
+      })
+      return
+    }
+
+    toast.error(`${device.nombre} sin reportes recientes`, {
+      description: device.ultimoReporte
+        ? `Ultimo reporte: ${new Date(device.ultimoReporte).toLocaleString()}`
+        : "Aun no se ha recibido ninguna lectura de este dispositivo",
+    })
+  }
+
+  const deviceList = iotDevices || []
+  const exampleBaseUrl =
+    typeof window !== "undefined" ? window.location.origin : "https://tu-dominio"
+  const examplePayload = `{
+  "codigoDispositivo": "ESP32-INV-A-01",
+  "tipo": "temperatura",
+  "valor": 27.4,
+  "unidad": "C",
+  "timestamp": "2026-04-05T14:30:00Z"
+}`
+  const exampleCurl = `curl -X POST "${exampleBaseUrl}/api/iot/readings" \\
+  -H "Content-Type: application/json" \\
+  -H "x-iot-key: TU_IOT_API_KEY" \\
+  -d '${examplePayload}'`
 
   return (
     <div className="flex flex-col gap-6">
@@ -483,50 +502,127 @@ export function SettingsView() {
             <Card className="lg:col-span-2">
               <CardHeader>
                 <CardTitle className="text-sm text-foreground">Dispositivos ESP32</CardTitle>
-                <CardDescription>Estado de dispositivos conectados</CardDescription>
+                <CardDescription>Estado real de dispositivos registrados en la base de datos</CardDescription>
               </CardHeader>
               <CardContent className="flex flex-col gap-3">
-                {devices.map((device) => (
-                  <div
-                    key={device.id}
-                    className="flex items-center justify-between rounded-lg border p-3"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className={`h-2.5 w-2.5 rounded-full ${device.online ? "bg-emerald-500" : "bg-red-500"}`} />
-                      <div>
-                        <p className="text-sm font-medium text-foreground">{device.nombre}</p>
-                        <p className="font-mono text-xs text-muted-foreground">
-                          {device.id} - {device.ip}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-muted-foreground">
-                        {device.online ? "Conectado" : "Desconectado"}
-                      </span>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handlePingDevice(device.id)}
-                        disabled={device.pinging}
+                {deviceList.length > 0 ? (
+                  deviceList.map((device) => {
+                    const online = isDeviceOnline(device)
+
+                    return (
+                      <div
+                        key={device.id}
+                        className="flex items-center justify-between rounded-lg border p-3"
                       >
-                        {device.pinging ? (
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        ) : (
-                          <RefreshCw className="h-3.5 w-3.5" />
-                        )}
-                        <span className="ml-1.5 text-xs">Ping</span>
-                      </Button>
-                    </div>
+                        <div className="flex items-center gap-3">
+                          <div className={`h-2.5 w-2.5 rounded-full ${online ? "bg-emerald-500" : "bg-red-500"}`} />
+                          <div>
+                            <p className="text-sm font-medium text-foreground">{device.nombre}</p>
+                            <p className="font-mono text-xs text-muted-foreground">
+                              {device.codigoDispositivo || `ID ${device.id}`} - {device.tipo || "gateway"} - {device.ipLocal || "sin IP"}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {device.nombreInvernadero || "Sin invernadero"} - {device.firmwareVersion || "sin firmware"} -{" "}
+                              {device.ultimoReporte
+                                ? `ultimo reporte ${new Date(device.ultimoReporte).toLocaleString()}`
+                                : "sin lecturas reportadas"}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-muted-foreground">
+                            {online ? "En linea" : "Sin reporte"}
+                          </span>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handlePingDevice(device)}
+                          >
+                            <RefreshCw className="h-3.5 w-3.5" />
+                            <span className="ml-1.5 text-xs">Verificar</span>
+                          </Button>
+                        </div>
+                      </div>
+                    )
+                  })
+                ) : (
+                  <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+                    No hay dispositivos IoT registrados. Cree un dispositivo y luego asocie sensores a ese dispositivo.
                   </div>
-                ))}
+                )}
+              </CardContent>
+            </Card>
+
+            <Card className="lg:col-span-2">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-sm text-foreground">
+                  <PlugZap className="h-4 w-4" />
+                  Integracion de Sensores
+                </CardTitle>
+                <CardDescription>Contrato tecnico para conectar ESP32, Arduino o gateways externos</CardDescription>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-4">
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                  <div className="rounded-lg border p-3">
+                    <p className="mb-1 text-sm font-medium text-foreground">1. Registrar hardware</p>
+                    <p className="text-xs text-muted-foreground">
+                      Cree un dispositivo en el modulo de dispositivos y use su codigo fisico unico.
+                    </p>
+                  </div>
+                  <div className="rounded-lg border p-3">
+                    <p className="mb-1 text-sm font-medium text-foreground">2. Asociar sensor</p>
+                    <p className="text-xs text-muted-foreground">
+                      Cree el sensor y seleccione el dispositivo para que el backend pueda enrutar la lectura.
+                    </p>
+                  </div>
+                  <div className="rounded-lg border p-3">
+                    <p className="mb-1 text-sm font-medium text-foreground">3. Enviar lecturas</p>
+                    <p className="text-xs text-muted-foreground">
+                      El microcontrolador debe hacer `POST` a `/api/iot/readings` con `x-iot-key`.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="rounded-lg border p-3">
+                  <div className="mb-2 flex items-center gap-2">
+                    <Radio className="h-4 w-4 text-primary" />
+                    <p className="text-sm font-medium text-foreground">Endpoint</p>
+                  </div>
+                  <p className="font-mono text-xs text-muted-foreground">{exampleBaseUrl}/api/iot/readings</p>
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    Headers aceptados: `x-iot-key`, `x-api-key` o `Authorization: Bearer ...`
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Variables requeridas en servidor: `IOT_API_KEY` y una URL publica accesible desde el dispositivo.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                  <div className="rounded-lg border p-3">
+                    <p className="mb-2 text-sm font-medium text-foreground">Payload ejemplo</p>
+                    <pre className="overflow-x-auto rounded-md bg-muted p-3 text-xs text-muted-foreground">
+                      <code>{examplePayload}</code>
+                    </pre>
+                  </div>
+                  <div className="rounded-lg border p-3">
+                    <p className="mb-2 text-sm font-medium text-foreground">Prueba rapida</p>
+                    <pre className="overflow-x-auto rounded-md bg-muted p-3 text-xs text-muted-foreground">
+                      <code>{exampleCurl}</code>
+                    </pre>
+                  </div>
+                </div>
+
+                <div className="rounded-lg border p-3 text-xs text-muted-foreground">
+                  La forma recomendada es enviar `codigoDispositivo + tipo`. El backend buscara el sensor asociado,
+                  guardara la lectura en `LecturasSensores` y actualizara `ultimo_reporte` del dispositivo.
+                </div>
               </CardContent>
             </Card>
           </div>
         </TabsContent>
 
         {/* ALERTAS TAB */}
-        <TabsContent value="s" className="mt-4">
+        <TabsContent value="alertas" className="mt-4">
           <Card>
             <CardHeader>
               <CardTitle className="text-sm text-foreground">Configuracion de Notificaciones</CardTitle>

@@ -64,10 +64,15 @@ export function LoginView({ onLogin }: LoginViewProps) {
   function handleForgot(e: React.FormEvent) {
     e.preventDefault()
     setLoading(true)
-    setTimeout(() => {
-      setForgotSent(true)
-      setLoading(false)
-    }, 1000)
+    setError("")
+    api.forgotPassword(forgotEmail)
+      .then(() => {
+        setForgotSent(true)
+      })
+      .catch((err: unknown) => {
+        setError(err instanceof Error ? err.message : "No se pudo enviar el correo")
+      })
+      .finally(() => setLoading(false))
   }
 
   const roleIcons = {
@@ -203,6 +208,11 @@ export function LoginView({ onLogin }: LoginViewProps) {
                       onChange={(e) => setForgotEmail(e.target.value)}
                     />
                   </div>
+                  {error && (
+                    <div className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive">
+                      {error}
+                    </div>
+                  )}
                   <Button type="submit" disabled={loading || !forgotEmail} className="w-full">
                     {loading ? (
                       <>

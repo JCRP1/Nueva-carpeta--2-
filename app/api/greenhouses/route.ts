@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { requireAuth } from "@/lib/auth"
 import { query } from "@/lib/db"
+import { registrarBitacora } from "@/lib/bitacora"
 
 /* =========================
    CREAR
@@ -30,6 +31,16 @@ export async function POST(req: Request) {
         estado: estado || "activo",
       }
     )
+
+    await registrarBitacora({
+      session,
+      req,
+      descripcion: `Se creo el invernadero ${nombre}`,
+      modulo: "invernaderos",
+      entidad: "Invernaderos",
+      accion: "CREATE",
+      valorNuevo: { nombre, ubicacion, area, estado: estado || "activo" },
+    })
 
     return NextResponse.json({ ok: true })
 
@@ -91,6 +102,13 @@ export async function PUT(req: Request) {
       )
     }
 
+    const previousRows = await query<Record<string, unknown>[]>(
+      `SELECT nombre, ubicacion, superficie_m2 AS area, estado
+       FROM Invernaderos
+       WHERE id_invernadero = @id AND id_empresa = @empresaId`,
+      { id, empresaId: session.empresaId }
+    )
+
     await query(
       `UPDATE Invernaderos
        SET
@@ -109,6 +127,18 @@ export async function PUT(req: Request) {
         empresaId: session.empresaId,
       }
     )
+
+    await registrarBitacora({
+      session,
+      req,
+      descripcion: `Se actualizo el invernadero ${nombre || id}`,
+      modulo: "invernaderos",
+      entidad: "Invernaderos",
+      entidadId: id,
+      accion: "UPDATE",
+      valorAnterior: previousRows[0] || null,
+      valorNuevo: { nombre, ubicacion, area, estado },
+    })
 
     return NextResponse.json({ ok: true })
 

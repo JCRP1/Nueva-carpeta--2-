@@ -296,6 +296,7 @@ Dispositivos IoT conectados a invernaderos.
 | id_invernadero | INT (FK) | Invernadero al que pertenece |
 | nombre | NVARCHAR(100) | Nombre del dispositivo |
 | tipo | NVARCHAR(50) | Tipo (gateway, controlador, etc.) |
+| codigo_dispositivo | NVARCHAR(100) UNIQUE | Codigo fisico/estable usado por el hardware |
 | firmware_version | NVARCHAR(50) | Versión del firmware |
 | ip_local | NVARCHAR(50) | IP en la red local |
 | estado | NVARCHAR(20) | Estado (default: 'Activo') |

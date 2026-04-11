@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { requireAuth } from "@/lib/auth"
 import { query } from "@/lib/db"
+import { registrarBitacora } from "@/lib/bitacora"
 
 /* =========================
    CREAR (incluye CultivoDetalle)
@@ -61,6 +62,17 @@ export async function POST(req: Request) {
         }
       )
     }
+
+    await registrarBitacora({
+      session,
+      req,
+      descripcion: `Se creo el cultivo ${nombre}`,
+      modulo: "cultivos",
+      entidad: "Cultivos",
+      entidadId: cultivoId,
+      accion: "CREATE",
+      valorNuevo: body,
+    })
 
     return NextResponse.json({ ok: true, id: String(cultivoId) })
 
@@ -182,6 +194,13 @@ export async function PUT(req: Request) {
       return NextResponse.json({ error: "ID requerido" }, { status: 400 })
     }
 
+    const previousRows = await query<Record<string, unknown>[]>(
+      `SELECT nombre, variedad, id_invernadero AS invernaderoId, fecha_siembra AS fechaSiembra
+       FROM Cultivos
+       WHERE id_cultivo = @id`,
+      { id }
+    )
+
     // Actualizar Cultivos
     await query(
       `UPDATE Cultivos
@@ -248,6 +267,18 @@ export async function PUT(req: Request) {
       }
     }
 
+    await registrarBitacora({
+      session,
+      req,
+      descripcion: `Se actualizo el cultivo ${nombre || id}`,
+      modulo: "cultivos",
+      entidad: "Cultivos",
+      entidadId: id,
+      accion: "UPDATE",
+      valorAnterior: previousRows[0] || null,
+      valorNuevo: body,
+    })
+
     return NextResponse.json({ ok: true })
 
   } catch (err) {
@@ -273,6 +304,13 @@ export async function DELETE(req: Request) {
       return NextResponse.json({ error: "ID requerido" }, { status: 400 })
     }
 
+    const previousRows = await query<Record<string, unknown>[]>(
+      `SELECT nombre, variedad, id_invernadero AS invernaderoId, fecha_siembra AS fechaSiembra
+       FROM Cultivos
+       WHERE id_cultivo = @id`,
+      { id }
+    )
+
     // Eliminar detalle primero (FK)
     await query("DELETE FROM CultivoDetalle WHERE id_cultivo = @id", { id })
 
@@ -283,6 +321,18 @@ export async function DELETE(req: Request) {
        AND id_invernadero IN (SELECT id_invernadero FROM Invernaderos WHERE id_empresa = @empresaId)`,
       { id, empresaId: session.empresaId }
     )
+
+    await registrarBitacora({
+      session,
+      req,
+      descripcion: `Se elimino el cultivo ${previousRows[0]?.nombre || id}`,
+      modulo: "cultivos",
+      entidad: "Cultivos",
+      entidadId: id,
+      accion: "DELETE",
+      valorAnterior: previousRows[0] || null,
+      severidad: "advertencia",
+    })
 
     return NextResponse.json({ ok: true })
 

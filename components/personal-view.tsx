@@ -107,7 +107,7 @@ const PUESTOS = [
 
 export function PersonalView() {
     // 🔹 Roles dinámicos
-const { data: roles = [] } = useSWR<Rol[]>("/api/roles", fetcher)
+const { data: roles = [] } = useSWR<Rol[]>("/api/rols", fetcher)
 
 // ⚠️ CAMBIA este estado (reemplaza el existente)
 const [promoteRole, setPromoteRole] = useState<string>("")
@@ -187,7 +187,7 @@ const [promoteRole, setPromoteRole] = useState<string>("")
     setSaving(true)
     try {
       if (editTarget) {
-        await api.updateUser(editTarget.id, {
+        await api.updatePerson(editTarget.id, {
           nombre: formNombre.trim(),
           email: formEmail.trim(),
           cargo: resolvedCargo() || null,
@@ -196,7 +196,7 @@ const [promoteRole, setPromoteRole] = useState<string>("")
         })
         toast.success("Personal actualizado", { description: formNombre })
       } else {
-        await api.createUser({
+        await api.createPerson({
           nombre: formNombre.trim(),
           email: formEmail.trim(),
           rol: "personal",
@@ -244,7 +244,7 @@ const [promoteRole, setPromoteRole] = useState<string>("")
     if (!deleteTarget) return
     setDeleting(true)
     try {
-      await api.deleteUser(deleteTarget.id)
+      await api.deletePerson(deleteTarget.id)
       mutate()
       setDeleteTarget(null)
       toast.success("Personal eliminado", { description: deleteTarget.nombre })

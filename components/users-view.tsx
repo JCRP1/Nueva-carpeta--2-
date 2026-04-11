@@ -72,22 +72,35 @@ interface UserData {
   id: string
   nombre: string
   email: string
-  rol: UserRole
+  rol: UserRole | string
   empresaId: string
   activo: boolean
   ultimoAcceso: string
 }
 
-function getRoleIcon(rol: UserRole) {
-  switch (rol) {
+function normalizeRole(rol: string): UserRole {
+  const normalized = rol.trim().toLowerCase()
+  if (normalized === "admin") return "administrador"
+  if (normalized === "administrador" || normalized === "tecnico" || normalized === "agricultor") {
+    return normalized
+  }
+  return "agricultor"
+}
+
+function getRoleIcon(rol: string) {
+  const safeRole = normalizeRole(rol)
+
+  switch (safeRole) {
     case "administrador": return Shield
     case "tecnico": return Wrench
     case "agricultor": return Sprout
   }
 }
 
-function getRoleColor(rol: UserRole) {
-  switch (rol) {
+function getRoleColor(rol: string) {
+  const safeRole = normalizeRole(rol)
+
+  switch (safeRole) {
     case "administrador": return "bg-primary/20 text-primary border-0"
     case "tecnico": return "bg-blue-500/20 text-blue-400 border-0"
     case "agricultor": return "bg-amber-500/20 text-amber-400 border-0"
@@ -112,11 +125,12 @@ export function UsersView() {
   const [newPassword, setNewPassword] = useState("")
   const [creating, setCreating] = useState(false)
   type Persona = {
-    id_persona: number
+    id?: string
+    id_persona?: number
     nombre: string
   }
 
-  const { data: personas = [] } = useSWR<Persona[]>("/api/personas", fetcher)
+  const { data: personas = [] } = useSWR<Persona[]>("/api/people", fetcher)
   const [selectedPersona, setSelectedPersona] = useState("")
 
   // Edit user
@@ -130,10 +144,20 @@ export function UsersView() {
   const [confirmAction, setConfirmAction] = useState<{ type: "toggle" | "reset"; user: UserData } | null>(null)
   const [confirming, setConfirming] = useState(false)
 
+  const personaOptions = personas
+    .map((p) => {
+      const id = p.id ?? (p.id_persona != null ? String(p.id_persona) : "")
+      return {
+        id,
+        nombre: p.nombre,
+      }
+    })
+    .filter((p) => p.id && p.nombre)
+
   const userList = users || []
   const filtered = userList.filter((u) => {
     const matchesSearch = u.nombre.toLowerCase().includes(search.toLowerCase()) || u.email.toLowerCase().includes(search.toLowerCase())
-    const matchesRole = roleFilter === "all" || u.rol === roleFilter
+    const matchesRole = roleFilter === "all" || normalizeRole(u.rol) === roleFilter
     return matchesSearch && matchesRole
   })
 
@@ -152,12 +176,15 @@ export function UsersView() {
     }
     setCreating(true)
     try {
-      await api.createUser({ nombre: selectedPersona,
-      email: newEmail, 
-      password: newPassword, 
-      rol: newRole })
+      await api.createUser({
+        personaId: selectedPersona,
+        email: newEmail,
+        password: newPassword,
+        rol: newRole,
+      })
       mutate()
       setCreateOpen(false)
+      setSelectedPersona("")
       setNewEmail("")
       setNewPassword("")
       setNewRole("agricultor")
@@ -173,7 +200,7 @@ export function UsersView() {
     setEditUser(user)
     setEditName(user.nombre)
     setEditEmail(user.email)
-    setEditRole(user.rol)
+    setEditRole(normalizeRole(user.rol))
   }
 
   async function handleSaveEdit() {
@@ -208,11 +235,9 @@ export function UsersView() {
   async function handleResetPassword(user: UserData) {
     setConfirming(true)
     try {
-      const tempPassword = Math.random().toString(36).slice(-10) + "A1!"
-      await api.updateUser(user.id, { password: tempPassword })
-      mutate()
+      await api.forgotPassword(user.email)
       setConfirmAction(null)
-      toast.success("Contrasena restablecida", { description: `Contrasena temporal: ${tempPassword}` })
+      toast.success("Enlace enviado", { description: `Se envio un correo de recuperacion a ${user.email}` })
     } catch (err) {
       toast.error("Error al restablecer", { description: err instanceof Error ? err.message : "Error" })
     } finally {
@@ -250,13 +275,13 @@ export function UsersView() {
                 <Select value={selectedPersona} onValueChange={(v) => setSelectedPersona(v)}>
                     <SelectTrigger><SelectValue placeholder="Nombre del usuario" /></SelectTrigger>
                     <SelectContent>
-                      {personas.length === 0 ? (
-                        <SelectItem value="">Cargando...</SelectItem>
+                      {personaOptions.length === 0 ? (
+                        <SelectItem value="no-data" disabled>Cargando...</SelectItem>
                       ) : (
-                        personas.map((p) => (
-        <SelectItem key={p.id_persona} value={p.id_persona.toString()}>
-          {p.nombre}
-        </SelectItem>)))}
+                        personaOptions.map((p) => (
+                        <SelectItem key={p.id} value={p.id}>
+                          {p.nombre}
+                        </SelectItem>)))}
                     </SelectContent>
                   </Select> 
                                
@@ -321,7 +346,7 @@ export function UsersView() {
             </TableHeader>
             <TableBody>
               {filtered.map((user) => {
-                getRoleColor(user.rol)
+                const safeRole = normalizeRole(user.rol)
                 return (
                   <TableRow key={user.id}>
                     <TableCell>
@@ -338,9 +363,9 @@ export function UsersView() {
                       </div>
                     </TableCell>
                     <TableCell>
-                      <Badge className={getRoleColor(user.rol)}>
-                         {React.createElement(getRoleIcon(user.rol), { className: "mr-1 h-4 w-4 inline" })}
-                         {user.rol.charAt(0).toUpperCase() + user.rol.slice(1)}
+                      <Badge className={getRoleColor(safeRole)}>
+                         {React.createElement(getRoleIcon(safeRole), { className: "mr-1 h-4 w-4 inline" })}
+                         {safeRole.charAt(0).toUpperCase() + safeRole.slice(1)}
                       </Badge>
                     </TableCell>
                     <TableCell>

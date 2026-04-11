@@ -40,6 +40,13 @@ import {
 } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   LineChart,
@@ -100,6 +107,17 @@ interface Alerta {
   umbral_max?: number
 }
 
+interface SensorProgramacion {
+  sensorId: number
+  intervaloSegundos: number
+  modo: "automatico" | "manual"
+  enviarAlertas: boolean
+  activo: boolean
+  actualizadoEn?: string
+  estadoComando?: string
+  fechaEnvio?: string
+}
+
 const SENSOR_ICONS: Record<string, React.ElementType> = {
   humedad_suelo: Droplets,
   temperatura: Thermometer,
@@ -144,6 +162,7 @@ export function SensorDetailView({ sensor, onBack, userRole, historialPreload }:
     umbralMax: sensor.umbralMax?.toString() || "",
   })
   const [saving, setSaving] = useState(false)
+  const [programSaving, setProgramSaving] = useState(false)
 
   const isAdmin = userRole === "administrador" || userRole === "tecnico"
   const Icon = SENSOR_ICONS[sensor.tipo] || Activity
@@ -153,6 +172,14 @@ export function SensorDetailView({ sensor, onBack, userRole, historialPreload }:
   const [historialData, setHistorialData] = useState<LecturaHistorial[]>(historialPreload || [])
   const [alertas, setAlertas] = useState<Alerta[]>([])
   const [isLoading, setIsLoading] = useState(false)
+  const [programLoading, setProgramLoading] = useState(false)
+  const [programInfo, setProgramInfo] = useState<SensorProgramacion | null>(null)
+  const [programForm, setProgramForm] = useState({
+    intervaloSegundos: "300",
+    modo: "automatico" as "automatico" | "manual",
+    enviarAlertas: true,
+    activo: true,
+  })
 
   useEffect(() => {
     console.log("========== SENSOR DETAIL VIEW ==========")
@@ -190,6 +217,34 @@ export function SensorDetailView({ sensor, onBack, userRole, historialPreload }:
         }
       })
       .catch(err => console.error("Error alertas:", err))
+
+    setProgramLoading(true)
+    api.getSensorProgramming(sensor.id)
+      .then((res) => {
+        const p = res.programacion as SensorProgramacion | null
+        if (!p) {
+          setProgramInfo(null)
+          setProgramForm({
+            intervaloSegundos: "300",
+            modo: "automatico",
+            enviarAlertas: true,
+            activo: true,
+          })
+          return
+        }
+
+        setProgramInfo(p)
+        setProgramForm({
+          intervaloSegundos: String(p.intervaloSegundos || 300),
+          modo: p.modo || "automatico",
+          enviarAlertas: p.enviarAlertas !== false,
+          activo: p.activo !== false,
+        })
+      })
+      .catch((err) => {
+        console.error("Error programacion:", err)
+      })
+      .finally(() => setProgramLoading(false))
   }, [sensor.id])
 
   const { data: greenhouses } = useSWR<Invernadero[]>("/api/greenhouses", fetcher)
@@ -253,6 +308,34 @@ export function SensorDetailView({ sensor, onBack, userRole, historialPreload }:
       setSaving(false)
     }
   }, [sensor.id, thresholdForm])
+
+  const handleSaveProgramming = useCallback(async () => {
+    const intervalo = Number(programForm.intervaloSegundos)
+    if (!Number.isFinite(intervalo) || intervalo < 10 || intervalo > 86400) {
+      toast.error("Intervalo invalido", { description: "Use un valor entre 10 y 86400 segundos" })
+      return
+    }
+
+    setProgramSaving(true)
+    try {
+      const response = await api.programSensor(sensor.id, {
+        intervaloSegundos: intervalo,
+        modo: programForm.modo,
+        enviarAlertas: programForm.enviarAlertas,
+        activo: programForm.activo,
+      })
+
+      const p = (response as { programacion?: SensorProgramacion }).programacion
+      if (p) {
+        setProgramInfo(p)
+      }
+      toast.success("Programacion enviada al dispositivo")
+    } catch (err) {
+      toast.error("No se pudo programar el sensor", { description: err instanceof Error ? err.message : "Error" })
+    } finally {
+      setProgramSaving(false)
+    }
+  }, [programForm, sensor.id])
 
   const formatDate = (dateStr: string | undefined) => {
     if (!dateStr) return "N/A"
@@ -463,6 +546,7 @@ export function SensorDetailView({ sensor, onBack, userRole, historialPreload }:
       <Tabs defaultValue="info" className="w-full">
         <TabsList>
           <TabsTrigger value="info">Informacion</TabsTrigger>
+          <TabsTrigger value="programming">Programacion</TabsTrigger>
           <TabsTrigger value="calibration">Calibracion</TabsTrigger>
           <TabsTrigger value="alerts">Alertas</TabsTrigger>
         </TabsList>
@@ -531,6 +615,119 @@ export function SensorDetailView({ sensor, onBack, userRole, historialPreload }:
                   </Button>
                 )}
               </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="programming" className="mt-4">
+          <Card>
+            <CardContent className="pt-6">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div className="flex flex-col gap-2">
+                  <Label>Intervalo de lectura (segundos)</Label>
+                  <Input
+                    type="number"
+                    min={10}
+                    max={86400}
+                    placeholder="300"
+                    value={programForm.intervaloSegundos}
+                    onChange={(e) =>
+                      setProgramForm((prev) => ({ ...prev, intervaloSegundos: e.target.value }))
+                    }
+                    disabled={!isAdmin}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Define cada cuantos segundos el dispositivo reporta una lectura.
+                  </p>
+                </div>
+
+                <div className="flex flex-col gap-2">
+                  <Label>Modo de operacion</Label>
+                  <Select
+                    value={programForm.modo}
+                    onValueChange={(v) =>
+                      setProgramForm((prev) => ({ ...prev, modo: v as "automatico" | "manual" }))
+                    }
+                    disabled={!isAdmin}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="automatico">Automatico</SelectItem>
+                      <SelectItem value="manual">Manual</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="flex flex-col gap-2">
+                  <Label>Alertas automaticas</Label>
+                  <Select
+                    value={programForm.enviarAlertas ? "si" : "no"}
+                    onValueChange={(v) =>
+                      setProgramForm((prev) => ({ ...prev, enviarAlertas: v === "si" }))
+                    }
+                    disabled={!isAdmin}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="si">Habilitadas</SelectItem>
+                      <SelectItem value="no">Deshabilitadas</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="flex flex-col gap-2">
+                  <Label>Estado de sensor programado</Label>
+                  <Select
+                    value={programForm.activo ? "activo" : "inactivo"}
+                    onValueChange={(v) =>
+                      setProgramForm((prev) => ({ ...prev, activo: v === "activo" }))
+                    }
+                    disabled={!isAdmin}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="activo">Activo</SelectItem>
+                      <SelectItem value="inactivo">Inactivo</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="mt-5 rounded-lg border p-4 text-sm">
+                <p className="font-medium text-foreground">Ultima programacion enviada</p>
+                {programLoading ? (
+                  <p className="mt-2 text-muted-foreground">Cargando...</p>
+                ) : programInfo ? (
+                  <div className="mt-2 space-y-1 text-muted-foreground">
+                    <p>Intervalo: {programInfo.intervaloSegundos}s</p>
+                    <p>Modo: {programInfo.modo}</p>
+                    <p>Alertas: {programInfo.enviarAlertas ? "si" : "no"}</p>
+                    <p>Activo: {programInfo.activo ? "si" : "no"}</p>
+                    {programInfo.fechaEnvio && <p>Enviado: {formatDateTime(programInfo.fechaEnvio)}</p>}
+                    {programInfo.estadoComando && <p>Estado comando: {programInfo.estadoComando}</p>}
+                  </div>
+                ) : (
+                  <p className="mt-2 text-muted-foreground">Sin programacion registrada para este sensor.</p>
+                )}
+              </div>
+
+              {isAdmin && (
+                <div className="mt-4 flex justify-end">
+                  <Button onClick={handleSaveProgramming} disabled={programSaving}>
+                    {programSaving ? (
+                      <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Programando...</>
+                    ) : (
+                      "Aplicar Programacion"
+                    )}
+                  </Button>
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>

@@ -1,6 +1,7 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useMemo, useState } from "react"
+import useSWR from "swr"
 import {
   LayoutDashboard,
   Droplets,
@@ -48,9 +49,16 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { empresa, alertas } from "@/lib/greensense-data"
+import { empresa } from "@/lib/greensense-data"
 import type { User as UserType } from "@/lib/greensense-data"
+import { fetcher } from "@/lib/api-client"
 import { toast } from "sonner"
+
+interface AlertNotification {
+  id: string
+  timestamp: string
+  resuelta: boolean
+}
 
 interface AppSidebarProps {
   activeView: string
@@ -81,9 +89,51 @@ export function AppSidebar({ activeView, onViewChange, onLogout, currentUser }: 
   const [profileName, setProfileName] = useState(currentUser.nombre)
   const [profileEmail, setProfileEmail] = useState(currentUser.email)
   const [savingProfile, setSavingProfile] = useState(false)
+  const [lastSeenAlertsAt, setLastSeenAlertsAt] = useState<string | null>(null)
+  const { data: alerts } = useSWR<AlertNotification[]>("/api/alerts", fetcher, {
+    refreshInterval: 15000,
+  })
 
-  const unresolvedAlerts = alertas.filter((a) => !a.resuelta).length
   const isAdmin = currentUser.rol === "administrador"
+  const alertsStorageKey = `greensense:alerts:last-seen:${currentUser.id}`
+
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    const stored = window.localStorage.getItem(alertsStorageKey)
+    setLastSeenAlertsAt(stored)
+  }, [alertsStorageKey])
+
+  const latestAlertTimestamp = useMemo(() => {
+    const alertList = alerts || []
+    if (alertList.length === 0) return null
+
+    return alertList.reduce<string | null>((latest, alert) => {
+      if (!alert.timestamp) return latest
+      if (!latest) return alert.timestamp
+      return new Date(alert.timestamp).getTime() > new Date(latest).getTime() ? alert.timestamp : latest
+    }, null)
+  }, [alerts])
+
+  useEffect(() => {
+    if (activeView !== "alertas") return
+    if (!latestAlertTimestamp) return
+    if (typeof window === "undefined") return
+
+    window.localStorage.setItem(alertsStorageKey, latestAlertTimestamp)
+    setLastSeenAlertsAt(latestAlertTimestamp)
+  }, [activeView, latestAlertTimestamp, alertsStorageKey])
+
+  const newUnresolvedAlerts = useMemo(() => {
+    const alertList = alerts || []
+    const lastSeenTs = lastSeenAlertsAt ? new Date(lastSeenAlertsAt).getTime() : 0
+
+    return alertList.filter((alert) => {
+      if (alert.resuelta) return false
+      const alertTs = new Date(alert.timestamp).getTime()
+      if (Number.isNaN(alertTs)) return false
+      return alertTs > lastSeenTs
+    }).length
+  }, [alerts, lastSeenAlertsAt])
 
   function handleSaveProfile() {
     if (!isAdmin) {
@@ -129,9 +179,9 @@ export function AppSidebar({ activeView, onViewChange, onLogout, currentUser }: 
                     >
                       <item.icon className="h-4 w-4" />
                       <span>{item.label}</span>
-                      {item.badge && unresolvedAlerts > 0 ? (
+                      {item.badge && newUnresolvedAlerts > 0 ? (
                         <Badge className="ml-auto h-5 min-w-5 justify-center rounded-full bg-destructive text-destructive-foreground text-[10px] px-1.5">
-                          {unresolvedAlerts}
+                          {newUnresolvedAlerts}
                         </Badge>
                       ) : null}
                     </SidebarMenuButton>
