@@ -490,7 +490,7 @@ export function SensorsView({ selectedGreenhouse, userRole }: SensorsViewProps) 
                 </div>
               </div>
               <DialogFooter>
-                <DialogClose asChild><Button variant="outline">Cancelar</Button></DialogClose>
+                <Button variant="outline">Cancelar</Button>
                 <Button onClick={handleSubmit} disabled={saving}>
                   {saving ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Guardando...</> : editMode ? "Actualizar" : "Crear Sensor"}
                 </Button>
@@ -522,7 +522,7 @@ export function SensorsView({ selectedGreenhouse, userRole }: SensorsViewProps) 
                 </div>
               </div>
               <DialogFooter>
-                <DialogClose asChild><Button variant="outline">Cancelar</Button></DialogClose>
+                <Button variant="outline">Cancelar</Button>
                 <Button onClick={async () => {
                   if (!newMarca.nombre) { toast.error("El nombre es requerido"); return; }
                   setSavingMarca(true)
@@ -584,7 +584,7 @@ export function SensorsView({ selectedGreenhouse, userRole }: SensorsViewProps) 
                 </div>
               </div>
               <DialogFooter>
-                <DialogClose asChild><Button variant="outline">Cancelar</Button></DialogClose>
+                <Button variant="outline">Cancelar</Button>
                 <Button onClick={async () => {
                   if (!newModelo.nombre) { toast.error("El nombre es requerido"); return; }
                   setSavingModelo(true)
@@ -636,7 +636,7 @@ export function SensorsView({ selectedGreenhouse, userRole }: SensorsViewProps) 
                 </div>
               </div>
               <DialogFooter>
-                <DialogClose asChild><Button variant="outline">Cancelar</Button></DialogClose>
+                <Button variant="outline">Cancelar</Button>
                 <Button onClick={async () => {
                   if (!newTipoSensor.nombre) { toast.error("El nombre es requerido"); return; }
                   setSavingTipoSensor(true)

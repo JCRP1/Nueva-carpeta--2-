@@ -546,7 +546,6 @@ export function ZonesView({ selectedGreenhouse, userRole }: ZonesViewProps) {
                 </div>
               </div>
               <DialogFooter>
-                <DialogClose asChild><Button variant="outline">Cancelar</Button></DialogClose>
                 <Button onClick={handleCreateZone} disabled={creatingZone}>
                   {creatingZone ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Creando...</> : "Crear Zona"}
                 </Button>

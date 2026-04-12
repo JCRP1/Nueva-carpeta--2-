@@ -322,61 +322,9 @@ export function UsersView() {
                 </div>
               </div>
               <DialogFooter>
-                <DialogClose asChild><Button variant="outline">Cancelar</Button></DialogClose>
+                <Button variant="outline">Cancelar</Button>
                 <Button onClick={handleCreate} disabled={creating}>
                   {creating ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Creando...</> : "Crear Usuario"}
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-          <Dialog open={createRoleOpen} onOpenChange={setCreateRoleOpen}>
-            <DialogTrigger asChild>
-              <Button size="sm" variant="outline"><ShieldPlus className="mr-2 h-4 w-4" />Nuevo Rol</Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle className="text-foreground">Crear Nuevo Rol</DialogTitle>
-              </DialogHeader>
-              <div className="flex flex-col gap-4 py-4">
-                <div className="flex flex-col gap-2">
-                  <Label>Nombre del Rol *</Label>
-                  <Input placeholder="Ej: Gerente" value={newRoleName} onChange={(e) => setNewRoleName(e.target.value)} />
-                </div>
-                <div className="flex flex-col gap-2">
-                  <Label>Descripcion</Label>
-                  <Input placeholder="Descripcion del rol" value={newRoleDescription} onChange={(e) => setNewRoleDescription(e.target.value)} />
-                </div>
-              </div>
-              <DialogFooter>
-                <DialogClose asChild><Button variant="outline">Cancelar</Button></DialogClose>
-                <Button onClick={async () => {
-                  if (!newRoleName.trim()) {
-                    toast.error("El nombre del rol es requerido")
-                    return
-                  }
-                  setCreatingRole(true)
-                  try {
-                    const res = await fetch("/api/roles", {
-                      method: "POST",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({ nombre: newRoleName.trim(), descripcion: newRoleDescription.trim() })
-                    })
-                    const data = await res.json()
-                    if (!res.ok) {
-                      toast.error(data.error || "Error al crear rol")
-                    } else {
-                      toast.success("Rol creado exitosamente")
-                      setCreateRoleOpen(false)
-                      setNewRoleName("")
-                      setNewRoleDescription("")
-                    }
-                  } catch (err) {
-                    toast.error("Error al crear rol")
-                  } finally {
-                    setCreatingRole(false)
-                  }
-                }} disabled={creatingRole}>
-                  {creatingRole ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Creando...</> : "Crear Rol"}
                 </Button>
               </DialogFooter>
             </DialogContent>

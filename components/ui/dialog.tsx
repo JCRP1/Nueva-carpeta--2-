@@ -69,21 +69,25 @@ DialogHeader.displayName = 'DialogHeader'
 
 const DialogFooter = ({
   className,
+  children,
   ...props
 }: React.HTMLAttributes<HTMLDivElement>) => {
-  const { children, ...rest } = props
+  const childrenArray = React.Children.toArray(children)
+  
   return (
     <div
       className={cn(
         'flex flex-col-reverse sm:flex-row sm:justify-between sm:space-x-2',
         className,
       )}
-      {...rest}
+      {...props}
     >
       <DialogPrimitive.Close className="bg-secondary text-secondary-foreground hover:bg-secondary/80 px-4 py-2 rounded-md text-sm">
         Salir
       </DialogPrimitive.Close>
-      {children}
+      <div className="flex flex-col-reverse sm:flex-row sm:space-x-2">
+        {childrenArray}
+      </div>
     </div>
   )
 }

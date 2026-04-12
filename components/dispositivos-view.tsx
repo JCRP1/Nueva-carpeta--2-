@@ -333,7 +333,7 @@ export function DispositivosView() {
             </div>
           </div>
           <DialogFooter>
-            <DialogClose asChild><Button variant="outline">Cancelar</Button></DialogClose>
+            <Button variant="outline">Cancelar</Button>
             <Button onClick={handleSubmit} disabled={saving}>
               {saving ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Guardando...</> : editMode ? "Actualizar" : "Crear"}
             </Button>
@@ -353,7 +353,6 @@ export function DispositivosView() {
             </p>
           </div>
           <DialogFooter>
-            <DialogClose asChild><Button variant="outline">Cancelar</Button></DialogClose>
             <Button variant="destructive" onClick={handleDelete} disabled={deleting}>
               {deleting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Eliminando...</> : "Eliminar"}
             </Button>
