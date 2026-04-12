@@ -17,7 +17,7 @@ const quickAccess = [
 ]
 
 interface LoginViewProps {
-  onLogin: (user: User) => void
+  onLogin: (user: User, message?: string) => void
 }
 
 export function LoginView({ onLogin }: LoginViewProps) {
@@ -29,6 +29,7 @@ export function LoginView({ onLogin }: LoginViewProps) {
   const [view, setView] = useState<"login" | "forgot">("login")
   const [forgotEmail, setForgotEmail] = useState("")
   const [forgotSent, setForgotSent] = useState(false)
+  const [welcomeMessage, setWelcomeMessage] = useState("")
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault()
@@ -40,7 +41,8 @@ export function LoginView({ onLogin }: LoginViewProps) {
     setLoading(true)
     try {
       const res = await api.login(email, password)
-      onLogin(res.user as unknown as User)
+      const msg = res.message || ""
+      onLogin(res.user as unknown as User, msg)
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Error al iniciar sesion")
       setLoading(false)
@@ -54,7 +56,7 @@ export function LoginView({ onLogin }: LoginViewProps) {
     setError("")
     try {
       const res = await api.login(cred.email, cred.password)
-      onLogin(res.user as unknown as User)
+      onLogin(res.user as unknown as User, "")
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Error al iniciar sesion. Ejecute npm run db:seed primero.")
       setLoading(false)
@@ -150,6 +152,12 @@ export function LoginView({ onLogin }: LoginViewProps) {
                 {error && (
                   <div className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive">
                     {error}
+                  </div>
+                )}
+
+                {welcomeMessage && (
+                  <div className="rounded-lg bg-primary/10 p-3 text-sm text-primary">
+                    {welcomeMessage}
                   </div>
                 )}
 

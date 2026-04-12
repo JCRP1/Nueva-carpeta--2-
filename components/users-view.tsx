@@ -125,22 +125,13 @@ export function UsersView() {
   const [newPassword, setNewPassword] = useState("")
   const [creating, setCreating] = useState(false)
   type Persona = {
-<<<<<<< HEAD
-    id?: string
-    id_persona?: number
-=======
     id: string
->>>>>>> eb86f77922ddcc4e11358d8b3bb01000f284cb94
     nombre: string
   }
 
   const { data: personas = [] } = useSWR<Persona[]>("/api/people", fetcher)
-<<<<<<< HEAD
-  const [selectedPersona, setSelectedPersona] = useState("")
-=======
   const [selectedPersonaId, setSelectedPersonaId] = useState("")
   const [selectedPersonaNombre, setSelectedPersonaNombre] = useState("")
->>>>>>> eb86f77922ddcc4e11358d8b3bb01000f284cb94
 
   // Edit user
   const [editUser, setEditUser] = useState<UserData | null>(null)
@@ -185,20 +176,12 @@ export function UsersView() {
     }
     setCreating(true)
     try {
-<<<<<<< HEAD
-      await api.createUser({
-        personaId: selectedPersona,
-        email: newEmail,
-        password: newPassword,
-        rol: newRole,
-=======
       await api.createUser({ 
         nombre: selectedPersonaNombre,
         email: newEmail, 
         password: newPassword, 
         rol: newRole,
         id_persona: selectedPersonaId
->>>>>>> eb86f77922ddcc4e11358d8b3bb01000f284cb94
       })
       mutate()
       setCreateOpen(false)
@@ -299,15 +282,6 @@ export function UsersView() {
                 }}>
                     <SelectTrigger><SelectValue placeholder="Nombre del usuario" /></SelectTrigger>
                     <SelectContent>
-<<<<<<< HEAD
-                      {personaOptions.length === 0 ? (
-                        <SelectItem value="no-data" disabled>Cargando...</SelectItem>
-                      ) : (
-                        personaOptions.map((p) => (
-                        <SelectItem key={p.id} value={p.id}>
-                          {p.nombre}
-                        </SelectItem>)))}
-=======
                       {personas.length === 0 ? (
                         <div className="relative flex w-full cursor-default select-none items-center rounded-sm py-1.5 pl-8 pr-2 text-sm text-muted-foreground">Cargando personas...</div>
                       ) : (
@@ -315,7 +289,6 @@ export function UsersView() {
         <SelectItem key={p.id} value={p.id}>
           {p.nombre}
         </SelectItem>)))}
->>>>>>> eb86f77922ddcc4e11358d8b3bb01000f284cb94
                     </SelectContent>
                   </Select> 
                                

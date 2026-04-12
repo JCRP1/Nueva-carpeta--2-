@@ -31,7 +31,7 @@ export async function POST(req: Request) {
       origen: "web",
       valorNuevo: { correo: user.correo, rol: user.rol },
     })
-    return NextResponse.json({ user: sanitizeUser(user) })
+    return NextResponse.json({ user: sanitizeUser(user), message: `Bienvenido al sistema, ${user.nombre.split(" ")[0]}!` })
   } catch (err) {
     console.error("[GreenSense] Login error:", err)
     return NextResponse.json({ error: "Error del servidor" }, { status: 500 })

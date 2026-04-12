@@ -1,4 +1,4 @@
-# TODO: Fix Everything (Arreglar Todo) - GreenSense Project
+ces# TODO: Fix Everything (Arreglar Todo) - GreenSense Project
 
 ## Current Status
 - [x] Analyzed project structure, ARCHITECTURE.md, key files
