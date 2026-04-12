@@ -17,6 +17,7 @@ import {
   Activity,
   HardHat,
   Cpu,
+  Shield,
 } from "lucide-react"
 import {
   Sidebar,
@@ -67,7 +68,13 @@ interface AppSidebarProps {
   currentUser: UserType
 }
 
-const navItems = [
+const roleAccess: Record<string, string[]> = {
+  administrador: ["dashboard", "zonas", "cultivos", "sensores", "alertas", "invernaderos", "reportes", "personal", "usuarios", "roles", "dispositivos", "configuracion"],
+  tecnico: ["dashboard", "zonas", "cultivos", "alertas", "invernaderos", "reportes"],
+  agricultor: ["dashboard", "zonas", "cultivos", "alertas", "invernaderos", "reportes"],
+}
+
+const allNavItems = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
   { id: "zonas", label: "Zonas de Riego", icon: Droplets },
   { id: "cultivos", label: "Cultivos", icon: Leaf },
@@ -80,6 +87,7 @@ const navItems = [
 const adminItems = [
   { id: "personal", label: "Personal", icon: HardHat },
   { id: "usuarios", label: "Usuarios", icon: Users },
+  { id: "roles", label: "Roles", icon: Shield },
   { id: "dispositivos", label: "Dispositivos", icon: Cpu },
   { id: "configuracion", label: "Configuracion", icon: Settings },
 ]
@@ -170,23 +178,25 @@ export function AppSidebar({ activeView, onViewChange, onLogout, currentUser }: 
             <SidebarGroupLabel>Monitoreo</SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
-                {navItems.map((item) => (
-                  <SidebarMenuItem key={item.id}>
-                    <SidebarMenuButton
-                      isActive={activeView === item.id}
-                      onClick={() => onViewChange(item.id)}
-                      tooltip={item.label}
-                    >
-                      <item.icon className="h-4 w-4" />
-                      <span>{item.label}</span>
-                      {item.badge && newUnresolvedAlerts > 0 ? (
-                        <Badge className="ml-auto h-5 min-w-5 justify-center rounded-full bg-destructive text-destructive-foreground text-[10px] px-1.5">
-                          {newUnresolvedAlerts}
-                        </Badge>
-                      ) : null}
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                ))}
+                {allNavItems
+                  .filter((item) => roleAccess[currentUser.rol]?.includes(item.id))
+                  .map((item) => (
+                    <SidebarMenuItem key={item.id}>
+                      <SidebarMenuButton
+                        isActive={activeView === item.id}
+                        onClick={() => onViewChange(item.id)}
+                        tooltip={item.label}
+                      >
+                        <item.icon className="h-4 w-4" />
+                        <span>{item.label}</span>
+                        {item.badge && newUnresolvedAlerts > 0 ? (
+                          <Badge className="ml-auto h-5 min-w-5 justify-center rounded-full bg-destructive text-destructive-foreground text-[10px] px-1.5">
+                            {newUnresolvedAlerts}
+                          </Badge>
+                        ) : null}
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  ))}
               </SidebarMenu>
             </SidebarGroupContent>
           </SidebarGroup>

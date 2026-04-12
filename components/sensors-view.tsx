@@ -227,8 +227,24 @@ export function SensorsView({ selectedGreenhouse, userRole }: SensorsViewProps) 
   }, [])
 
   const handleSubmit = useCallback(async () => {
-    if (!formData.tipo || !formData.idInvernadero) {
-      toast.error("Complete los campos requeridos", { description: "Tipo e invernadero son requeridos" })
+    const requiredFields = [
+      { field: formData.tipo, name: "Tipo" },
+      { field: formData.idInvernadero, name: "Invernadero" },
+      { field: formData.estado, name: "Estado" },
+      { field: formData.marca, name: "Marca" },
+      { field: formData.modelo, name: "Modelo" },
+      { field: formData.ubicacionFisica, name: "Ubicación Física" },
+      { field: formData.unidadMedida, name: "Unidad de Medida" },
+      { field: formData.precision, name: "Precisión" },
+      { field: formData.rangoMin, name: "Rango Mín" },
+      { field: formData.rangoMax, name: "Rango Máx" },
+      { field: formData.fechaInstalacion, name: "Fecha Instalación" },
+      { field: formData.ultimoCalibrado, name: "Último Calibrado" },
+    ]
+
+    const missingFields = requiredFields.filter(f => !f.field)
+    if (missingFields.length > 0) {
+      toast.error("Complete todos los campos requeridos", { description: `Faltan: ${missingFields.map(f => f.name).join(", ")}` })
       return
     }
 
@@ -333,7 +349,7 @@ export function SensorsView({ selectedGreenhouse, userRole }: SensorsViewProps) 
                   </Select>
                 </div>
                 <div className="flex flex-col gap-2">
-                  <Label>Estado</Label>
+                  <Label>Estado *</Label>
                   <Select value={formData.estado} onValueChange={(v) => setFormData({ ...formData, estado: v })}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
@@ -344,11 +360,11 @@ export function SensorsView({ selectedGreenhouse, userRole }: SensorsViewProps) 
                   </Select>
                 </div>
                 <div className="flex flex-col gap-2">
-                  <Label>Marca</Label>
+                  <Label>Marca *</Label>
                   <Input placeholder="Ej: DHT22" value={formData.marca} onChange={(e) => setFormData({ ...formData, marca: e.target.value })} />
                 </div>
                 <div className="flex flex-col gap-2">
-                  <Label>Modelo</Label>
+                  <Label>Modelo *</Label>
                   <Input placeholder="Ej: DHT22-AM2302" value={formData.modelo} onChange={(e) => setFormData({ ...formData, modelo: e.target.value })} />
                 </div>
                 <div className="flex flex-col gap-2">
@@ -366,31 +382,31 @@ export function SensorsView({ selectedGreenhouse, userRole }: SensorsViewProps) 
                   </Select>
                 </div>
                 <div className="flex flex-col gap-2">
-                  <Label>Ubicación Física</Label>
+                  <Label>Ubicación Física *</Label>
                   <Input placeholder="Ej: Zona A - Esquina NW" value={formData.ubicacionFisica} onChange={(e) => setFormData({ ...formData, ubicacionFisica: e.target.value })} />
                 </div>
                 <div className="flex flex-col gap-2">
-                  <Label>Unidad de Medida</Label>
+                  <Label>Unidad de Medida *</Label>
                   <Input placeholder="Ej: %, °C, ppm" value={formData.unidadMedida} onChange={(e) => setFormData({ ...formData, unidadMedida: e.target.value })} />
                 </div>
                 <div className="flex flex-col gap-2">
-                  <Label>Precisión</Label>
+                  <Label>Precisión *</Label>
                   <Input type="number" step="0.01" placeholder="0.1" value={formData.precision} onChange={(e) => setFormData({ ...formData, precision: e.target.value })} />
                 </div>
                 <div className="flex flex-col gap-2">
-                  <Label>Rango Mín</Label>
+                  <Label>Rango Mín *</Label>
                   <Input type="number" placeholder="0" value={formData.rangoMin} onChange={(e) => setFormData({ ...formData, rangoMin: e.target.value })} />
                 </div>
                 <div className="flex flex-col gap-2">
-                  <Label>Rango Máx</Label>
+                  <Label>Rango Máx *</Label>
                   <Input type="number" placeholder="100" value={formData.rangoMax} onChange={(e) => setFormData({ ...formData, rangoMax: e.target.value })} />
                 </div>
                 <div className="flex flex-col gap-2">
-                  <Label>Fecha Instalación</Label>
+                  <Label>Fecha Instalación *</Label>
                   <Input type="date" value={formData.fechaInstalacion} onChange={(e) => setFormData({ ...formData, fechaInstalacion: e.target.value })} />
                 </div>
                 <div className="flex flex-col gap-2">
-                  <Label>Último Calibrado</Label>
+                  <Label>Último Calibrado *</Label>
                   <Input type="date" value={formData.ultimoCalibrado} onChange={(e) => setFormData({ ...formData, ultimoCalibrado: e.target.value })} />
                 </div>
                 <div className="col-span-2 flex flex-col gap-2">

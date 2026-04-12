@@ -2,14 +2,52 @@ import { NextResponse } from "next/server"
 import { hashSync } from "bcryptjs"
 import { requireAdmin } from "@/lib/auth"
 import { query, execute } from "@/lib/db"
-import bcrypt from "bcryptjs"
+import { registrarBitacora } from "@/lib/bitacora"
+
+const mapUser = (row: any): any => ({
+  id: String(row.id_usuario),
+  id_usuario: Number(row.id_usuario),
+  nombre: row.nombre || "",
+  email: row.correo || row.email || "",
+  correo: row.correo || "",
+  contraseña: row.contraseña || "",
+  rol: normalizeRole(row.rol),
+  activo: row.activo !== 0 && row.activo !== false && row.activo !== "false",
+  ultimoAcceso: row.fecha_registro?.toString() || new Date().toISOString(),
+  fecha_registro: row.fecha_registro?.toString() || new Date().toISOString(),
+})
+
+function normalizeRole(rol: string | null | undefined): string {
+  const r = String(rol || "").toLowerCase()
+  if (r === "admin" || r === "administrador") return "administrador"
+  if (r === "tecnico" || r === "técnico") return "tecnico"
+  return "agricultor"
+}
+
+function handleAuthError(e: any): NextResponse | null {
+  if (e.message === "FORBIDDEN") {
+    return NextResponse.json({ error: "Solo administradores" }, { status: 403 })
+  }
+  if (e.message === "UNAUTHORIZED") {
+    return NextResponse.json({ error: "No autorizado" }, { status: 401 })
+  }
+  return null
+}
 
 export async function GET() {
   try {
-    await requireAdmin()
+    const session = await requireAdmin()
 
     const result = await query<Record<string, unknown>[]>(
-      `${USER_SELECT}
+      `SELECT 
+        u.id_usuario,
+        u.nombre,
+        u.correo,
+        u.contraseña,
+        u.rol,
+        u.activo,
+        u.fecha_registro
+       FROM Usuarios u
        ORDER BY u.nombre, u.correo`
     )
 
@@ -18,8 +56,8 @@ export async function GET() {
     const authError = handleAuthError(e)
     if (authError) return authError
 
-    console.error("[Users GET]", e)
-    return NextResponse.json({ error: "Error cargando usuarios" }, { status: 500 })
+    console.error("[Users GET error]", e.message || e.toString())
+    return NextResponse.json({ error: "Error: " + (e.message || "Unknown") }, { status: 500 })
   }
 }
 
@@ -84,7 +122,16 @@ export async function POST(request: Request) {
     const insertedId = result.recordset[0]?.id_usuario
 
     const rows = await query<Record<string, unknown>[]>(
-      `${USER_SELECT}
+      `SELECT 
+        u.id_usuario,
+        u.id_empresa,
+        u.nombre,
+        u.correo,
+        u.contraseña,
+        u.rol,
+        u.activo,
+        u.fecha_registro
+       FROM Usuarios u
        WHERE u.id_usuario = @id`,
       { id: Number(insertedId) }
     )
@@ -119,5 +166,3 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Error creando usuario" }, { status: 500 })
   }
 }
-
-

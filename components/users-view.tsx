@@ -36,6 +36,7 @@ import {
 import {
   UserPlus,
   Shield,
+  ShieldPlus,
   Wrench,
   Sprout,
   MoreVertical,
@@ -143,6 +144,12 @@ export function UsersView() {
   // Confirm dialogs
   const [confirmAction, setConfirmAction] = useState<{ type: "toggle" | "reset"; user: UserData } | null>(null)
   const [confirming, setConfirming] = useState(false)
+
+  // Create role
+  const [createRoleOpen, setCreateRoleOpen] = useState(false)
+  const [newRoleName, setNewRoleName] = useState("")
+  const [newRoleDescription, setNewRoleDescription] = useState("")
+  const [creatingRole, setCreatingRole] = useState(false)
 
   const personaOptions = personas
     .map((p) => {
@@ -264,63 +271,117 @@ export function UsersView() {
           <h2 className="text-lg font-semibold text-foreground">Gestion de Usuarios</h2>
           <p className="text-sm text-muted-foreground">Administre los usuarios y permisos del sistema ({userList.length} usuarios)</p>
         </div>
-        <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-          <DialogTrigger asChild>
-            <Button size="sm"><UserPlus className="mr-2 h-4 w-4" />Nuevo Usuario</Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle className="text-foreground">Crear Nuevo Usuario</DialogTitle>
-            </DialogHeader>
-            <div className="flex flex-col gap-4 py-4">
-              <div className="flex flex-col gap-2">
-                <Label>Nombre Completo</Label>
-                <Select value={selectedPersonaId} onValueChange={(v) => {
-                  const persona = personas.find(p => p.id === v)
-                  setSelectedPersonaId(v)
-                  setSelectedPersonaNombre(persona?.nombre || "")
-                }}>
-                    <SelectTrigger><SelectValue placeholder="Nombre del usuario" /></SelectTrigger>
+        <div className="flex gap-2">
+          <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+            <DialogTrigger asChild>
+              <Button size="sm"><UserPlus className="mr-2 h-4 w-4" />Nuevo Usuario</Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle className="text-foreground">Crear Nuevo Usuario</DialogTitle>
+              </DialogHeader>
+              <div className="flex flex-col gap-4 py-4">
+                <div className="flex flex-col gap-2">
+                  <Label>Nombre Completo</Label>
+                  <Select value={selectedPersonaId} onValueChange={(v) => {
+                    const persona = personas.find(p => p.id === v)
+                    setSelectedPersonaId(v)
+                    setSelectedPersonaNombre(persona?.nombre || "")
+                  }}>
+                      <SelectTrigger><SelectValue placeholder="Nombre del usuario" /></SelectTrigger>
+                      <SelectContent>
+                        {personas.length === 0 ? (
+                          <div className="relative flex w-full cursor-default select-none items-center rounded-sm py-1.5 pl-8 pr-2 text-sm text-muted-foreground">Cargando personas...</div>
+                        ) : (
+                          personas.map((p) => (
+            <SelectItem key={p.id} value={p.id}>
+              {p.nombre}
+            </SelectItem>)))}
+                      </SelectContent>
+                    </Select> 
+                                  
+                    </div>
+                <div className="flex flex-col gap-2">
+                  <Label>Correo Electronico</Label>
+                  <Input type="email" placeholder="usuario@greensense.io" value={newEmail} onChange={(e) => setNewEmail(e.target.value)} />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Label>Rol</Label>
+                  <Select value={newRole} onValueChange={(v) => setNewRole(v as UserRole)}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      {personas.length === 0 ? (
-                        <div className="relative flex w-full cursor-default select-none items-center rounded-sm py-1.5 pl-8 pr-2 text-sm text-muted-foreground">Cargando personas...</div>
-                      ) : (
-                        personas.map((p) => (
-        <SelectItem key={p.id} value={p.id}>
-          {p.nombre}
-        </SelectItem>)))}
+                      <SelectItem value="administrador">Administrador</SelectItem>
+                      <SelectItem value="tecnico">Tecnico</SelectItem>
+                      <SelectItem value="agricultor">Agricultor</SelectItem>
                     </SelectContent>
-                  </Select> 
-                               
-                  </div>
-              <div className="flex flex-col gap-2">
-                <Label>Correo Electronico</Label>
-                <Input type="email" placeholder="usuario@greensense.io" value={newEmail} onChange={(e) => setNewEmail(e.target.value)} />
+                  </Select>
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Label>Contrasena </Label>
+                  <Input type="password" placeholder="Min. 8 caracteres" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
+                </div>
               </div>
-              <div className="flex flex-col gap-2">
-                <Label>Rol</Label>
-                <Select value={newRole} onValueChange={(v) => setNewRole(v as UserRole)}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="administrador">Administrador</SelectItem>
-                    <SelectItem value="tecnico">Tecnico</SelectItem>
-                    <SelectItem value="agricultor">Agricultor</SelectItem>
-                  </SelectContent>
-                </Select>
+              <DialogFooter>
+                <DialogClose asChild><Button variant="outline">Cancelar</Button></DialogClose>
+                <Button onClick={handleCreate} disabled={creating}>
+                  {creating ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Creando...</> : "Crear Usuario"}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+          <Dialog open={createRoleOpen} onOpenChange={setCreateRoleOpen}>
+            <DialogTrigger asChild>
+              <Button size="sm" variant="outline"><ShieldPlus className="mr-2 h-4 w-4" />Nuevo Rol</Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle className="text-foreground">Crear Nuevo Rol</DialogTitle>
+              </DialogHeader>
+              <div className="flex flex-col gap-4 py-4">
+                <div className="flex flex-col gap-2">
+                  <Label>Nombre del Rol *</Label>
+                  <Input placeholder="Ej: Gerente" value={newRoleName} onChange={(e) => setNewRoleName(e.target.value)} />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Label>Descripcion</Label>
+                  <Input placeholder="Descripcion del rol" value={newRoleDescription} onChange={(e) => setNewRoleDescription(e.target.value)} />
+                </div>
               </div>
-              <div className="flex flex-col gap-2">
-                <Label>Contrasena </Label>
-                <Input type="password" placeholder="Min. 8 caracteres" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
-              </div>
-            </div>
-            <DialogFooter>
-              <DialogClose asChild><Button variant="outline">Cancelar</Button></DialogClose>
-              <Button onClick={handleCreate} disabled={creating}>
-                {creating ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Creando...</> : "Crear Usuario"}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+              <DialogFooter>
+                <DialogClose asChild><Button variant="outline">Cancelar</Button></DialogClose>
+                <Button onClick={async () => {
+                  if (!newRoleName.trim()) {
+                    toast.error("El nombre del rol es requerido")
+                    return
+                  }
+                  setCreatingRole(true)
+                  try {
+                    const res = await fetch("/api/roles", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ nombre: newRoleName.trim(), descripcion: newRoleDescription.trim() })
+                    })
+                    const data = await res.json()
+                    if (!res.ok) {
+                      toast.error(data.error || "Error al crear rol")
+                    } else {
+                      toast.success("Rol creado exitosamente")
+                      setCreateRoleOpen(false)
+                      setNewRoleName("")
+                      setNewRoleDescription("")
+                    }
+                  } catch (err) {
+                    toast.error("Error al crear rol")
+                  } finally {
+                    setCreatingRole(false)
+                  }
+                }} disabled={creatingRole}>
+                  {creatingRole ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Creando...</> : "Crear Rol"}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </div>
       </div>
 
       <div className="flex items-center gap-3">
