@@ -53,7 +53,7 @@ const viewLabels: Record<string, string> = {
 
 const roleAccess: Record<UserRole, string[]> = {
   administrador: ["dashboard", "zonas", "cultivos", "sensores", "alertas", "personal", "invernaderos", "reportes", "usuarios", "dispositivos", "configuracion"],
-  tecnico: ["dashboard", "zonas", "cultivos", "sensores", "alertas", "invernaderos", "reportes"],
+  tecnico: ["dashboard", "zonas", "cultivos", "alertas", "invernaderos", "reportes"],
   agricultor: ["dashboard", "zonas", "cultivos", "alertas", "invernaderos", "reportes"],
 }
 
