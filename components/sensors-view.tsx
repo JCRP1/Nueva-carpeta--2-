@@ -166,11 +166,9 @@ export function SensorsView({ selectedGreenhouse, userRole }: SensorsViewProps) 
   const [savingMarca, setSavingMarca] = useState(false)
   const [savingModelo, setSavingModelo] = useState(false)
 
-  const { data: modelos, mutate: mutateModelos } = useSWR<Modelo[]>(
-    idMarca ? `/api/modelos?marca=${idMarca}` : null,
-    fetcher,
-    { refreshInterval: 0 }
-  )
+  const { data: allModelos, mutate: mutateModelos } = useSWR<Modelo[]>("/api/modelos", fetcher, { refreshInterval: 0 })
+  
+  const modelos = idMarca && allModelos ? allModelos.filter(m => Number(m.marcaId) === Number(idMarca)) : allModelos || []
 
   const isAdmin = userRole === "administrador" || userRole === "tecnico"
   const ghList = greenhouses || []
@@ -543,6 +541,12 @@ export function SensorsView({ selectedGreenhouse, userRole }: SensorsViewProps) 
                 <DialogTitle>Nuevo Modelo</DialogTitle>
               </DialogHeader>
               <div className="flex flex-col gap-4 py-4">
+                <div className="flex flex-col gap-2">
+                  <Label>Marca</Label>
+                  <div className="flex h-10 items-center rounded-md border bg-muted/20 px-3 py-2 text-sm text-muted-foreground">
+                    {marcas?.find(m => String(m.id) === idMarca)?.nombre || "Sin marca seleccionada"}
+                  </div>
+                </div>
                 <div className="flex flex-col gap-2">
                   <Label>Nombre *</Label>
                   <Input placeholder="Ej: DHT22-AM2302" value={newModelo.nombre} onChange={(e) => setNewModelo({ ...newModelo, nombre: e.target.value })} />
