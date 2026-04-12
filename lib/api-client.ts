@@ -232,9 +232,14 @@ deleteUser: (id: string) =>
     }),
 }
 
-// SWR fetcher
-export const fetcher = (url: string) =>
-  fetch(url).then((r) => {
-    if (!r.ok) throw new Error(`HTTP ${r.status}`)
-    return r.json()
+// SWR fetcher - ensure cookies are sent
+export const fetcher = async (url: string) => {
+  const res = await fetch(url, {
+    credentials: "include",
   })
+  if (!res.ok) {
+    const error = new Error(`HTTP ${res.status}`)
+    throw error
+  }
+  return res.json()
+}

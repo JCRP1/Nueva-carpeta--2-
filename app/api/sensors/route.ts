@@ -3,81 +3,9 @@ import { requireAuth } from "@/lib/auth"
 import { query } from "@/lib/db"
 import { registrarBitacora } from "@/lib/bitacora"
 
-/* =========================
-   CREAR
-========================= */
+export const dynamic = "force-dynamic"
 
-export async function POST(req: Request) {
-  try {
-    const session = await requireAuth()
-    const body = await req.json()
-
-    const {
-      tipo,
-      modelo,
-      estado,
-      marca,
-      rangoMin,
-      rangoMax,
-      unidadMedida,
-      precision,
-      fechaInstalacion,
-      ubicacionFisica,
-      ultimoCalibrado,
-      observaciones,
-      idInvernadero,
-      idDispositivo,
-    } = body
-
-    if (!tipo || !idInvernadero) {
-      return NextResponse.json({ error: "Tipo e invernadero requeridos" }, { status: 400 })
-    }
-
-    await query(
-      `INSERT INTO Sensores
-      (id_invernadero, id_dispositivo, tipo, modelo, estado, marca, rango_min, rango_max, unidad_medida, precision, fecha_instalacion, ubicacion_fisica, ultimo_calibrado, observaciones)
-      VALUES
-      (@idInvernadero, @idDispositivo, @tipo, @modelo, @estado, @marca, @rangoMin, @rangoMax, @unidadMedida, @precision, @fechaInstalacion, @ubicacionFisica, @ultimoCalibrado, @observaciones)`,
-      {
-        idInvernadero,
-        idDispositivo: idDispositivo ? Number(idDispositivo) : null,
-        tipo,
-        modelo: modelo || null,
-        estado: estado || "activo",
-        marca: marca || null,
-        rangoMin: rangoMin ?? null,
-        rangoMax: rangoMax ?? null,
-        unidadMedida: unidadMedida || null,
-        precision: precision ?? null,
-        fechaInstalacion: fechaInstalacion || null,
-        ubicacionFisica: ubicacionFisica || null,
-        ultimoCalibrado: ultimoCalibrado || null,
-        observaciones: observaciones || null,
-      }
-    )
-
-    await registrarBitacora({
-      session,
-      req,
-      descripcion: `Se creo el sensor ${tipo}`,
-      modulo: "sensores",
-      entidad: "Sensores",
-      accion: "CREATE",
-      idDispositivo: idDispositivo ? Number(idDispositivo) : null,
-      valorNuevo: body,
-    })
-
-    return NextResponse.json({ ok: true })
-
-  } catch (err) {
-    console.error(err)
-    return NextResponse.json({ error: "No se pudo crear el sensor" }, { status: 500 })
-  }
-}
-
-/* =========================
-   LISTAR
-========================= */
+const BYPASS_AUTH = false
 
 export async function GET(req: Request) {
   try {
@@ -93,8 +21,9 @@ export async function GET(req: Request) {
         s.id_invernadero AS invernaderoId,
         s.id_dispositivo AS idDispositivo,
         s.estado,
-        s.marca,
-        s.modelo,
+        s.id_marca AS idMarca,
+        s.id_modelo AS idModelo,
+        ma.nombre AS marca,
         s.unidad_medida AS unidadMedida,
         s.rango_min AS rangoMin,
         s.rango_max AS rangoMax,
@@ -107,11 +36,14 @@ export async function GET(req: Request) {
         s.rango_min AS umbralMin,
         s.rango_max AS umbralMax
       FROM Sensores s
+      LEFT JOIN Marcas ma ON ma.id_marca = s.id_marca
     `
     const params: Record<string, unknown> = {}
     if (gh) {
       sqlText += " WHERE s.id_invernadero = @gh"
       params.gh = Number(gh)
+    } else {
+      sqlText += " WHERE 1=0"
     }
 
     const sensors = (await query(sqlText, params)) as Record<string, unknown>[]
@@ -143,16 +75,17 @@ export async function GET(req: Request) {
           invernaderoId: String(s.invernaderoId),
           zonaRiegoId: "",
           estado: s.estado || "activo",
-          marca: s.marca || undefined,
-          modelo: s.modelo || undefined,
-          ubicacionFisica: s.ubicacionFisica || undefined,
+          idMarca: s.idMarca != null ? String(s.idMarca) : undefined,
+          idModelo: s.idModelo != null ? String(s.idModelo) : undefined,
+          marca: (s.marca as string) || undefined,
+          ubicacionFisica: (s.ubicacionFisica as string) || undefined,
           rangoMin: s.rangoMin != null ? Number(s.rangoMin) : undefined,
           rangoMax: s.rangoMax != null ? Number(s.rangoMax) : undefined,
-          unidadMedida: s.unidadMedida || undefined,
+          unidadMedida: (s.unidadMedida as string) || undefined,
           precision: s.precision != null ? Number(s.precision) : undefined,
-          fechaInstalacion: s.fechaInstalacion || undefined,
-          ultimoCalibrado: s.ultimoCalibrado || undefined,
-          observaciones: s.observaciones || undefined,
+          fechaInstalacion: (s.fechaInstalacion as string) || undefined,
+          ultimoCalibrado: (s.ultimoCalibrado as string) || undefined,
+          observaciones: (s.observaciones as string) || undefined,
           idDispositivo: s.idDispositivo != null ? Number(s.idDispositivo) : undefined,
           ultimaLectura: latest ? Number(latest.valor) : 0,
           unidad: (latest?.unidad as string) || (s.unidad as string) || "",
@@ -170,8 +103,10 @@ export async function GET(req: Request) {
     )
 
     return NextResponse.json(result)
-  } catch {
-    return NextResponse.json({ error: "No autorizado" }, { status: 401 })
+  } catch (err: unknown) {
+    console.error("[SENSORS API] GET Error:", err)
+    const errorMessage = err instanceof Error ? err.message : "Unknown error"
+    return NextResponse.json({ error: "No autorizado", details: errorMessage }, { status: 401 })
   }
 }
 
@@ -181,7 +116,14 @@ export async function GET(req: Request) {
 
 export async function PUT(req: Request) {
   try {
-    const session = await requireAuth()
+    // When auth is bypassed, use a default session
+    let session: { empresaId: number }
+    if (BYPASS_AUTH) {
+      console.log("[SENSORS API] Auth bypassed for PUT")
+      session = { empresaId: 1 } // Default for debugging
+    } else {
+      session = await requireAuth()
+    }
     const body = await req.json()
 
     const {
@@ -190,6 +132,8 @@ export async function PUT(req: Request) {
       modelo,
       estado,
       marca,
+      idMarca,
+      idModelo,
       rangoMin,
       rangoMax,
       unidadMedida,
@@ -214,6 +158,8 @@ export async function PUT(req: Request) {
         s.id_invernadero AS idInvernadero,
         s.id_dispositivo AS idDispositivo,
         s.tipo,
+        s.id_marca AS idMarca,
+        s.id_modelo AS idModelo,
         s.modelo,
         s.estado,
         s.marca,
@@ -245,6 +191,8 @@ export async function PUT(req: Request) {
         id_invernadero = @idInvernadero,
         id_dispositivo = @idDispositivo,
         tipo = @tipo,
+        id_marca = @idMarca,
+        id_modelo = @idModelo,
         modelo = @modelo,
         estado = @estado,
         marca = @marca,
@@ -264,6 +212,8 @@ export async function PUT(req: Request) {
           ? (idDispositivo ? Number(idDispositivo) : null)
           : (existing.idDispositivo != null ? Number(existing.idDispositivo) : null),
         tipo: tipo !== undefined ? tipo : existing.tipo,
+        idMarca: idMarca !== undefined ? (idMarca ? Number(idMarca) : null) : (existing.idMarca != null ? Number(existing.idMarca) : null),
+        idModelo: idModelo !== undefined ? (idModelo ? Number(idModelo) : null) : (existing.idModelo != null ? Number(existing.idModelo) : null),
         modelo: modelo !== undefined ? modelo : existing.modelo,
         estado: estado !== undefined ? estado : existing.estado,
         marca: marca !== undefined ? marca : existing.marca,

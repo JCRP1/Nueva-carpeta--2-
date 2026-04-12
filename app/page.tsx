@@ -13,6 +13,7 @@ import { GreenhousesView } from "@/components/greenhouses-view"
 import { CropsView } from "@/components/crops-view"
 import { UsersView } from "@/components/users-view"
 import { RolesView } from "@/components/roles-view"
+import { EnterprisesView } from "@/components/enterprises-view"
 import { SettingsView } from "@/components/settings-view"
 import { SensorsView } from "@/components/sensors-view"
 import { Separator } from "@/components/ui/separator"
@@ -49,12 +50,13 @@ const viewLabels: Record<string, string> = {
   personal: "Personal",
   usuarios: "Usuarios",
   roles: "Roles",
+  empresas: "Empresas",
   dispositivos: "Dispositivos",
   configuracion: "Configuracion",
 }
 
 const roleAccess: Record<UserRole, string[]> = {
-  administrador: ["dashboard", "zonas", "cultivos", "sensores", "alertas", "personal", "invernaderos", "reportes", "usuarios", "roles", "dispositivos", "configuracion"],
+  administrador: ["dashboard", "zonas", "cultivos", "sensores", "alertas", "personal", "invernaderos", "reportes", "usuarios", "roles", "empresas", "dispositivos", "configuracion"],
   tecnico: ["dashboard", "zonas", "cultivos", "alertas", "invernaderos", "reportes"],
   agricultor: ["dashboard", "zonas", "cultivos", "alertas", "invernaderos", "reportes"],
 }
@@ -223,6 +225,17 @@ function renderView() {
           )
         }
         return <RolesView />
+      case "empresas":
+        if (!isAdmin) {
+          return (
+            <div className="flex flex-col items-center justify-center gap-4 py-20">
+              <ShieldAlert className="h-12 w-12 text-destructive" />
+              <h2 className="text-lg font-semibold text-foreground">Acceso Restringido</h2>
+              <p className="text-sm text-muted-foreground">Solo los administradores pueden gestionar empresas</p>
+            </div>
+          )
+        }
+        return <EnterprisesView />
       case "configuracion":
         if (!isAdmin) {
           return (

@@ -15,6 +15,7 @@ import {
   Loader2,
   Pencil,
   Eye,
+  Sparkles,
 } from "lucide-react"
 import type { UserRole } from "@/lib/greensense-data"
 import { api, fetcher } from "@/lib/api-client"
@@ -48,6 +49,26 @@ interface Dispositivo {
   estado: string
 }
 
+interface Marca {
+  id: string
+  nombre: string
+  descripcion?: string
+  paisOrigen?: string
+  sitioWeb?: string
+}
+
+interface Modelo {
+  id: string
+  nombre: string
+  marcaId?: string
+  nombreMarca?: string
+  especificaciones?: string
+  rangoMin?: number
+  rangoMax?: number
+  precision?: number
+  unidadMedida?: string
+}
+
 interface SensorData {
   id: string
   tipo: string
@@ -57,6 +78,8 @@ interface SensorData {
   estado: string
   modelo?: string
   marca?: string
+  idMarca?: string
+  idModelo?: string
   rangoMin?: number
   rangoMax?: number
   unidadMedida?: string
@@ -105,9 +128,9 @@ interface SensorsViewProps {
 export function SensorsView({ selectedGreenhouse, userRole }: SensorsViewProps) {
   const [formData, setFormData] = useState({
     tipo: "",
-    modelo: "",
+    idModelo: "",
     estado: "activo",
-    marca: "",
+    idMarca: "",
     rangoMin: "",
     rangoMax: "",
     unidadMedida: "",
@@ -127,30 +150,32 @@ export function SensorsView({ selectedGreenhouse, userRole }: SensorsViewProps) 
   )
   const { data: greenhouses } = useSWR<Invernadero[]>("/api/greenhouses", fetcher)
   const { data: devices, isLoading: devicesLoading } = useSWR<Dispositivo[]>("/api/devices", fetcher)
+  const { data: marcas, mutate: mutateMarcas } = useSWR<Marca[]>("/api/marcas", fetcher)
 
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editMode, setEditMode] = useState(false)
   const [editingSensor, setEditingSensor] = useState<SensorData | null>(null)
   const [saving, setSaving] = useState(false)
   const [selectedSensor, setSelectedSensor] = useState<SensorData | null>(null)
+  const [idMarca, setIdMarca] = useState("")
+  const [idModelo, setIdModelo] = useState("")
+  const [marcaDialogOpen, setMarcaDialogOpen] = useState(false)
+  const [modeloDialogOpen, setModeloDialogOpen] = useState(false)
+  const [newMarca, setNewMarca] = useState({ nombre: "", descripcion: "", paisOrigen: "", sitioWeb: "" })
+  const [newModelo, setNewModelo] = useState({ nombre: "", especificaciones: "", rangoMin: "", rangoMax: "", precision: "", unidadMedida: "" })
+  const [savingMarca, setSavingMarca] = useState(false)
+  const [savingModelo, setSavingModelo] = useState(false)
+
+  const { data: modelos, mutate: mutateModelos } = useSWR<Modelo[]>(
+    idMarca ? `/api/modelos?marca=${idMarca}` : null,
+    fetcher,
+    { refreshInterval: 0 }
+  )
 
   const isAdmin = userRole === "administrador" || userRole === "tecnico"
   const ghList = greenhouses || []
   const sensorList = sensors || []
   const deviceList = devices || []
-
-  useEffect(() => {
-    console.log("Devices cargados:", JSON.stringify(deviceList, null, 2))
-    console.log("Devices loading:", devicesLoading)
-  }, [deviceList, devicesLoading])
-
-  useEffect(() => {
-    if (dialogOpen) {
-      console.log("=== Dialog abierto ===")
-      console.log("formData.idDispositivo:", formData.idDispositivo, "tipo:", typeof formData.idDispositivo)
-      console.log("deviceList:", deviceList.map(d => ({ id: d.id, idType: typeof d.id, nombre: d.nombre })))
-    }
-  }, [dialogOpen, deviceList, formData.idDispositivo])
 
   useEffect(() => {
     if (ghList.length > 0 && !formData.idInvernadero) {
@@ -160,12 +185,18 @@ export function SensorsView({ selectedGreenhouse, userRole }: SensorsViewProps) 
     }
   }, [ghList, formData.idInvernadero])
 
+  useEffect(() => {
+    if (!idMarca) {
+      setIdModelo("")
+    }
+  }, [idMarca])
+
   const resetForm = useCallback(() => {
     setFormData({
       tipo: "",
-      modelo: "",
+      idModelo: "",
       estado: "activo",
-      marca: "",
+      idMarca: "",
       rangoMin: "",
       rangoMax: "",
       unidadMedida: "",
@@ -177,6 +208,8 @@ export function SensorsView({ selectedGreenhouse, userRole }: SensorsViewProps) 
       idInvernadero: selectedGreenhouse,
       idDispositivo: "",
     })
+    setIdMarca("")
+    setIdModelo("")
     setEditingSensor(null)
     setEditMode(false)
   }, [selectedGreenhouse])
@@ -185,9 +218,9 @@ export function SensorsView({ selectedGreenhouse, userRole }: SensorsViewProps) 
     const defaultGh = selectedGreenhouse || (ghList.length > 0 ? ghList[0].id : "")
     setFormData({
       tipo: "",
-      modelo: "",
+      idModelo: "",
       estado: "activo",
-      marca: "",
+      idMarca: "",
       rangoMin: "",
       rangoMax: "",
       unidadMedida: "",
@@ -199,17 +232,19 @@ export function SensorsView({ selectedGreenhouse, userRole }: SensorsViewProps) 
       idInvernadero: defaultGh,
       idDispositivo: "",
     })
+    setIdMarca("")
+    setIdModelo("")
     setEditingSensor(null)
     setEditMode(false)
     setDialogOpen(true)
-  }, [resetForm, selectedGreenhouse, ghList])
+  }, [selectedGreenhouse, ghList])
 
   const openEditDialog = useCallback((sensor: SensorData) => {
     setFormData({
       tipo: sensor.tipo || "",
-      modelo: sensor.modelo || "",
+      idModelo: sensor.idModelo || "",
       estado: sensor.estado || "activo",
-      marca: sensor.marca || "",
+      idMarca: sensor.idMarca || "",
       rangoMin: sensor.rangoMin?.toString() || "",
       rangoMax: sensor.rangoMax?.toString() || "",
       unidadMedida: sensor.unidadMedida || sensor.unidad || "",
@@ -221,6 +256,8 @@ export function SensorsView({ selectedGreenhouse, userRole }: SensorsViewProps) 
       idInvernadero: sensor.invernaderoId,
       idDispositivo: sensor.idDispositivo?.toString() || "",
     })
+    setIdMarca(sensor.idMarca || "")
+    setIdModelo(sensor.idModelo || "")
     setEditingSensor(sensor)
     setEditMode(true)
     setDialogOpen(true)
@@ -231,8 +268,8 @@ export function SensorsView({ selectedGreenhouse, userRole }: SensorsViewProps) 
       { field: formData.tipo, name: "Tipo" },
       { field: formData.idInvernadero, name: "Invernadero" },
       { field: formData.estado, name: "Estado" },
-      { field: formData.marca, name: "Marca" },
-      { field: formData.modelo, name: "Modelo" },
+      { field: idMarca, name: "Marca" },
+      { field: idModelo, name: "Modelo" },
       { field: formData.ubicacionFisica, name: "Ubicación Física" },
       { field: formData.unidadMedida, name: "Unidad de Medida" },
       { field: formData.precision, name: "Precisión" },
@@ -252,9 +289,9 @@ export function SensorsView({ selectedGreenhouse, userRole }: SensorsViewProps) 
     try {
       const payload = {
         tipo: formData.tipo,
-        modelo: formData.modelo || undefined,
+        idMarca: idMarca ? Number(idMarca) : undefined,
+        idModelo: idModelo ? Number(idModelo) : undefined,
         estado: formData.estado,
-        marca: formData.marca || undefined,
         rangoMin: formData.rangoMin ? Number(formData.rangoMin) : undefined,
         rangoMax: formData.rangoMax ? Number(formData.rangoMax) : undefined,
         unidadMedida: formData.unidadMedida || undefined,
@@ -282,7 +319,7 @@ export function SensorsView({ selectedGreenhouse, userRole }: SensorsViewProps) 
     } finally {
       setSaving(false)
     }
-  }, [formData, editMode, editingSensor, mutate, resetForm])
+  }, [formData, idMarca, idModelo, editMode, editingSensor, mutate, resetForm])
 
   if (isLoading && !sensors && !selectedSensor) {
     return (
@@ -313,7 +350,8 @@ export function SensorsView({ selectedGreenhouse, userRole }: SensorsViewProps) 
           </p>
         </div>
         {isAdmin && (
-          <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) resetForm() }}>
+          <>
+            <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) resetForm() }}>
             <DialogTrigger asChild>
               <Button size="sm" onClick={openCreateDialog}>
                 <Plus className="mr-2 h-4 w-4" />Nuevo Sensor
@@ -361,11 +399,41 @@ export function SensorsView({ selectedGreenhouse, userRole }: SensorsViewProps) 
                 </div>
                 <div className="flex flex-col gap-2">
                   <Label>Marca *</Label>
-                  <Input placeholder="Ej: DHT22" value={formData.marca} onChange={(e) => setFormData({ ...formData, marca: e.target.value })} />
+                  <div className="flex gap-2">
+                    <Select value={idMarca} onValueChange={(v) => { setIdMarca(v); setIdModelo(""); }}>
+                      <SelectTrigger className="flex-1"><SelectValue placeholder="Seleccionar marca" /></SelectTrigger>
+                      <SelectContent>
+                        {(marcas || []).map((m) => (
+                          <SelectItem key={m.id} value={String(m.id)}>{m.nombre}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Button type="button" variant="outline" size="icon" onClick={() => setMarcaDialogOpen(true)} title="Agregar marca">
+                      <Sparkles className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </div>
                 <div className="flex flex-col gap-2">
                   <Label>Modelo *</Label>
-                  <Input placeholder="Ej: DHT22-AM2302" value={formData.modelo} onChange={(e) => setFormData({ ...formData, modelo: e.target.value })} />
+                  <div className="flex gap-2">
+                    <Select value={idModelo} onValueChange={setIdModelo}>
+                      <SelectTrigger className="flex-1">
+                        <SelectValue placeholder={idMarca ? "Seleccionar modelo" : "Seleccione marca primero"} />
+                      </SelectTrigger>
+                      <SelectContent className="max-h-60 overflow-y-auto">
+                        {(modelos || []).length > 0 ? (
+                          modelos!.map((m) => (
+                            <SelectItem key={m.id} value={String(m.id)}>{m.nombre}</SelectItem>
+                          ))
+                        ) : idMarca ? (
+                          <div className="px-2 py-1.5 text-sm text-muted-foreground">Sin modelos para esta marca</div>
+                        ) : null}
+                      </SelectContent>
+                    </Select>
+                    <Button type="button" variant="outline" size="icon" onClick={() => { if (idMarca) setModeloDialogOpen(true); else toast.warning("Seleccione una marca primero"); }} title="Agregar modelo" disabled={!idMarca}>
+                      <Sparkles className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </div>
                 <div className="flex flex-col gap-2">
                   <Label>Dispositivo</Label>
@@ -422,6 +490,109 @@ export function SensorsView({ selectedGreenhouse, userRole }: SensorsViewProps) 
               </DialogFooter>
             </DialogContent>
           </Dialog>
+
+          <Dialog open={marcaDialogOpen} onOpenChange={setMarcaDialogOpen}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Nueva Marca</DialogTitle>
+              </DialogHeader>
+              <div className="flex flex-col gap-4 py-4">
+                <div className="flex flex-col gap-2">
+                  <Label>Nombre *</Label>
+                  <Input placeholder="Ej: DHT" value={newMarca.nombre} onChange={(e) => setNewMarca({ ...newMarca, nombre: e.target.value })} />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Label>Descripción</Label>
+                  <Input placeholder="Descripción de la marca" value={newMarca.descripcion} onChange={(e) => setNewMarca({ ...newMarca, descripcion: e.target.value })} />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Label>País de Origen</Label>
+                  <Input placeholder="Ej: China" value={newMarca.paisOrigen} onChange={(e) => setNewMarca({ ...newMarca, paisOrigen: e.target.value })} />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Label>Sitio Web</Label>
+                  <Input placeholder="https://..." value={newMarca.sitioWeb} onChange={(e) => setNewMarca({ ...newMarca, sitioWeb: e.target.value })} />
+                </div>
+              </div>
+              <DialogFooter>
+                <DialogClose asChild><Button variant="outline">Cancelar</Button></DialogClose>
+                <Button onClick={async () => {
+                  if (!newMarca.nombre) { toast.error("El nombre es requerido"); return; }
+                  setSavingMarca(true)
+                  try {
+                    const res = await fetch("/api/marcas", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(newMarca) })
+                    const data = await res.json()
+                    if (!res.ok) throw new Error(data.error)
+                    setIdMarca(String(data.id))
+                    await mutateMarcas()
+                    setMarcaDialogOpen(false)
+                    setNewMarca({ nombre: "", descripcion: "", paisOrigen: "", sitioWeb: "" })
+                    toast.success("Marca creada")
+                  } catch (err) { toast.error(err instanceof Error ? err.message : "Error al crear marca") }
+                  finally { setSavingMarca(false) }
+                }} disabled={savingMarca}>
+                  {savingMarca ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}Crear Marca
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          <Dialog open={modeloDialogOpen} onOpenChange={setModeloDialogOpen}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Nuevo Modelo</DialogTitle>
+              </DialogHeader>
+              <div className="flex flex-col gap-4 py-4">
+                <div className="flex flex-col gap-2">
+                  <Label>Nombre *</Label>
+                  <Input placeholder="Ej: DHT22-AM2302" value={newModelo.nombre} onChange={(e) => setNewModelo({ ...newModelo, nombre: e.target.value })} />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Label>Especificaciones</Label>
+                  <Input placeholder="Especificaciones técnicas" value={newModelo.especificaciones} onChange={(e) => setNewModelo({ ...newModelo, especificaciones: e.target.value })} />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="flex flex-col gap-2">
+                    <Label>Rango Mín</Label>
+                    <Input type="number" placeholder="0" value={newModelo.rangoMin} onChange={(e) => setNewModelo({ ...newModelo, rangoMin: e.target.value })} />
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <Label>Rango Máx</Label>
+                    <Input type="number" placeholder="100" value={newModelo.rangoMax} onChange={(e) => setNewModelo({ ...newModelo, rangoMax: e.target.value })} />
+                  </div>
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Label>Precisión</Label>
+                  <Input type="number" step="0.01" placeholder="0.1" value={newModelo.precision} onChange={(e) => setNewModelo({ ...newModelo, precision: e.target.value })} />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Label>Unidad de Medida</Label>
+                  <Input placeholder="Ej: %, °C, ppm" value={newModelo.unidadMedida} onChange={(e) => setNewModelo({ ...newModelo, unidadMedida: e.target.value })} />
+                </div>
+              </div>
+              <DialogFooter>
+                <DialogClose asChild><Button variant="outline">Cancelar</Button></DialogClose>
+                <Button onClick={async () => {
+                  if (!newModelo.nombre) { toast.error("El nombre es requerido"); return; }
+                  setSavingModelo(true)
+                  try {
+                    const res = await fetch("/api/modelos", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...newModelo, idMarca }) })
+                    const data = await res.json()
+                    if (!res.ok) throw new Error(data.error)
+                    setIdModelo(String(data.id))
+                    await mutateModelos()
+                    setModeloDialogOpen(false)
+                    setNewModelo({ nombre: "", especificaciones: "", rangoMin: "", rangoMax: "", precision: "", unidadMedida: "" })
+                    toast.success("Modelo creado")
+                  } catch (err) { toast.error(err instanceof Error ? err.message : "Error al crear modelo") }
+                  finally { setSavingModelo(false) }
+                }} disabled={savingModelo}>
+                  {savingModelo ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}Crear Modelo
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </>
         )}
       </div>
 

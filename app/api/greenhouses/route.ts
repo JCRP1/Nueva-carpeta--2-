@@ -75,18 +75,12 @@ export async function GET() {
 
     return NextResponse.json(rows)
 
-  } catch (err) {
-    console.error(err)
-    return NextResponse.json(
-      { error: "No autorizado" },
-      { status: 401 }
-    )
+  } catch (err: unknown) {
+    console.error("[GREENHOUSES API] Error:", err)
+    const errorMessage = err instanceof Error ? err.message : "Unknown error"
+    return NextResponse.json({ error: "No autorizado", details: errorMessage }, { status: 401 })
   }
 }
-
-/* =========================
-   EDITAR
-========================= */
 
 export async function PUT(req: Request) {
   try {

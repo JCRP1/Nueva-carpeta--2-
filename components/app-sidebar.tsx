@@ -18,6 +18,7 @@ import {
   HardHat,
   Cpu,
   Shield,
+  Building2,
 } from "lucide-react"
 import {
   Sidebar,
@@ -69,7 +70,7 @@ interface AppSidebarProps {
 }
 
 const roleAccess: Record<string, string[]> = {
-  administrador: ["dashboard", "zonas", "cultivos", "sensores", "alertas", "invernaderos", "reportes", "personal", "usuarios", "roles", "dispositivos", "configuracion"],
+  administrador: ["dashboard", "zonas", "cultivos", "sensores", "alertas", "invernaderos", "reportes", "personal", "usuarios", "roles", "empresas", "dispositivos", "configuracion"],
   tecnico: ["dashboard", "zonas", "cultivos", "alertas", "invernaderos", "reportes"],
   agricultor: ["dashboard", "zonas", "cultivos", "alertas", "invernaderos", "reportes"],
 }
@@ -88,6 +89,7 @@ const adminItems = [
   { id: "personal", label: "Personal", icon: HardHat },
   { id: "usuarios", label: "Usuarios", icon: Users },
   { id: "roles", label: "Roles", icon: Shield },
+  { id: "empresas", label: "Empresas", icon: Building2 },
   { id: "dispositivos", label: "Dispositivos", icon: Cpu },
   { id: "configuracion", label: "Configuracion", icon: Settings },
 ]
