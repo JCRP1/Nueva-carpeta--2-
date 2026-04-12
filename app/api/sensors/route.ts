@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server"
 import { requireAuth } from "@/lib/auth"
 import { query } from "@/lib/db"
-import { registrarBitacora } from "@/lib/bitacora"
 
 export const dynamic = "force-dynamic"
 
@@ -196,9 +195,7 @@ export async function PUT(req: Request) {
     const {
       id,
       tipo,
-      modelo,
       estado,
-      marca,
       idMarca,
       idModelo,
       rangoMin,
@@ -227,9 +224,7 @@ export async function PUT(req: Request) {
         s.tipo,
         s.id_marca AS idMarca,
         s.id_modelo AS idModelo,
-        s.modelo,
         s.estado,
-        s.marca,
         s.rango_min AS rangoMin,
         s.rango_max AS rangoMax,
         s.unidad_medida AS unidadMedida,
@@ -252,7 +247,7 @@ export async function PUT(req: Request) {
     const mergedRangoMin = rangoMin !== undefined ? rangoMin : umbralMin
     const mergedRangoMax = rangoMax !== undefined ? rangoMax : umbralMax
 
-    await query(
+await query(
       `UPDATE Sensores
        SET
         id_invernadero = @idInvernadero,
@@ -260,9 +255,7 @@ export async function PUT(req: Request) {
         tipo = @tipo,
         id_marca = @idMarca,
         id_modelo = @idModelo,
-        modelo = @modelo,
         estado = @estado,
-        marca = @marca,
         rango_min = @rangoMin,
         rango_max = @rangoMax,
         unidad_medida = @unidadMedida,
@@ -271,7 +264,7 @@ export async function PUT(req: Request) {
         ubicacion_fisica = @ubicacionFisica,
         ultimo_calibrado = @ultimoCalibrado,
         observaciones = @observaciones
-      WHERE id_sensor = @id`,
+       WHERE id_sensor = @id`,
       {
         id: Number(id),
         idInvernadero: idInvernadero !== undefined ? Number(idInvernadero) : Number(existing.idInvernadero),
@@ -281,9 +274,7 @@ export async function PUT(req: Request) {
         tipo: tipo !== undefined ? tipo : existing.tipo,
         idMarca: idMarca !== undefined ? (idMarca ? Number(idMarca) : null) : (existing.idMarca != null ? Number(existing.idMarca) : null),
         idModelo: idModelo !== undefined ? (idModelo ? Number(idModelo) : null) : (existing.idModelo != null ? Number(existing.idModelo) : null),
-        modelo: modelo !== undefined ? modelo : existing.modelo,
         estado: estado !== undefined ? estado : existing.estado,
-        marca: marca !== undefined ? marca : existing.marca,
         rangoMin: mergedRangoMin !== undefined ? mergedRangoMin : existing.rangoMin,
         rangoMax: mergedRangoMax !== undefined ? mergedRangoMax : existing.rangoMax,
         unidadMedida: unidadMedida !== undefined ? unidadMedida : existing.unidadMedida,
@@ -294,21 +285,6 @@ export async function PUT(req: Request) {
         observaciones: observaciones !== undefined ? observaciones : existing.observaciones,
       }
     )
-
-    await registrarBitacora({
-      session,
-      req,
-      descripcion: `Se actualizo el sensor ${existing.tipo || id}`,
-      modulo: "sensores",
-      entidad: "Sensores",
-      entidadId: id,
-      accion: "UPDATE",
-      idDispositivo: idDispositivo !== undefined
-        ? (idDispositivo ? Number(idDispositivo) : null)
-        : (existing.idDispositivo != null ? Number(existing.idDispositivo) : null),
-      valorAnterior: existing,
-      valorNuevo: body,
-    })
 
     return NextResponse.json({ ok: true })
 
