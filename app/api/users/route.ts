@@ -166,3 +166,55 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Error creando usuario" }, { status: 500 })
   }
 }
+
+/* =========================
+   ACTUALIZAR (PATCH)
+   ========================= */
+
+export async function PATCH(req: Request) {
+  try {
+    const session = await requireAdmin()
+    const body = await req.json()
+    const { id, activo, nombre, rol, email } = body
+
+    if (!id) {
+      return NextResponse.json({ error: "ID requerido" }, { status: 400 })
+    }
+
+    const updates: string[] = []
+    const params: Record<string, unknown> = { id: Number(id) }
+
+    if (activo !== undefined) {
+      updates.push("activo = @activo")
+      params.activo = activo ? 1 : 0
+    }
+    if (nombre !== undefined) {
+      updates.push("nombre = @nombre")
+      params.nombre = nombre
+    }
+    if (rol !== undefined) {
+      updates.push("rol = @rol")
+      params.rol = rol
+    }
+    if (email !== undefined) {
+      updates.push("correo = @email")
+      params.email = email
+    }
+
+    if (updates.length === 0) {
+      return NextResponse.json({ error: "No hay campos para actualizar" }, { status: 400 })
+    }
+
+    await query(
+      `UPDATE Usuarios SET ${updates.join(", ")} WHERE id_usuario = @id`,
+      params
+    )
+
+    return NextResponse.json({ ok: true })
+  } catch (e: any) {
+    const authError = handleAuthError(e)
+    if (authError) return authError
+    console.error("[Users PATCH]", e)
+    return NextResponse.json({ error: "Error actualizando usuario" }, { status: 500 })
+  }
+}

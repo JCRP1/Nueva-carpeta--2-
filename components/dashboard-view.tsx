@@ -33,6 +33,9 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
+  PieChart,
+  Pie,
+  Cell,
 } from "recharts"
 import { toast } from "sonner"
 
@@ -202,6 +205,9 @@ export function DashboardView({ selectedGreenhouse, userRole }: DashboardViewPro
     { refreshInterval: 15000 }
   )
 
+  // Fetch users for status chart
+  const { data: users } = useSWR<Array<{ id: number; nombre: string; activo: boolean }>>("/api/users", fetcher)
+
   const [refreshing, setRefreshing] = useState(false)
 
   const sensors = dashboard?.sensors || []
@@ -212,6 +218,11 @@ export function DashboardView({ selectedGreenhouse, userRole }: DashboardViewPro
   const consumoAgua = dashboard?.consumoAgua || []
   const recentEvents = dashboard?.recentEvents || []
   const ghName = dashboard?.greenhouse?.nombre || "Invernadero"
+
+  // User stats
+  const activos = users?.filter(u => u.activo).length || 0
+  const inactivos = users?.filter(u => !u.activo).length || 0
+  const totalUsuarios = users?.length || 0
 
   // Build chart data from sensor history
   const humedadHistory = (sensorsWithHistory || []).find((s) => s.tipo === "humedad_suelo")?.history || []
@@ -295,6 +306,53 @@ export function DashboardView({ selectedGreenhouse, userRole }: DashboardViewPro
           </CardContent>
         </Card>
       </div>
+
+      {/* User Status Chart */}
+      <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-foreground">Estado de Usuarios</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={200}>
+              <PieChart>
+                <Pie
+                  data={[
+                    { name: "Activos", value: activos, color: "hsl(142, 60%, 45%)" },
+                    { name: "Inactivos", value: inactivos, color: "hsl(0, 60%, 60%)" },
+                  ]}
+                  dataKey="value"
+                  nameKey="name"
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={50}
+                  outerRadius={80}
+                  label={({ name, value }) => `${name}: ${value}`}
+                >
+                  {[
+                    { name: "Activos", value: activos, color: "hsl(142, 60%, 45%)" },
+                    { name: "Inactivos", value: inactivos, color: "hsl(0, 60%, 60%)" },
+                  ].map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={entry.color} />
+                  ))}
+                </Pie>
+                <Tooltip 
+                  contentStyle={{ background: "hsl(150, 14%, 9%)", border: "1px solid hsl(150, 10%, 16%)", borderRadius: "8px", fontSize: 12, color: "hsl(150, 8%, 93%)" }}
+                  formatter={(value: number) => [`${value} usuarios`, ""]}
+                />
+              </PieChart>
+            </ResponsiveContainer>
+            <div className="flex justify-center gap-4 mt-2">
+              <div className="flex items-center gap-1">
+                <div className="h-3 w-3 rounded-full bg-emerald-500" />
+                <span className="text-xs text-muted-foreground">Activos: {activos}</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <div className="h-3 w-3 rounded-full bg-red-400" />
+                <span className="text-xs text-muted-foreground">Inactivos: {inactivos}</span>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
 
       {/* Sensor readings */}
       <div>
