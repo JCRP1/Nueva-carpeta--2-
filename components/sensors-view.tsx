@@ -95,14 +95,14 @@ interface SensorData {
   history?: { timestamp: string; valor: number }[]
 }
 
-const SENSOR_TYPES = [
-  { value: "humedad_suelo", label: "Humedad del Suelo" },
-  { value: "temperatura", label: "Temperatura" },
-  { value: "humedad_ambiental", label: "Humedad Ambiental" },
-  { value: "tds", label: "TDS" },
-  { value: "ph", label: "pH" },
-  { value: "conductividad", label: "Conductividad" },
-]
+interface TipoSensor {
+  id: number
+  nombre: string
+  unidad?: string
+  rangoMin?: number
+  rangoMax?: number
+  descripcion?: string
+}
 
 const SENSOR_STATUS = [
   { value: "activo", label: "Activo" },
@@ -151,6 +151,7 @@ export function SensorsView({ selectedGreenhouse, userRole }: SensorsViewProps) 
   const { data: greenhouses } = useSWR<Invernadero[]>("/api/greenhouses", fetcher)
   const { data: devices, isLoading: devicesLoading } = useSWR<Dispositivo[]>("/api/devices", fetcher)
   const { data: marcas, mutate: mutateMarcas } = useSWR<Marca[]>("/api/marcas", fetcher)
+  const { data: tiposSensor, mutate: mutateTiposSensor } = useSWR<TipoSensor[]>("/api/tipos-sensor", fetcher)
 
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editMode, setEditMode] = useState(false)
@@ -161,10 +162,13 @@ export function SensorsView({ selectedGreenhouse, userRole }: SensorsViewProps) 
   const [idModelo, setIdModelo] = useState("")
   const [marcaDialogOpen, setMarcaDialogOpen] = useState(false)
   const [modeloDialogOpen, setModeloDialogOpen] = useState(false)
+  const [tipoSensorDialogOpen, setTipoSensorDialogOpen] = useState(false)
   const [newMarca, setNewMarca] = useState({ nombre: "", descripcion: "", paisOrigen: "", sitioWeb: "" })
   const [newModelo, setNewModelo] = useState({ nombre: "", especificaciones: "", rangoMin: "", rangoMax: "", precision: "", unidadMedida: "" })
+  const [newTipoSensor, setNewTipoSensor] = useState({ nombre: "", unidad: "", rangoMin: "", rangoMax: "", descripcion: "" })
   const [savingMarca, setSavingMarca] = useState(false)
   const [savingModelo, setSavingModelo] = useState(false)
+  const [savingTipoSensor, setSavingTipoSensor] = useState(false)
 
   const { data: allModelos, mutate: mutateModelos } = useSWR<Modelo[]>("/api/modelos", fetcher, { refreshInterval: 0 })
   
@@ -364,14 +368,19 @@ export function SensorsView({ selectedGreenhouse, userRole }: SensorsViewProps) 
               <div className="grid max-h-[65vh] grid-cols-3 gap-4 overflow-y-auto py-4">
                 <div className="flex flex-col gap-2">
                   <Label>Tipo *</Label>
-                  <Select value={formData.tipo} onValueChange={(v) => setFormData({ ...formData, tipo: v })}>
-                    <SelectTrigger><SelectValue placeholder="Seleccionar tipo" /></SelectTrigger>
-                    <SelectContent>
-                      {SENSOR_TYPES.map((t) => (
-                        <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <div className="flex gap-2">
+                    <Select value={formData.tipo} onValueChange={(v) => setFormData({ ...formData, tipo: v })}>
+                      <SelectTrigger className="flex-1"><SelectValue placeholder="Seleccionar tipo" /></SelectTrigger>
+                      <SelectContent>
+                        {(tiposSensor || []).map((t) => (
+                          <SelectItem key={String(t.id)} value={t.nombre}>{t.nombre} ({t.unidad})</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Button type="button" variant="outline" size="icon" onClick={() => setTipoSensorDialogOpen(true)} title="Agregar tipo de sensor">
+                      <Sparkles className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </div>
                 <div className="flex flex-col gap-2">
                   <Label>Invernadero *</Label>
@@ -596,6 +605,57 @@ export function SensorsView({ selectedGreenhouse, userRole }: SensorsViewProps) 
               </DialogFooter>
             </DialogContent>
           </Dialog>
+
+          <Dialog open={tipoSensorDialogOpen} onOpenChange={setTipoSensorDialogOpen}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Nuevo Tipo de Sensor</DialogTitle>
+              </DialogHeader>
+              <div className="flex flex-col gap-4 py-4">
+                <div className="flex flex-col gap-2">
+                  <Label>Nombre *</Label>
+                  <Input placeholder="Ej: humedad_suelo" value={newTipoSensor.nombre} onChange={(e) => setNewTipoSensor({ ...newTipoSensor, nombre: e.target.value })} />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Label>Unidad</Label>
+                  <Input placeholder="Ej: %, °C, ppm" value={newTipoSensor.unidad} onChange={(e) => setNewTipoSensor({ ...newTipoSensor, unidad: e.target.value })} />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="flex flex-col gap-2">
+                    <Label>Rango Mín</Label>
+                    <Input type="number" placeholder="0" value={newTipoSensor.rangoMin} onChange={(e) => setNewTipoSensor({ ...newTipoSensor, rangoMin: e.target.value })} />
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <Label>Rango Máx</Label>
+                    <Input type="number" placeholder="100" value={newTipoSensor.rangoMax} onChange={(e) => setNewTipoSensor({ ...newTipoSensor, rangoMax: e.target.value })} />
+                  </div>
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Label>Descripción</Label>
+                  <Input placeholder="Descripción del tipo de sensor" value={newTipoSensor.descripcion} onChange={(e) => setNewTipoSensor({ ...newTipoSensor, descripcion: e.target.value })} />
+                </div>
+              </div>
+              <DialogFooter>
+                <DialogClose asChild><Button variant="outline">Cancelar</Button></DialogClose>
+                <Button onClick={async () => {
+                  if (!newTipoSensor.nombre) { toast.error("El nombre es requerido"); return; }
+                  setSavingTipoSensor(true)
+                  try {
+                    const res = await fetch("/api/tipos-sensor", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(newTipoSensor) })
+                    const data = await res.json()
+                    if (!res.ok) throw new Error(data.error)
+                    await mutateTiposSensor()
+                    setTipoSensorDialogOpen(false)
+                    setNewTipoSensor({ nombre: "", unidad: "", rangoMin: "", rangoMax: "", descripcion: "" })
+                    toast.success("Tipo de sensor creado")
+                  } catch (err) { toast.error(err instanceof Error ? err.message : "Error al crear tipo") }
+                  finally { setSavingTipoSensor(false) }
+                }} disabled={savingTipoSensor}>
+                  {savingTipoSensor ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}Crear Tipo
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </>
         )}
       </div>
@@ -615,7 +675,7 @@ export function SensorsView({ selectedGreenhouse, userRole }: SensorsViewProps) 
                       </div>
                       <div>
                         <CardTitle className="text-sm font-semibold">{sensor.nombre || sensor.tipo}</CardTitle>
-                        <p className="text-xs text-muted-foreground">{SENSOR_TYPES.find(t => t.value === sensor.tipo)?.label || sensor.tipo}</p>
+                        <p className="text-xs text-muted-foreground">{tiposSensor?.find(t => t.nombre === sensor.tipo)?.nombre || sensor.tipo}</p>
                       </div>
                     </div>
                     <Badge className={isActive ? "bg-green-500/20 text-green-400 border-0" : "bg-amber-500/20 text-amber-400 border-0"}>

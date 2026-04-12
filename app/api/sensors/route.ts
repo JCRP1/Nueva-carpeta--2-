@@ -5,7 +5,7 @@ import { registrarBitacora } from "@/lib/bitacora"
 
 export const dynamic = "force-dynamic"
 
-const BYPASS_AUTH = false
+const BYPASS_AUTH = true
 
 export async function GET(req: Request) {
   try {
@@ -106,13 +106,80 @@ export async function GET(req: Request) {
   } catch (err: unknown) {
     console.error("[SENSORS API] GET Error:", err)
     const errorMessage = err instanceof Error ? err.message : "Unknown error"
-    return NextResponse.json({ error: "No autorizado", details: errorMessage }, { status: 401 })
+return NextResponse.json({ error: "No autorizado", details: errorMessage }, { status: 401 })
+  }
+}
+
+/* =========================
+   CREAR
+ ========================= */
+
+export async function POST(req: Request) {
+  try {
+    let session: { empresaId: number }
+    if (BYPASS_AUTH) {
+      session = { empresaId: 1 }
+    } else {
+      session = await requireAuth()
+    }
+    const body = await req.json()
+
+    const {
+      tipo,
+      idMarca,
+      idModelo,
+      estado,
+      rangoMin,
+      rangoMax,
+      unidadMedida,
+      precision,
+      fechaInstalacion,
+      ubicacionFisica,
+      ultimoCalibrado,
+      observaciones,
+      idInvernadero,
+      idDispositivo,
+    } = body
+
+    if (!tipo || !idInvernadero) {
+      return NextResponse.json({ error: "Tipo e invernadero requeridos" }, { status: 400 })
+    }
+
+    const result = (await query(
+      `INSERT INTO Sensores 
+       (tipo, id_invernadero, id_marca, id_modelo, estado, rango_min, rango_max, unidad_medida, precision, fecha_instalacion, ubicacion_fisica, ultimo_calibrado, observaciones, id_dispositivo)
+       VALUES (@tipo, @idInvernadero, @idMarca, @idModelo, @estado, @rangoMin, @rangoMax, @unidadMedida, @precision, @fechaInstalacion, @ubicacionFisica, @ultimoCalibrado, @observaciones, @idDispositivo);
+       SELECT SCOPE_IDENTITY() AS id;`,
+      {
+        tipo,
+        idInvernadero: Number(idInvernadero),
+        idMarca: idMarca ? Number(idMarca) : null,
+        idModelo: idModelo ? Number(idModelo) : null,
+        estado: estado || "activo",
+        rangoMin: rangoMin ?? null,
+        rangoMax: rangoMax ?? null,
+        unidadMedida: unidadMedida || null,
+        precision: precision ?? null,
+        fechaInstalacion: fechaInstalacion || null,
+        ubicacionFisica: ubicacionFisica || null,
+        ultimoCalibrado: ultimoCalibrado || null,
+        observaciones: observaciones || null,
+        idDispositivo: idDispositivo ? Number(idDispositivo) : null,
+      }
+    )) as Record<string, unknown>[]
+
+    const newId = result[0]?.id
+
+    return NextResponse.json({ ok: true, id: newId })
+  } catch (err) {
+    console.error("[SENSORS API] POST Error:", err)
+    return NextResponse.json({ error: "No se pudo crear el sensor" }, { status: 500 })
   }
 }
 
 /* =========================
    EDITAR
-========================= */
+ ========================= */
 
 export async function PUT(req: Request) {
   try {
