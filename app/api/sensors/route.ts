@@ -244,10 +244,12 @@ export async function PUT(req: Request) {
       return NextResponse.json({ error: "Sensor no encontrado" }, { status: 404 })
     }
 
-    const mergedRangoMin = rangoMin !== undefined ? rangoMin : umbralMin
+const mergedRangoMin = rangoMin !== undefined ? rangoMin : umbralMin
     const mergedRangoMax = rangoMax !== undefined ? rangoMax : umbralMax
 
-await query(
+    const newUltimoCalibrado = ultimoCalibrado !== undefined ? ultimoCalibrado : existing.ultimoCalibrado
+
+    await query(
       `UPDATE Sensores
        SET
         id_invernadero = @idInvernadero,
@@ -281,10 +283,31 @@ await query(
         precision: precision !== undefined ? precision : existing.precision,
         fechaInstalacion: fechaInstalacion !== undefined ? fechaInstalacion : existing.fechaInstalacion,
         ubicacionFisica: ubicacionFisica !== undefined ? ubicacionFisica : existing.ubicacionFisica,
-        ultimoCalibrado: ultimoCalibrado !== undefined ? ultimoCalibrado : existing.ultimoCalibrado,
+        ultimoCalibrado: newUltimoCalibrado,
         observaciones: observaciones !== undefined ? observaciones : existing.observaciones,
       }
     )
+
+    if (ultimoCalibrado !== undefined && ultimoCalibrado !== existing.ultimoCalibrado) {
+      await query(
+        `INSERT INTO Bitacora 
+         (id_dispositivo, descripcion, severidad, fecha, id_usuario, modulo, entidad, entidad_id, accion, valor_anterior, valor_nuevo, origen)
+         VALUES (@idDispositivo, @descripcion, @severidad, GETDATE(), @idUsuario, @modulo, @entidad, @entidadId, @accion, @valorAnterior, @valorNuevo, @origen)`,
+        {
+          idDispositivo: existing.idDispositivo != null ? Number(existing.idDispositivo) : null,
+          descripcion: `Calibración del sensor ${existing.tipo} - Nueva fecha: ${ultimoCalibrado}`,
+          severidad: "info",
+          idUsuario: session.empresaId,
+          modulo: "Sensores",
+          entidad: "Sensor",
+          entidadId: String(id),
+          accion: "CALIBRACION",
+          valorAnterior: existing.ultimoCalibrado || "Sin fecha anterior",
+          valorNuevo: ultimoCalibrado,
+          origen: "usuario",
+        }
+      )
+    }
 
     return NextResponse.json({ ok: true })
 

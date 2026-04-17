@@ -64,6 +64,22 @@ import { toast } from "sonner"
 import type { UserRole } from "@/lib/greensense-data"
 import type { Invernadero } from "@/lib/greensense-data"
 
+interface CalibrationHistory {
+  id: number
+  descripcion: string
+  severidad: string
+  fecha: string
+  modulo: string | null
+  entidad: string | null
+  entidadId: string | null
+  accion: string | null
+  valorAnterior: string | null
+  valorNuevo: string | null
+  origen: string | null
+  usuarioId: number | null
+  usuarioNombre: string | null
+}
+
 interface SensorData {
   id: string
   tipo: string
@@ -180,6 +196,10 @@ export function SensorDetailView({ sensor, onBack, userRole, historialPreload }:
     enviarAlertas: true,
     activo: true,
   })
+  const [calibrationHistory, setCalibrationHistory] = useState<CalibrationHistory[]>([])
+  const [calibrationLoading, setCalibrationLoading] = useState(false)
+  const [newCalibrationOpen, setNewCalibrationOpen] = useState(false)
+  const [newCalibrationDate, setNewCalibrationDate] = useState("")
 
   useEffect(() => {
     console.log("========== SENSOR DETAIL VIEW ==========")
@@ -245,6 +265,17 @@ export function SensorDetailView({ sensor, onBack, userRole, historialPreload }:
         console.error("Error programacion:", err)
       })
       .finally(() => setProgramLoading(false))
+
+    setCalibrationLoading(true)
+    fetch(`/api/sensors/${sensor.id}/calibration-history`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (Array.isArray(data)) {
+          setCalibrationHistory(data)
+        }
+      })
+      .catch((err) => console.error("Error historial calibración:", err))
+      .finally(() => setCalibrationLoading(false))
   }, [sensor.id])
 
   const { data: greenhouses } = useSWR<Invernadero[]>("/api/greenhouses", fetcher)
@@ -336,6 +367,33 @@ export function SensorDetailView({ sensor, onBack, userRole, historialPreload }:
       setProgramSaving(false)
     }
   }, [programForm, sensor.id])
+
+  const handleSaveCalibration = useCallback(async () => {
+    if (!newCalibrationDate) {
+      toast.error("Seleccione una fecha de calibración")
+      return
+    }
+    setSaving(true)
+    try {
+      await api.updateSensor(sensor.id, {
+        ultimoCalibrado: newCalibrationDate,
+      })
+      toast.success("Calibración registrada")
+      setNewCalibrationOpen(false)
+      setNewCalibrationDate("")
+      fetch(`/api/sensors/${sensor.id}/calibration-history`)
+        .then((res) => res.json())
+        .then((data) => {
+          if (Array.isArray(data)) {
+            setCalibrationHistory(data)
+          }
+        })
+    } catch (err) {
+      toast.error("Error al guardar", { description: err instanceof Error ? err.message : "Error" })
+    } finally {
+      setSaving(false)
+    }
+  }, [sensor.id, newCalibrationDate])
 
   const formatDate = (dateStr: string | undefined) => {
     if (!dateStr) return "N/A"
@@ -769,6 +827,52 @@ export function SensorDetailView({ sensor, onBack, userRole, historialPreload }:
                   </div>
                 </div>
               </div>
+
+              {isAdmin && (
+                <div className="mt-6 flex justify-end">
+                  <Button onClick={() => setNewCalibrationOpen(true)}>
+                    <Settings className="mr-2 h-4 w-4" />
+                    Registrar Calibracion
+                  </Button>
+                </div>
+              )}
+
+              <div className="mt-6 border-t pt-6">
+                <h3 className="mb-4 text-sm font-medium">Historial de Calibraciones</h3>
+                {calibrationLoading ? (
+                  <div className="flex items-center justify-center py-4">
+                    <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                  </div>
+                ) : calibrationHistory && calibrationHistory.length > 0 ? (
+                  <div className="space-y-3">
+                    {calibrationHistory.map((cal) => (
+                      <div key={cal.id} className="flex items-start justify-between rounded-lg border p-3">
+                        <div className="flex items-start gap-3">
+                          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-500/10">
+                            <Gauge className="h-4 w-4 text-blue-500" />
+                          </div>
+                          <div>
+                            <div className="text-sm font-medium">
+                              Calibración: {cal.valorNuevo || "N/A"}
+                            </div>
+                            <div className="text-xs text-muted-foreground">
+                              Anterior: {cal.valorAnterior || "Sin registro"} • Por: {cal.usuarioNombre || "Sistema"}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="text-right text-xs text-muted-foreground">
+                          {formatDateTime(cal.fecha)}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center gap-2 py-6 text-center text-muted-foreground">
+                    <Gauge className="h-8 w-8" />
+                    <p className="text-sm">Sin historial de calibraciones</p>
+                  </div>
+                )}
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
@@ -848,6 +952,35 @@ export function SensorDetailView({ sensor, onBack, userRole, historialPreload }:
             </DialogClose>
             <Button onClick={handleSaveThresholds} disabled={saving}>
               {saving ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Guardando...</> : "Guardar"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={newCalibrationOpen} onOpenChange={setNewCalibrationOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Registrar Calibracion</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="flex flex-col gap-2">
+              <Label>Fecha de Calibracion</Label>
+              <Input
+                type="date"
+                value={newCalibrationDate}
+                onChange={(e) => setNewCalibrationDate(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                Esta accion registrara una entrada en el historial de calibraciones
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button variant="outline">Cancelar</Button>
+            </DialogClose>
+            <Button onClick={handleSaveCalibration} disabled={saving || !newCalibrationDate}>
+              {saving ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Guardando...</> : "Registrar"}
             </Button>
           </DialogFooter>
         </DialogContent>
