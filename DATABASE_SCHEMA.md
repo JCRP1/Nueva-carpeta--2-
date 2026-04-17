@@ -1,613 +1,769 @@
-# GreenSenseDB - Esquema de Base de Datos
+# GreenSenseDB Database Schema Documentation
 
-Base de datos SQL Server para el sistema de Fertirriego Inteligente.
+## Overview
 
----
+**GreenSenseDB** is a comprehensive relational database designed to support a smart greenhouse management system. It tracks companies, greenhouses, IoT devices, sensor readings, crops, fertilization plans, irrigation zones, user roles, alerts, system logs, and maintenance activities. The schema includes 30+ tables with well-defined relationships, constraints, and default values to ensure data integrity and operational efficiency.
 
-## Relaciones entre Entidades
-
-Empresas (1) ──── (N) Invernaderos
-│
-├── (N) Cultivos
-│ │
-│ └── (1) CultivoDetalle (1) ──── (N) EtapasCultivo
-│ │ (N) PlanFertilizacion
-│ │ │
-│ │ └── (N) AplicacionesFertilizantes
-│ └── (N) ControlPlagas
-│
-├── (N) ZonasRiego
-│ │
-│ └── (N) Riegos
-│
-├── (N) DispositivosIoT (1) ──── (N) Sensores
-│ │ │
-│ │ ├── (N) LecturasSensores
-│ │ └── (N) Alertas
-│ ├── (N) ComandosIoT
-│ ├── (N) MantenimientoEquipos
-│ └── (N) BitacoraMantenimiento
-│ └── (N) IoTLog
-│
-├── (N) Reportes
-└── (N) ConfiguracionesSistema
-
-Personas (1) ──── (N) Usuarios (1) ──── (N) Roles
-
-Empresas (1) ──── (N) TareasProgramadas
-
-> **Nota**: Las tablas `Marcas` y `Modelos` son auxiliares y no se muestran en el diagrama de alto nivel para simplificar. Son referenciadas desde `Sensores`.
+This document provides a detailed description of every table, column, constraint, foreign key, and stored procedure contained in the database script.
 
 ---
 
-## Tablas
+## Table of Contents
 
-### 1. Empresas
-
-Empresas/clientes del sistema.
-
-| Campo          | Tipo          | Descripción                            |
-| -------------- | ------------- | -------------------------------------- |
-| id_empresa     | INT (PK)      | Identificador único                    |
-| nombre         | NVARCHAR(150) | Nombre de la empresa                   |
-| rnc            | NVARCHAR(20)  | RNC/identificación fiscal              |
-| direccion      | NVARCHAR(200) | Dirección física                       |
-| telefono       | NVARCHAR(20)  | Teléfono de contacto                   |
-| correo         | NVARCHAR(100) | Correo electrónico                     |
-| estado         | NVARCHAR(20)  | Estado (default: 'Activa')             |
-| fecha_creacion | DATETIME      | Fecha de registro (default: GETDATE()) |
-
----
-
-### 2. Personas
-
-Registro de personas (empleados, contactos).
-
-| Campo      | Tipo          | Descripción                            |
-| ---------- | ------------- | -------------------------------------- |
-| id_persona | INT (PK)      | Identificador único                    |
-| nombre     | NVARCHAR(100) | Nombre completo                        |
-| telefono   | NVARCHAR(20)  | Teléfono                               |
-| puesto     | NVARCHAR(50)  | Cargo/posición                         |
-| id_empresa | INT (FK)      | Empresa a la que pertenece             |
-| cedula     | NVARCHAR(20)  | Cédula de identidad                    |
-| registrado | DATETIME      | Fecha de registro (default: GETDATE()) |
-
----
-
-### 3. Usuarios
-
-Usuarios del sistema con autenticación.
-
-| Campo          | Tipo          | Descripción                             |
-| -------------- | ------------- | --------------------------------------- |
-| id_usuario     | INT (PK)      | Identificador único                     |
-| id_empresa     | INT (FK)      | Empresa a la que pertenece              |
-| nombre         | NVARCHAR(100) | Nombre del usuario                      |
-| correo         | NVARCHAR(100) | Email (UNIQUE)                          |
-| contraseña     | NVARCHAR(255) | Hash de contraseña                      |
-| rol            | NVARCHAR(20)  | Rol: administrador, tecnico, agricultor |
-| fecha_registro | DATETIME      | Fecha de registro (default: GETDATE())  |
-| id_persona     | INT (FK)      | Persona asociada (nullable)             |
-| activo         | BIT           | Estado activo (default: 1)              |
-
-**FK:** Empresas(id_empresa), Personas(id_persona)
+- [Tables](#tables)
+  - [Alertas](#alertas)
+  - [AplicacionesFertilizantes](#aplicacionesfertilizantes)
+  - [Bitacora](#bitacora)
+  - [ComandosIoT](#comandosiot)
+  - [ConfiguracionesSistema](#configuracionessistema)
+  - [ConfiguracionSistema](#configuracionsistema)
+  - [ControlPlagas](#controlplagas)
+  - [CultivoDetalle](#cultivodetalle)
+  - [Cultivos](#cultivos)
+  - [DispositivosIoT](#dispositivosiot)
+  - [Empresas](#empresas)
+  - [EtapasCultivo](#etapascultivo)
+  - [Fertilizantes](#fertilizantes)
+  - [Invernaderos](#invernaderos)
+  - [IoTLog](#iotlog)
+  - [LecturasSensores](#lecturassensores)
+  - [MantenimientoEquipos](#mantenimientoequipos)
+  - [Marcas](#marcas)
+  - [Modelos](#modelos)
+  - [PasswordResetTokens](#passwordresettokens)
+  - [Personas](#personas)
+  - [PlanFertilizacion](#planfertilizacion)
+  - [Reportes](#reportes)
+  - [Riegos](#riegos)
+  - [Roles](#roles)
+  - [Sensores](#sensores)
+  - [TareasProgramadas](#tareasprogramadas)
+  - [TiposSensor](#tipossensor)
+  - [Usuarios](#usuarios)
+  - [ZonasRiego](#zonasriego)
+- [Stored Procedures](#stored-procedures)
+  - [sp_EvaluarReglas](#sp_evaluarreglas)
+- [Foreign Key Relationships Summary](#foreign-key-relationships-summary)
 
 ---
 
-### 4. Roles
+## Tables
 
-Definición de roles y permisos.
+### Alertas
 
-| Campo       | Tipo          | Descripción                |
-| ----------- | ------------- | -------------------------- |
-| RolID       | INT (PK)      | Identificador único        |
-| Nombre      | NVARCHAR(50)  | Nombre del rol (UNIQUE)    |
-| Descripcion | NVARCHAR(200) | Descripción del rol        |
-| Permisos    | NVARCHAR(MAX) | Lista de permisos (JSON)   |
-| Activo      | BIT           | Estado activo (default: 1) |
+Stores alerts generated when sensor readings exceed predefined thresholds or when abnormal conditions are detected.
 
----
+| Column | Data Type | Nullable | Default | Description |
+|--------|-----------|----------|---------|-------------|
+| `id_alerta` | `int` IDENTITY(1,1) | NO | | Primary key, auto-incremented alert identifier. |
+| `id_sensor` | `int` | NO | | Foreign key referencing `Sensores.id_sensor`. The sensor that triggered the alert. |
+| `tipo_alerta` | `nvarchar(100)` | NO | | Type of alert (e.g., 'High Temperature', 'Low Humidity'). |
+| `valor_detectado` | `decimal(10,2)` | YES | | The actual sensor reading that caused the alert. |
+| `fecha_hora` | `datetime` | NO | `GETDATE()` | Timestamp when the alert was generated. |
+| `estado` | `nvarchar(20)` | NO | | Current status (e.g., 'Pendiente', 'Atendida', 'Ignorada'). |
+| `umbral_min` | `decimal(10,2)` | YES | | Minimum threshold value for this alert condition. |
+| `umbral_max` | `decimal(10,2)` | YES | | Maximum threshold value for this alert condition. |
+| `nivel` | `nvarchar(20)` | YES | | Severity level (e.g., 'Bajo', 'Medio', 'Alto'). |
+| `accion_recomendada` | `nvarchar(200)` | YES | | Suggested action to resolve the alert. |
+| `atendida_por` | `int` | YES | | Foreign key referencing `Usuarios.id_usuario`. User who handled the alert. |
+| `fecha_atencion` | `datetime` | YES | | Timestamp when the alert was attended. |
 
-### 5. Invernaderos
-
-Invernaderos pertenecientes a una empresa.
-
-| Campo          | Tipo          | Descripción                    |
-| -------------- | ------------- | ------------------------------ |
-| id_invernadero | INT (PK)      | Identificador único            |
-| id_empresa     | INT (FK)      | Empresa dueña                  |
-| nombre         | NVARCHAR(100) | Nombre del invernadero         |
-| ubicacion      | NVARCHAR(150) | Ubicación física               |
-| superficie_m2  | DECIMAL(10,2) | Superficie en metros cuadrados |
-| id_usuario     | INT (FK)      | Usuario responsable (nullable) |
-| estado         | NVARCHAR(20)  | Estado del invernadero         |
-
-**FK:** Empresas(id_empresa), Usuarios(id_usuario)
+**Primary Key:** `id_alerta`  
+**Foreign Keys:** `FK_Alertas_Sensores` → `Sensores(id_sensor)`
 
 ---
 
-### 6. Cultivos
+### AplicacionesFertilizantes
 
-Cultivos plantados en invernaderos.
+Records the actual application of fertilizers according to a fertilization plan.
 
-| Campo          | Tipo          | Descripción                 |
-| -------------- | ------------- | --------------------------- |
-| id_cultivo     | INT (PK)      | Identificador único         |
-| nombre         | NVARCHAR(100) | Nombre del cultivo          |
-| variedad       | NVARCHAR(100) | Variedad específica         |
-| id_invernadero | INT (FK)      | Invernadero donde se plantó |
-| fecha_siembra  | DATE          | Fecha de siembra            |
+| Column | Data Type | Nullable | Default | Description |
+|--------|-----------|----------|---------|-------------|
+| `id_aplicacion` | `int` IDENTITY(1,1) | NO | | Primary key, auto-incremented application identifier. |
+| `id_plan` | `int` | NO | | Foreign key referencing `PlanFertilizacion.id_plan`. |
+| `fecha_aplicacion` | `datetime` | NO | `GETDATE()` | Date and time the fertilizer was applied. |
+| `cantidad_aplicada` | `nvarchar(50)` | NO | | Amount of fertilizer applied (may include unit information). |
+| `aplicado_por` | `int` | YES | | Foreign key referencing `Usuarios.id_usuario`. Person who applied the fertilizer. |
+| `notas` | `nvarchar(max)` | YES | | Additional notes or observations. |
 
-**FK:** Invernaderos(id_invernadero)
-
----
-
-### 7. CultivoDetalle
-
-Detalles adicionales de cada cultivo (cronograma, tiempos).
-
-| Campo                   | Tipo          | Descripción               |
-| ----------------------- | ------------- | ------------------------- |
-| id_detalle              | INT (PK)      | Identificador único       |
-| id_cultivo              | INT (FK)      | Cultivo asociado          |
-| fecha_siembra           | DATE          | Fecha de siembra          |
-| fecha_cosecha_estimada  | DATE          | Fecha estimada de cosecha |
-| variedad                | NVARCHAR(100) | Variedad del cultivo      |
-| tiempo_germinacion_dias | INT           | Días de germinación       |
-| tiempo_crecimiento_dias | INT           | Días de crecimiento       |
-| tiempo_cosecha_dias     | INT           | Días hasta cosecha        |
-| notas                   | NVARCHAR(MAX) | Notas adicionales         |
-
-**FK:** Cultivos(id_cultivo)
+**Primary Key:** `id_aplicacion`  
+**Foreign Keys:**  
+- `FK_Aplicaciones_PlanFert` → `PlanFertilizacion(id_plan)`  
+- `FK_Aplicaciones_Usuario` → `Usuarios(id_usuario)`
 
 ---
 
-### 8. EtapasCultivo
+### Bitacora
 
-Etapas del ciclo de vida del cultivo.
+General-purpose log table for tracking system events, user actions, device status changes, and other audit information.
 
-| Campo        | Tipo          | Descripción                |
-| ------------ | ------------- | -------------------------- |
-| id_etapa     | INT (PK)      | Identificador único        |
-| id_detalle   | INT (FK)      | Detalle de cultivo         |
-| nombre_etapa | NVARCHAR(100) | Nombre de la etapa         |
-| fecha_inicio | DATE          | Inicio de la etapa         |
-| fecha_fin    | DATE          | Fin de la etapa (nullable) |
-| notas        | NVARCHAR(MAX) | Notas                      |
+| Column | Data Type | Nullable | Default | Description |
+|--------|-----------|----------|---------|-------------|
+| `id_bitacora` | `int` IDENTITY(1,1) | NO | | Primary key, auto-incremented log entry identifier. |
+| `id_dispositivo` | `int` | YES | | Foreign key referencing `DispositivosIoT.id_dispositivo`. Device related to the event (if applicable). |
+| `descripcion` | `nvarchar(max)` | NO | | Detailed description of the event or action. |
+| `severidad` | `nvarchar(20)` | NO | `'info'` | Severity level: 'info', 'warning', 'error', 'critical'. |
+| `fecha` | `datetime` | NO | `GETDATE()` | Timestamp of the event occurrence. |
+| `id_usuario` | `int` | YES | | Foreign key referencing `Usuarios.id_usuario`. User who performed the action. |
+| `notas` | `nvarchar(max)` | YES | | Additional context or notes. |
+| `modulo` | `nvarchar(100)` | YES | | System module where the event originated. |
+| `entidad` | `nvarchar(100)` | YES | | Affected entity type (e.g., 'Sensor', 'Greenhouse'). |
+| `entidad_id` | `nvarchar(100)` | YES | | Identifier of the affected entity. |
+| `accion` | `nvarchar(50)` | YES | | Action performed (e.g., 'CREATE', 'UPDATE', 'DELETE'). |
+| `valor_anterior` | `nvarchar(max)` | YES | | Previous value before change (for updates). |
+| `valor_nuevo` | `nvarchar(max)` | YES | | New value after change (for updates). |
+| `ip_origen` | `nvarchar(50)` | YES | | Source IP address of the request. |
+| `origen` | `nvarchar(50)` | NO | `'sistema'` | Origin of the event: 'sistema', 'usuario', 'dispositivo'. |
+| `fecha_creacion` | `datetime` | NO | `GETDATE()` | Timestamp when the log record was created. |
 
-**FK:** CultivoDetalle(id_detalle)
-
----
-
-### 9. Fertilizantes
-
-Catálogo de fertilizantes disponibles.
-
-| Campo            | Tipo          | Descripción                            |
-| ---------------- | ------------- | -------------------------------------- |
-| id_fertilizante  | INT (PK)      | Identificador único                    |
-| nombre           | NVARCHAR(100) | Nombre del fertilizante                |
-| tipo             | NVARCHAR(50)  | Tipo (orgánico, sintético, etc.)       |
-| composicion      | NVARCHAR(200) | Composición química                    |
-| fabricante       | NVARCHAR(100) | Fabricante/proveedor                   |
-| ph               | DECIMAL(4,2)  | pH del producto                        |
-| nitrogeno        | DECIMAL(5,2)  | Porcentaje de Nitrógeno (N)            |
-| fosforo          | DECIMAL(5,2)  | Porcentaje de Fósforo (P)              |
-| potasio          | DECIMAL(5,2)  | Porcentaje de Potasio (K)              |
-| micronutrientes  | NVARCHAR(200) | Lista de micronutrientes               |
-| forma_aplicacion | NVARCHAR(50)  | Forma de aplicación                    |
-| riesgos          | NVARCHAR(MAX) | Riesgos de manejo                      |
-| fecha_registro   | DATETIME      | Fecha de registro (default: GETDATE()) |
+**Primary Key:** `id_bitacora`  
+**Foreign Keys:**  
+- `FK_Bitacora_Dispositivo` → `DispositivosIoT(id_dispositivo)`  
+- `FK_Bitacora_Usuario` → `Usuarios(id_usuario)`
 
 ---
 
-### 10. PlanFertilizacion
+### ComandosIoT
 
-Planes de fertilización para cultivos.
+Stores commands sent to IoT devices (e.g., actuators, valves, relays).
 
-| Campo             | Tipo          | Descripción              |
-| ----------------- | ------------- | ------------------------ |
-| id_plan           | INT (PK)      | Identificador único      |
-| id_detalle        | INT (FK)      | CultivoDetalle asociado  |
-| id_fertilizante   | INT (FK)      | Fertilizante a usar      |
-| dosis             | NVARCHAR(50)  | Dosis recomendada        |
-| frecuencia_dias   | INT           | Frecuencia en días       |
-| inicio_aplicacion | DATE          | Fecha de inicio del plan |
-| fin_aplicacion    | DATE          | Fecha de fin (nullable)  |
-| notas             | NVARCHAR(MAX) | Notas adicionales        |
+| Column | Data Type | Nullable | Default | Description |
+|--------|-----------|----------|---------|-------------|
+| `id_comando` | `int` IDENTITY(1,1) | NO | | Primary key, auto-incremented command identifier. |
+| `id_dispositivo` | `int` | NO | | Foreign key referencing `DispositivosIoT.id_dispositivo`. Target device. |
+| `comando` | `nvarchar(100)` | NO | | Command name (e.g., 'TURN_ON', 'SET_TARGET'). |
+| `parametros` | `nvarchar(max)` | YES | | JSON or string with command parameters. |
+| `enviado_por` | `int` | YES | | Foreign key referencing `Usuarios.id_usuario`. User who sent the command. |
+| `fecha_envio` | `datetime` | NO | `GETDATE()` | Timestamp when the command was sent. |
+| `estado` | `nvarchar(20)` | NO | `'Pendiente'` | Command status: 'Pendiente', 'Enviado', 'Ejecutado', 'Error'. |
 
-**FK:** CultivoDetalle(id_detalle), Fertilizantes(id_fertilizante)
-
----
-
-### 11. AplicacionesFertilizantes
-
-Registro de aplicaciones reales de fertilizante.
-
-| Campo             | Tipo          | Descripción                                     |
-| ----------------- | ------------- | ----------------------------------------------- |
-| id_aplicacion     | INT (PK)      | Identificador único                             |
-| id_plan           | INT (FK)      | Plan de fertilización                           |
-| fecha_aplicacion  | DATETIME      | Fecha y hora de aplicación (default: GETDATE()) |
-| cantidad_aplicada | NVARCHAR(50)  | Cantidad aplicada                               |
-| aplicado_por      | INT (FK)      | Usuario que realizó la aplicación               |
-| notas             | NVARCHAR(MAX) | Notas de la aplicación                          |
-
-**FK:** PlanFertilizacion(id_plan), Usuarios(id_usuario)
+**Primary Key:** `id_comando`  
+**Foreign Keys:**  
+- `FK_Comandos_Dispositivo` → `DispositivosIoT(id_dispositivo)`  
+- `FK_Comandos_Usuarios` → `Usuarios(id_usuario)`
 
 ---
 
-### 12. ControlPlagas
+### ConfiguracionesSistema
 
-Registro de controles de plagas realizados.
+Stores company-specific system configuration parameters.
 
-| Campo            | Tipo          | Descripción                              |
-| ---------------- | ------------- | ---------------------------------------- |
-| id_plaga         | INT (PK)      | Identificador único                      |
-| id_detalle       | INT (FK)      | CultivoDetalle asociado                  |
-| tipo_plaga       | NVARCHAR(100) | Tipo de plaga detectada                  |
-| producto_usado   | NVARCHAR(100) | Producto aplicado                        |
-| dosis            | NVARCHAR(50)  | Dosis utilizada                          |
-| fecha_aplicacion | DATETIME      | Fecha de aplicación (default: GETDATE()) |
-| notas            | NVARCHAR(MAX) | Notas                                    |
+| Column | Data Type | Nullable | Default | Description |
+|--------|-----------|----------|---------|-------------|
+| `id_config` | `int` IDENTITY(1,1) | NO | | Primary key, auto-incremented configuration identifier. |
+| `id_empresa` | `int` | NO | | Foreign key referencing `Empresas.id_empresa`. Company this configuration belongs to. |
+| `parametro` | `nvarchar(100)` | NO | | Configuration parameter name. |
+| `valor` | `nvarchar(100)` | NO | | Configuration parameter value. |
+| `descripcion` | `nvarchar(max)` | YES | | Description of the parameter. |
+| `fecha_creacion` | `datetime` | NO | `GETDATE()` | Creation timestamp. |
+| `creado_por` | `int` | NO | | Foreign key referencing `Usuarios.id_usuario`. User who created this config. |
+| `fecha_modificacion` | `datetime` | YES | | Last modification timestamp. |
 
-**FK:** CultivoDetalle(id_detalle)
-
----
-
-### 13. ZonasRiego
-
-Zonas de riego dentro de invernaderos.
-
-| Campo             | Tipo          | Descripción                            |
-| ----------------- | ------------- | -------------------------------------- |
-| id_zona           | INT (PK)      | Identificador único                    |
-| nombre            | NVARCHAR(100) | Nombre de la zona                      |
-| id_invernadero    | INT (FK)      | Invernadero al que pertenece           |
-| umbral_humedad    | DECIMAL(5,2)  | Umbral de humedad para activar riego   |
-| estado            | NVARCHAR(20)  | Estado (default: 'Activa')             |
-| tipo_cultivo      | NVARCHAR(100) | Tipo de cultivo en la zona             |
-| area_m2           | DECIMAL(10,2) | Área de la zona                        |
-| caudal_litros_min | DECIMAL(10,2) | Caudal del sistema                     |
-| metodo_riego      | NVARCHAR(50)  | Método (goteo, aspersión, etc.)        |
-| fecha_creacion    | DATETIME      | Fecha de creación (default: GETDATE()) |
-| observaciones     | NVARCHAR(MAX) | Notas                                  |
-| umbral_ph         | DECIMAL(4,2)  | Umbral de pH (default: 7, CHECK 0-14)  |
-| umbral_ec         | DECIMAL(5,2)  | Umbral de conductividad eléctrica      |
-| umbral_tds        | DECIMAL(6,2)  | Umbral de TDS                          |
-
-**FK:** Invernaderos(id_invernadero)
-**CHECK:** umbral_ph >= 0 AND umbral_ph <= 14
+**Primary Key:** `id_config`  
+**Foreign Keys:**  
+- `FK_Config_Empresa` → `Empresas(id_empresa)`  
+- `FK_Config_Usuarios` → `Usuarios(id_usuario)`
 
 ---
 
-### 14. Riegos
+### ConfiguracionSistema
 
-Eventos de riego (automático o manual).
+Global system-wide configuration settings (independent of any specific company).
 
-| Campo          | Tipo          | Descripción                           |
-| -------------- | ------------- | ------------------------------------- |
-| id_riego       | INT (PK)      | Identificador único                   |
-| id_zona        | INT (FK)      | Zona de riego                         |
-| id_usuario     | INT (FK)      | Usuario que inició (nullable)         |
-| tipo           | NVARCHAR(20)  | Tipo: automatico, manual              |
-| duracion_min   | INT           | Duración en minutos                   |
-| volumen_litros | DECIMAL(10,2) | Volumen de agua usado                 |
-| fecha_inicio   | DATETIME      | Inicio del riego (default: GETDATE()) |
-| fecha_fin      | DATETIME      | Fin del riego (nullable)              |
+| Column | Data Type | Nullable | Default | Description |
+|--------|-----------|----------|---------|-------------|
+| `ConfigID` | `int` IDENTITY(1,1) | NO | | Primary key, auto-incremented configuration identifier. |
+| `Clave` | `nvarchar(100)` | NO | | Unique configuration key. |
+| `Valor` | `nvarchar(500)` | NO | | Configuration value. |
+| `Descripcion` | `nvarchar(500)` | YES | | Description of the setting. |
+| `Categoria` | `nvarchar(50)` | YES | | Category grouping (e.g., 'Email', 'IoT'). |
+| `FechaModificacion` | `datetime2(7)` | YES | `GETDATE()` | Last modification timestamp. |
 
-**FK:** ZonasRiego(id_zona), Usuarios(id_usuario)
-
----
-
-### 15. DispositivosIoT
-
-Dispositivos IoT conectados a invernaderos.
-
-| Campo              | Tipo                 | Descripción                                 |
-| ------------------ | -------------------- | ------------------------------------------- |
-| id_dispositivo     | INT (PK)             | Identificador único                         |
-| id_invernadero     | INT (FK)             | Invernadero al que pertenece                |
-| nombre             | NVARCHAR(100)        | Nombre del dispositivo                      |
-| tipo               | NVARCHAR(50)         | Tipo (gateway, controlador, etc.)           |
-| codigo_dispositivo | NVARCHAR(100) UNIQUE | Código físico/estable usado por el hardware |
-| firmware_version   | NVARCHAR(50)         | Versión del firmware                        |
-| ip_local           | NVARCHAR(50)         | IP en la red local                          |
-| estado             | NVARCHAR(20)         | Estado (default: 'Activo')                  |
-| ultimo_reporte     | DATETIME             | Última vez que reportó (nullable)           |
-
-**FK:** Invernaderos(id_invernadero)
+**Primary Key:** `ConfigID`  
+**Unique Constraint:** `UQ_ConfiguracionSistema_Clave` on `Clave`
 
 ---
 
-### 16. Marcas
+### ControlPlagas
 
-Catálogo de marcas de sensores y dispositivos.
+Logs pest control treatments applied to crops.
 
-| Campo          | Tipo          | Descripción                            |
-| -------------- | ------------- | -------------------------------------- |
-| id_marca       | INT (PK)      | Identificador único                    |
-| nombre         | NVARCHAR(100) | Nombre de la marca (UNIQUE)            |
-| descripcion    | NVARCHAR(200) | Descripción opcional                   |
-| pais_origen    | NVARCHAR(100) | País de origen del fabricante          |
-| sitio_web      | NVARCHAR(150) | Sitio web oficial                      |
-| fecha_registro | DATETIME      | Fecha de registro (default: GETDATE()) |
+| Column | Data Type | Nullable | Default | Description |
+|--------|-----------|----------|---------|-------------|
+| `id_plaga` | `int` IDENTITY(1,1) | NO | | Primary key, auto-incremented treatment identifier. |
+| `id_detalle` | `int` | NO | | Foreign key referencing `CultivoDetalle.id_detalle`. Crop detail record. |
+| `tipo_plaga` | `nvarchar(100)` | YES | | Type of pest or disease treated. |
+| `producto_usado` | `nvarchar(100)` | YES | | Pesticide or product name used. |
+| `dosis` | `nvarchar(50)` | YES | | Dosage applied. |
+| `fecha_aplicacion` | `datetime` | NO | `GETDATE()` | Application date and time. |
+| `notas` | `nvarchar(max)` | YES | | Additional notes. |
 
----
-
-### 17. Modelos
-
-Catálogo de modelos de sensores, asociados a una marca.
-
-| Campo                     | Tipo          | Descripción                                      |
-| ------------------------- | ------------- | ------------------------------------------------ |
-| id_modelo                 | INT (PK)      | Identificador único                              |
-| id_marca                  | INT (FK)      | Marca a la que pertenece el modelo               |
-| nombre                    | NVARCHAR(100) | Nombre del modelo                                |
-| especificaciones          | NVARCHAR(MAX) | Especificaciones técnicas (JSON o texto)         |
-| rango_min_por_defecto     | DECIMAL(10,2) | Rango mínimo de medición por defecto             |
-| rango_max_por_defecto     | DECIMAL(10,2) | Rango máximo de medición por defecto             |
-| precision_por_defecto     | DECIMAL(5,2)  | Precisión típica del modelo                      |
-| unidad_medida_por_defecto | NVARCHAR(10)  | Unidad de medida por defecto (%, °C, ppm, etc.)  |
-| fecha_lanzamiento         | DATE          | Fecha de lanzamiento del modelo                  |
-| activo                    | BIT           | Indica si el modelo está disponible (default: 1) |
-
-**FK:** Marcas(id_marca) con ON DELETE CASCADE
-**Restricción:** UNIQUE (id_marca, nombre)
+**Primary Key:** `id_plaga`  
+**Foreign Keys:** `FK_Plagas_CultivoDetalle` → `CultivoDetalle(id_detalle)`
 
 ---
 
-### 18. Sensores
+### CultivoDetalle
 
-Sensores IoT instalados, ahora referenciando marcas y modelos normalizados.
+Detailed cultivation information for a specific crop cycle, including dates and variety specifics.
 
-| Campo             | Tipo          | Descripción                                                  |
-| ----------------- | ------------- | ------------------------------------------------------------ |
-| id_sensor         | INT (PK)      | Identificador único                                          |
-| id_invernadero    | INT (FK)      | Invernadero                                                  |
-| id_dispositivo    | INT (FK)      | Dispositivo al que está conectado (nullable)                 |
-| tipo              | NVARCHAR(30)  | Tipo: humedad_suelo, temperatura, humedad_ambiental, TDS, pH |
-| id_marca          | INT (FK)      | Marca del sensor (NOT NULL)                                  |
-| id_modelo         | INT (FK)      | Modelo del sensor (NOT NULL)                                 |
-| estado            | NVARCHAR(20)  | Estado operativo                                             |
-| rango_min         | DECIMAL(10,2) | Rango mínimo de medición (puede sobreescribir al del modelo) |
-| rango_max         | DECIMAL(10,2) | Rango máximo de medición                                     |
-| unidad_medida     | NVARCHAR(10)  | Unidad (%, °C, ppm, etc.)                                    |
-| precision         | DECIMAL(5,2)  | Precisión del sensor                                         |
-| fecha_instalacion | DATE          | Fecha de instalación                                         |
-| ubicacion_fisica  | NVARCHAR(100) | Ubicación dentro del invernadero                             |
-| ultimo_calibrado  | DATE          | Última calibración                                           |
-| observaciones     | NVARCHAR(MAX) | Notas                                                        |
+| Column | Data Type | Nullable | Default | Description |
+|--------|-----------|----------|---------|-------------|
+| `id_detalle` | `int` IDENTITY(1,1) | NO | | Primary key, auto-incremented detail identifier. |
+| `id_cultivo` | `int` | NO | | Foreign key referencing `Cultivos.id_cultivo`. |
+| `fecha_siembra` | `date` | NO | | Actual planting date. |
+| `fecha_cosecha_estimada` | `date` | YES | | Estimated harvest date. |
+| `variedad` | `nvarchar(100)` | YES | | Specific variety name. |
+| `tiempo_germinacion_dias` | `int` | YES | | Germination period in days. |
+| `tiempo_crecimiento_dias` | `int` | YES | | Growth period in days. |
+| `tiempo_cosecha_dias` | `int` | YES | | Harvest period in days. |
+| `notas` | `nvarchar(max)` | YES | | Additional notes. |
 
-**FK:** Invernaderos(id_invernadero), DispositivosIoT(id_dispositivo), Marcas(id_marca), Modelos(id_modelo)
+**Primary Key:** `id_detalle`  
+**Foreign Keys:** `FK_Detalle_Cultivo` → `Cultivos(id_cultivo)`
 
 ---
 
-### 19. TiposSensor
+### Cultivos
 
-Catálogo de tipos de sensores disponibles.
+Represents crops planted in greenhouses.
 
-| Campo        | Tipo          | Descripción         |
-| ------------ | ------------- | ------------------- |
-| TipoSensorID | INT (PK)      | Identificador único |
-| Nombre       | NVARCHAR(100) | Nombre del tipo     |
-| Unidad       | NVARCHAR(20)  | Unidad de medida    |
-| RangoMin     | DECIMAL(10,2) | Rango mínimo        |
-| RangoMax     | DECIMAL(10,2) | Rango máximo        |
-| Descripcion  | NVARCHAR(500) | Descripción         |
+| Column | Data Type | Nullable | Default | Description |
+|--------|-----------|----------|---------|-------------|
+| `id_cultivo` | `int` IDENTITY(1,1) | NO | | Primary key, auto-incremented crop identifier. |
+| `nombre` | `nvarchar(100)` | NO | | Crop name (e.g., 'Tomato', 'Lettuce'). |
+| `variedad` | `nvarchar(100)` | YES | | Variety name (optional at this level). |
+| `id_invernadero` | `int` | NO | | Foreign key referencing `Invernaderos.id_invernadero`. |
+| `fecha_siembra` | `date` | YES | | Planting date. |
 
----
-
-### 20. LecturasSensores
-
-Histórico de lecturas de sensores.
-
-| Campo      | Tipo          | Descripción                    |
-| ---------- | ------------- | ------------------------------ |
-| id_lectura | INT (PK)      | Identificador único            |
-| id_sensor  | INT (FK)      | Sensor que tomó la lectura     |
-| valor      | DECIMAL(10,2) | Valor medido                   |
-| unidad     | NVARCHAR(10)  | Unidad de medida               |
-| fecha_hora | DATETIME      | Timestamp (default: GETDATE()) |
-
-**FK:** Sensores(id_sensor)
+**Primary Key:** `id_cultivo`  
+**Foreign Keys:** `FK_Cultivos_Invernaderos` → `Invernaderos(id_invernadero)`
 
 ---
 
-### 21. Alertas
+### DispositivosIoT
 
-Alertas generadas por el sistema.
+Manages IoT devices installed in greenhouses (controllers, gateways, actuators).
 
-| Campo              | Tipo          | Descripción                                |
-| ------------------ | ------------- | ------------------------------------------ |
-| id_alerta          | INT (PK)      | Identificador único                        |
-| id_sensor          | INT (FK)      | Sensor que generó la alerta                |
-| tipo_alerta        | NVARCHAR(100) | Tipo: humedad_baja, temperatura_alta, etc. |
-| valor_detectado    | DECIMAL(10,2) | Valor que causó la alerta                  |
-| fecha_hora         | DATETIME      | Timestamp (default: GETDATE())             |
-| estado             | NVARCHAR(20)  | Estado: pendiente, atendida, resuelta      |
-| umbral_min         | DECIMAL(10,2) | Umbral mínimo                              |
-| umbral_max         | DECIMAL(10,2) | Umbral máximo                              |
-| nivel              | NVARCHAR(20)  | Nivel: critico, advertencia, info          |
-| accion_recomendada | NVARCHAR(200) | Acción sugerida                            |
-| atendida_por       | INT (FK)      | Usuario que atendió (nullable)             |
-| fecha_atencion     | DATETIME      | Fecha de atención (nullable)               |
+| Column | Data Type | Nullable | Default | Description |
+|--------|-----------|----------|---------|-------------|
+| `id_dispositivo` | `int` IDENTITY(1,1) | NO | | Primary key, auto-incremented device identifier. |
+| `id_invernadero` | `int` | NO | | Foreign key referencing `Invernaderos.id_invernadero`. |
+| `nombre` | `nvarchar(100)` | NO | | Device name/label. |
+| `tipo` | `nvarchar(50)` | NO | | Device type (e.g., 'SensorHub', 'Actuator', 'Gateway'). |
+| `firmware_version` | `nvarchar(50)` | YES | | Current firmware version. |
+| `ip_local` | `nvarchar(50)` | YES | | Local network IP address. |
+| `estado` | `nvarchar(20)` | NO | `'Activo'` | Operational status: 'Activo', 'Inactivo', 'Mantenimiento'. |
+| `ultimo_reporte` | `datetime` | YES | | Timestamp of the last communication from device. |
+| `codigo_dispositivo` | `nvarchar(100)` | YES | | Unique hardware identifier or serial number. |
 
-**FK:** Sensores(id_sensor), Usuarios(id_usuario)
+**Primary Key:** `id_dispositivo`  
+**Foreign Keys:** `FK_Dispositivos_Invernaderos` → `Invernaderos(id_invernadero)`
 
 ---
 
-### 22. ComandosIoT
+### Empresas
 
-Comandos enviados a dispositivos IoT.
+Represents companies that own one or more greenhouses.
 
-| Campo          | Tipo          | Descripción                         |
-| -------------- | ------------- | ----------------------------------- |
-| id_comando     | INT (PK)      | Identificador único                 |
-| id_dispositivo | INT (FK)      | Dispositivo destino                 |
-| comando        | NVARCHAR(100) | Comando a ejecutar                  |
-| parametros     | NVARCHAR(MAX) | Parámetros del comando              |
-| enviado_por    | INT (FK)      | Usuario que envió (nullable)        |
-| fecha_envio    | DATETIME      | Fecha de envío (default: GETDATE()) |
-| estado         | NVARCHAR(20)  | Estado (default: 'Pendiente')       |
+| Column | Data Type | Nullable | Default | Description |
+|--------|-----------|----------|---------|-------------|
+| `id_empresa` | `int` IDENTITY(1,1) | NO | | Primary key, auto-incremented company identifier. |
+| `nombre` | `nvarchar(150)` | NO | | Company name. |
+| `rnc` | `nvarchar(20)` | YES | | Tax identification number (Dominican RNC). |
+| `direccion` | `nvarchar(200)` | YES | | Physical address. |
+| `telefono` | `nvarchar(20)` | YES | | Contact phone number. |
+| `correo` | `nvarchar(100)` | YES | | Contact email address. |
+| `estado` | `nvarchar(20)` | NO | `'Activa'` | Company status: 'Activa', 'Inactiva'. |
+| `fecha_creacion` | `datetime` | NO | `GETDATE()` | Registration date. |
 
-**FK:** DispositivosIoT(id_dispositivo), Usuarios(id_usuario)
-
----
-
-### 23. MantenimientoEquipos
-
-Registro de mantenimiento de dispositivos.
-
-| Campo                 | Tipo          | Descripción                      |
-| --------------------- | ------------- | -------------------------------- |
-| id_mantenimiento      | INT (PK)      | Identificador único              |
-| id_dispositivo        | INT (FK)      | Dispositivo mantenido            |
-| tipo_mantenimiento    | NVARCHAR(20)  | Tipo: preventivo, correctivo     |
-| descripcion           | NVARCHAR(MAX) | Descripción del trabajo          |
-| realizado_por         | INT (FK)      | Usuario que lo realizó           |
-| fecha_mantenimiento   | DATETIME      | Fecha (default: GETDATE())       |
-| proximo_mantenimiento | DATETIME      | Próximo mantenimiento (nullable) |
-| estado_equipo_post    | NVARCHAR(20)  | Estado después del mantenimiento |
-| notas                 | NVARCHAR(MAX) | Notas adicionales                |
-
-**FK:** DispositivosIoT(id_dispositivo), Usuarios(id_usuario)
+**Primary Key:** `id_empresa`
 
 ---
 
-### 24. BitacoraMantenimiento
+### EtapasCultivo
 
-Bitácora de eventos de mantenimiento.
+Tracks the different growth stages of a crop cycle.
 
-| Campo              | Tipo          | Descripción                               |
-| ------------------ | ------------- | ----------------------------------------- |
-| id_bitacora        | INT (PK)      | Identificador único                       |
-| id_dispositivo     | INT (FK)      | Dispositivo                               |
-| descripcion_evento | NVARCHAR(MAX) | Descripción del evento                    |
-| severidad          | NVARCHAR(20)  | Severidad: info, warning, error, critical |
-| fecha_evento       | DATETIME      | Fecha del evento (default: GETDATE())     |
-| registrado_por     | INT (FK)      | Usuario que registró                      |
-| notas              | NVARCHAR(MAX) | Notas adicionales                         |
+| Column | Data Type | Nullable | Default | Description |
+|--------|-----------|----------|---------|-------------|
+| `id_etapa` | `int` IDENTITY(1,1) | NO | | Primary key, auto-incremented stage identifier. |
+| `id_detalle` | `int` | NO | | Foreign key referencing `CultivoDetalle.id_detalle`. |
+| `nombre_etapa` | `nvarchar(100)` | NO | | Stage name (e.g., 'Germination', 'Flowering', 'Fruiting'). |
+| `fecha_inicio` | `date` | NO | | Start date of this stage. |
+| `fecha_fin` | `date` | YES | | End date of this stage (if completed). |
+| `notas` | `nvarchar(max)` | YES | | Observations specific to this stage. |
 
-**FK:** DispositivosIoT(id_dispositivo), Usuarios(id_usuario)
-
----
-
-### 25. IoTLog
-
-Log de comunicación con dispositivos IoT.
-
-| Campo          | Tipo          | Descripción                    |
-| -------------- | ------------- | ------------------------------ |
-| id_log         | INT (PK)      | Identificador único            |
-| id_dispositivo | INT (FK)      | Dispositivo                    |
-| tipo_mensaje   | NVARCHAR(50)  | Tipo de mensaje                |
-| payload        | NVARCHAR(MAX) | Contenido del mensaje          |
-| fecha_evento   | DATETIME      | Timestamp (default: GETDATE()) |
-| estado         | NVARCHAR(20)  | Estado del mensaje             |
-
-**FK:** DispositivosIoT(id_dispositivo)
+**Primary Key:** `id_etapa`  
+**Foreign Keys:** `FK_Etapas_CultivoDetalle` → `CultivoDetalle(id_detalle)`
 
 ---
 
-### 26. Reportes
+### Fertilizantes
 
-Reportes generados por el sistema.
+Catalog of fertilizers available for use.
 
-| Campo          | Tipo          | Descripción                              |
-| -------------- | ------------- | ---------------------------------------- |
-| id_reporte     | INT (PK)      | Identificador único                      |
-| id_invernadero | INT (FK)      | Invernadero relacionado                  |
-| tipo           | NVARCHAR(50)  | Tipo de reporte                          |
-| descripcion    | NVARCHAR(MAX) | Descripción                              |
-| fecha_generado | DATETIME      | Fecha de generación (default: GETDATE()) |
-| generado_por   | INT (FK)      | Usuario que generó (nullable)            |
-| rango_inicio   | DATETIME      | Inicio del rango de datos                |
-| rango_fin      | DATETIME      | Fin del rango de datos                   |
-| formato        | NVARCHAR(20)  | Formato: PDF, Excel, etc.                |
-| ruta_archivo   | NVARCHAR(200) | Ruta del archivo generado                |
-| estado         | NVARCHAR(20)  | Estado                                   |
+| Column | Data Type | Nullable | Default | Description |
+|--------|-----------|----------|---------|-------------|
+| `id_fertilizante` | `int` IDENTITY(1,1) | NO | | Primary key, auto-incremented fertilizer identifier. |
+| `nombre` | `nvarchar(100)` | NO | | Fertilizer product name. |
+| `tipo` | `nvarchar(50)` | NO | | Type (e.g., 'Liquid', 'Granular', 'Organic'). |
+| `composicion` | `nvarchar(200)` | YES | | General composition description. |
+| `fabricante` | `nvarchar(100)` | YES | | Manufacturer name. |
+| `ph` | `decimal(4,2)` | YES | | pH value of the fertilizer solution. |
+| `nitrogeno` | `decimal(5,2)` | YES | | Nitrogen percentage (N). |
+| `fosforo` | `decimal(5,2)` | YES | | Phosphorus percentage (P). |
+| `potasio` | `decimal(5,2)` | YES | | Potassium percentage (K). |
+| `micronutrientes` | `nvarchar(200)` | YES | | Micronutrient content description. |
+| `forma_aplicacion` | `nvarchar(50)` | YES | | Application method (e.g., 'Foliar', 'Drip'). |
+| `riesgos` | `nvarchar(max)` | YES | | Safety warnings or risks. |
+| `fecha_registro` | `datetime` | YES | `GETDATE()` | Date added to catalog. |
 
-**FK:** Invernaderos(id_invernadero), Usuarios(id_usuario)
-
----
-
-### 27. TareasProgramadas
-
-Tareas programadas para ejecución.
-
-| Campo             | Tipo          | Descripción                          |
-| ----------------- | ------------- | ------------------------------------ |
-| id_tarea          | INT (PK)      | Identificador único                  |
-| id_empresa        | INT (FK)      | Empresa dueña                        |
-| titulo            | NVARCHAR(150) | Título de la tarea                   |
-| descripcion       | NVARCHAR(MAX) | Descripción                          |
-| frecuencia        | NVARCHAR(20)  | Frecuencia: diaria, semanal, mensual |
-| proxima_ejecucion | DATETIME      | Próxima fecha de ejecución           |
-| responsable       | INT (FK)      | Usuario responsable                  |
-| estado            | NVARCHAR(20)  | Estado (default: 'Activa')           |
-
-**FK:** Empresas(id_empresa), Usuarios(id_usuario)
+**Primary Key:** `id_fertilizante`
 
 ---
 
-### 28. ConfiguracionesSistema
+### Invernaderos
 
-Configuraciones específicas por empresa.
+Represents individual greenhouses belonging to a company.
 
-| Campo              | Tipo          | Descripción                            |
-| ------------------ | ------------- | -------------------------------------- |
-| id_config          | INT (PK)      | Identificador único                    |
-| id_empresa         | INT (FK)      | Empresa                                |
-| parametro          | NVARCHAR(100) | Nombre del parámetro                   |
-| valor              | NVARCHAR(100) | Valor del parámetro                    |
-| descripcion        | NVARCHAR(MAX) | Descripción                            |
-| fecha_creacion     | DATETIME      | Fecha de creación (default: GETDATE()) |
-| creado_por         | INT (FK)      | Usuario que creó                       |
-| fecha_modificacion | DATETIME      | Última modificación                    |
+| Column | Data Type | Nullable | Default | Description |
+|--------|-----------|----------|---------|-------------|
+| `id_invernadero` | `int` IDENTITY(1,1) | NO | | Primary key, auto-incremented greenhouse identifier. |
+| `id_empresa` | `int` | NO | | Foreign key referencing `Empresas.id_empresa`. |
+| `nombre` | `nvarchar(100)` | NO | | Greenhouse name. |
+| `ubicacion` | `nvarchar(150)` | YES | | Physical location description. |
+| `superficie_m2` | `decimal(10,2)` | YES | | Total surface area in square meters. |
+| `id_usuario` | `int` | YES | | Foreign key referencing `Usuarios.id_usuario`. Assigned manager/operator. |
+| `estado` | `nvarchar(20)` | YES | | Operational status (e.g., 'Activo', 'Inactivo'). |
 
-**FK:** Empresas(id_empresa), Usuarios(id_usuario)
-
----
-
-### 29. ConfiguracionSistema
-
-Configuraciones globales del sistema.
-
-| Campo             | Tipo          | Descripción                              |
-| ----------------- | ------------- | ---------------------------------------- |
-| ConfigID          | INT (PK)      | Identificador único                      |
-| Clave             | NVARCHAR(100) | Clave (UNIQUE)                           |
-| Valor             | NVARCHAR(500) | Valor                                    |
-| Descripcion       | NVARCHAR(500) | Descripción                              |
-| Categoria         | NVARCHAR(50)  | Categoría                                |
-| FechaModificacion | DATETIME2(7)  | Última modificación (default: GETDATE()) |
+**Primary Key:** `id_invernadero`  
+**Foreign Keys:**  
+- `FK_Invernaderos_Empresas` → `Empresas(id_empresa)`  
+- `FK_Invernaderos_Usuario` → `Usuarios(id_usuario)`
 
 ---
 
-## Índices y Constraints
+### IoTLog
 
-### Unique Constraints
+Raw message log for IoT device communications (telemetry, commands, status).
 
-- `Usuarios.correo` - No permite emails duplicados
-- `Roles.Nombre` - No permite roles con el mismo nombre
-- `ConfiguracionSistema.Clave` - No permite claves duplicadas
-- `Marcas.nombre` - No permite marcas duplicadas
-- `Modelos` - Restricción única compuesta (`id_marca`, `nombre`)
+| Column | Data Type | Nullable | Default | Description |
+|--------|-----------|----------|---------|-------------|
+| `id_log` | `int` IDENTITY(1,1) | NO | | Primary key, auto-incremented log identifier. |
+| `id_dispositivo` | `int` | NO | | Foreign key referencing `DispositivosIoT.id_dispositivo`. |
+| `tipo_mensaje` | `nvarchar(50)` | NO | | Message type (e.g., 'Telemetry', 'CommandResponse', 'Heartbeat'). |
+| `payload` | `nvarchar(max)` | YES | | Raw message content (JSON, string). |
+| `fecha_evento` | `datetime` | NO | `GETDATE()` | Timestamp when the message was received. |
+| `estado` | `nvarchar(20)` | NO | | Processing status: 'Recibido', 'Procesado', 'Error'. |
 
-### Check Constraints
-
-- `ZonasRiego.umbral_ph` - Solo valores entre 0 y 14
+**Primary Key:** `id_log`  
+**Foreign Keys:** `FK_IoTLog_Dispositivo` → `DispositivosIoT(id_dispositivo)`
 
 ---
 
-## Notas de Implementación
+### LecturasSensores
 
-1. **Foreign Keys**: Todas las FK son opcionales de eliminar (ON DELETE NO ACTION por defecto), excepto `Modelos` que tiene `ON DELETE CASCADE` sobre `Marcas`.
-2. **Valores por Defecto**: Los timestamps usan GETDATE(), estados usan 'Activo'/'Activa'.
-3. **Tipos de Sensores Comunes**: humedad_suelo, temperatura, humedad_ambiental, TDS, pH.
-4. **Roles**: administrador, tecnico, agricultor.
-5. **Tipos de Riego**: automatico, manual.
-6. **Niveles de Alerta**: critico, advertencia, info.
-7. **Marcas y Modelos**: La información de marca y modelo ahora está normalizada, permitiendo reutilización y metadatos adicionales (página web, especificaciones, rangos por defecto). Los campos `rango_min`, `rango_max`, `unidad_medida` y `precision` en `Sensores` pueden heredarse del modelo o definirse específicamente para cada sensor.
+Time-series data of sensor readings.
+
+| Column | Data Type | Nullable | Default | Description |
+|--------|-----------|----------|---------|-------------|
+| `id_lectura` | `int` IDENTITY(1,1) | NO | | Primary key, auto-incremented reading identifier. |
+| `id_sensor` | `int` | NO | | Foreign key referencing `Sensores.id_sensor`. |
+| `valor` | `decimal(10,2)` | NO | | Measured value. |
+| `unidad` | `nvarchar(10)` | NO | | Unit of measurement (e.g., '°C', '%', 'ppm'). |
+| `fecha_hora` | `datetime` | NO | `GETDATE()` | Timestamp of the reading. |
+
+**Primary Key:** `id_lectura`  
+**Foreign Keys:** `FK_Lecturas_Sensores` → `Sensores(id_sensor)`
+
+---
+
+### MantenimientoEquipos
+
+Tracks maintenance activities performed on IoT devices.
+
+| Column | Data Type | Nullable | Default | Description |
+|--------|-----------|----------|---------|-------------|
+| `id_mantenimiento` | `int` IDENTITY(1,1) | NO | | Primary key, auto-incremented maintenance record identifier. |
+| `id_dispositivo` | `int` | NO | | Foreign key referencing `DispositivosIoT.id_dispositivo`. |
+| `tipo_mantenimiento` | `nvarchar(20)` | NO | | Type: 'Preventivo', 'Correctivo'. |
+| `descripcion` | `nvarchar(max)` | YES | | Description of work performed. |
+| `realizado_por` | `int` | NO | | Foreign key referencing `Usuarios.id_usuario`. Technician who performed maintenance. |
+| `fecha_mantenimiento` | `datetime` | NO | `GETDATE()` | Date and time maintenance was performed. |
+| `proximo_mantenimiento` | `datetime` | YES | | Scheduled date for next maintenance. |
+| `estado_equipo_post` | `nvarchar(20)` | NO | | Device status after maintenance (e.g., 'Operativo'). |
+| `notas` | `nvarchar(max)` | YES | | Additional notes. |
+
+**Primary Key:** `id_mantenimiento`  
+**Foreign Keys:**  
+- `FK_Mant_Dispositivo` → `DispositivosIoT(id_dispositivo)`  
+- `FK_Mant_Usuario` → `Usuarios(id_usuario)`
+
+---
+
+### Marcas
+
+Catalog of sensor and equipment manufacturers.
+
+| Column | Data Type | Nullable | Default | Description |
+|--------|-----------|----------|---------|-------------|
+| `id_marca` | `int` IDENTITY(1,1) | NO | | Primary key, auto-incremented brand identifier. |
+| `nombre` | `nvarchar(100)` | NO | | Brand name (unique). |
+| `descripcion` | `nvarchar(200)` | YES | | Brief description of the brand. |
+| `pais_origen` | `nvarchar(100)` | YES | | Country of origin. |
+| `sitio_web` | `nvarchar(150)` | YES | | Manufacturer website URL. |
+| `fecha_registro` | `datetime` | NO | `GETDATE()` | Date added to the system. |
+
+**Primary Key:** `PK_Marcas` on `id_marca`  
+**Unique Constraint:** `UQ_Marcas_nombre` on `nombre`
+
+---
+
+### Modelos
+
+Catalog of specific sensor/equipment models belonging to a brand.
+
+| Column | Data Type | Nullable | Default | Description |
+|--------|-----------|----------|---------|-------------|
+| `id_modelo` | `int` IDENTITY(1,1) | NO | | Primary key, auto-incremented model identifier. |
+| `id_marca` | `int` | NO | | Foreign key referencing `Marcas.id_marca`. |
+| `nombre` | `nvarchar(100)` | NO | | Model name (unique per brand). |
+| `especificaciones` | `nvarchar(max)` | YES | | Technical specifications. |
+| `rango_min_por_defecto` | `decimal(10,2)` | YES | | Default minimum measurement range. |
+| `rango_max_por_defecto` | `decimal(10,2)` | YES | | Default maximum measurement range. |
+| `precision_por_defecto` | `decimal(5,2)` | YES | | Default accuracy/precision. |
+| `unidad_medida_por_defecto` | `nvarchar(10)` | YES | | Default unit of measurement. |
+| `fecha_lanzamiento` | `date` | YES | | Release date. |
+| `activo` | `bit` | NO | `1` | Whether the model is active in the system. |
+
+**Primary Key:** `PK_Modelos` on `id_modelo`  
+**Unique Constraint:** `UQ_Modelos_MarcaNombre` on (`id_marca`, `nombre`)  
+**Foreign Keys:** `FK_Modelos_Marcas` → `Marcas(id_marca)` ON DELETE CASCADE
+
+---
+
+### PasswordResetTokens
+
+Manages password reset tokens for user accounts.
+
+| Column | Data Type | Nullable | Default | Description |
+|--------|-----------|----------|---------|-------------|
+| `id_token_reset` | `int` IDENTITY(1,1) | NO | | Primary key, auto-incremented token identifier. |
+| `id_usuario` | `int` | NO | | Foreign key referencing `Usuarios.id_usuario`. |
+| `token_hash` | `nvarchar(64)` | NO | | Hashed reset token. |
+| `expira_en` | `datetime` | NO | | Token expiration timestamp. |
+| `usado_en` | `datetime` | YES | | Timestamp when token was used (if any). |
+| `fecha_creacion` | `datetime` | NO | `GETDATE()` | Token creation timestamp. |
+
+**Primary Key:** `id_token_reset`  
+**Foreign Keys:** `FK_PasswordResetTokens_Usuarios` → `Usuarios(id_usuario)`
+
+---
+
+### Personas
+
+Stores personal information of individuals (employees, technicians, contacts).
+
+| Column | Data Type | Nullable | Default | Description |
+|--------|-----------|----------|---------|-------------|
+| `id_persona` | `int` IDENTITY(1,1) | NO | | Primary key, auto-incremented person identifier. |
+| `nombre` | `nvarchar(100)` | YES | | Full name. |
+| `telefono` | `nvarchar(20)` | YES | | Contact phone number. |
+| `puesto` | `nvarchar(50)` | YES | | Job title/position. |
+| `cedula` | `nvarchar(20)` | YES | | National ID number (Dominican Cedula). |
+| `registrado` | `datetime` | NO | `GETDATE()` | Registration date. |
+| `email` | `nvarchar(150)` | YES | | Personal email address. |
+
+**Primary Key:** `id_persona`
+
+---
+
+### PlanFertilizacion
+
+Defines fertilization schedules for specific crop cycles.
+
+| Column | Data Type | Nullable | Default | Description |
+|--------|-----------|----------|---------|-------------|
+| `id_plan` | `int` IDENTITY(1,1) | NO | | Primary key, auto-incremented plan identifier. |
+| `id_detalle` | `int` | NO | | Foreign key referencing `CultivoDetalle.id_detalle`. |
+| `id_fertilizante` | `int` | NO | | Foreign key referencing `Fertilizantes.id_fertilizante`. |
+| `dosis` | `nvarchar(50)` | NO | | Dosage to apply (e.g., '5 ml/L'). |
+| `frecuencia_dias` | `int` | NO | | Frequency of application in days. |
+| `inicio_aplicacion` | `date` | NO | | Start date for the plan. |
+| `fin_aplicacion` | `date` | YES | | End date for the plan. |
+| `notas` | `nvarchar(max)` | YES | | Additional notes. |
+
+**Primary Key:** `id_plan`  
+**Foreign Keys:**  
+- `FK_PlanFert_CultivoDetalle` → `CultivoDetalle(id_detalle)`  
+- `FK_PlanFert_Fertilizantes` → `Fertilizantes(id_fertilizante)`
+
+---
+
+### Reportes
+
+Stores metadata for generated reports (e.g., PDF, Excel files).
+
+| Column | Data Type | Nullable | Default | Description |
+|--------|-----------|----------|---------|-------------|
+| `id_reporte` | `int` IDENTITY(1,1) | NO | | Primary key, auto-incremented report identifier. |
+| `id_invernadero` | `int` | NO | | Foreign key referencing `Invernaderos.id_invernadero`. |
+| `tipo` | `nvarchar(50)` | NO | | Report type (e.g., 'Temperatura', 'Rendimiento'). |
+| `descripcion` | `nvarchar(max)` | YES | | Report description or title. |
+| `fecha_generado` | `datetime` | NO | `GETDATE()` | Generation timestamp. |
+| `generado_por` | `int` | YES | | Foreign key referencing `Usuarios.id_usuario`. |
+| `rango_inicio` | `datetime` | YES | | Start date of the data range. |
+| `rango_fin` | `datetime` | YES | | End date of the data range. |
+| `formato` | `nvarchar(20)` | YES | | File format (e.g., 'PDF', 'Excel'). |
+| `ruta_archivo` | `nvarchar(200)` | YES | | Server file path or URL to the report file. |
+| `estado` | `nvarchar(20)` | YES | | Generation status (e.g., 'Completado', 'Error'). |
+
+**Primary Key:** `id_reporte`  
+**Foreign Keys:** `FK_Reportes_Invernaderos` → `Invernaderos(id_invernadero)`
+
+---
+
+### Riegos
+
+Logs irrigation events for specific zones.
+
+| Column | Data Type | Nullable | Default | Description |
+|--------|-----------|----------|---------|-------------|
+| `id_riego` | `int` IDENTITY(1,1) | NO | | Primary key, auto-incremented irrigation event identifier. |
+| `id_zona` | `int` | NO | | Foreign key referencing `ZonasRiego.id_zona`. |
+| `id_usuario` | `int` | YES | | Foreign key referencing `Usuarios.id_usuario`. User who initiated/authorized irrigation. |
+| `tipo` | `nvarchar(20)` | NO | | Irrigation type: 'Manual', 'Automatico'. |
+| `duracion_min` | `int` | NO | | Duration in minutes. |
+| `volumen_litros` | `decimal(10,2)` | YES | | Estimated or measured water volume in liters. |
+| `fecha_inicio` | `datetime` | NO | `GETDATE()` | Start timestamp. |
+| `fecha_fin` | `datetime` | YES | | End timestamp (if completed). |
+
+**Primary Key:** `id_riego`  
+**Foreign Keys:**  
+- `FK_Riegos_Usuarios` → `Usuarios(id_usuario)`  
+- `FK_Riegos_Zonas` → `ZonasRiego(id_zona)`
+
+---
+
+### Roles
+
+Defines user roles and their associated permissions.
+
+| Column | Data Type | Nullable | Default | Description |
+|--------|-----------|----------|---------|-------------|
+| `RolID` | `int` IDENTITY(1,1) | NO | | Primary key, auto-incremented role identifier. |
+| `Nombre` | `nvarchar(50)` | NO | | Unique role name (e.g., 'Administrador', 'Operador'). |
+| `Descripcion` | `nvarchar(200)` | YES | | Role description. |
+| `Permisos` | `nvarchar(max)` | YES | | JSON or comma-separated list of permissions. |
+| `Activo` | `bit` | YES | `1` | Whether the role is active. |
+
+**Primary Key:** `RolID`  
+**Unique Constraint:** `UQ_Roles_Nombre` on `Nombre`
+
+---
+
+### Sensores
+
+Represents individual sensors installed in greenhouses, with detailed metadata and calibration info.
+
+| Column | Data Type | Nullable | Default | Description |
+|--------|-----------|----------|---------|-------------|
+| `id_sensor` | `int` IDENTITY(1,1) | NO | | Primary key, auto-incremented sensor identifier. |
+| `id_invernadero` | `int` | NO | | Foreign key referencing `Invernaderos.id_invernadero`. |
+| `id_dispositivo` | `int` | YES | | Foreign key referencing `DispositivosIoT.id_dispositivo`. Parent IoT device. |
+| `tipo` | `nvarchar(30)` | NO | | Sensor type (e.g., 'Temperatura', 'Humedad', 'pH'). |
+| `estado` | `nvarchar(20)` | NO | | Operational status: 'Activo', 'Inactivo', 'Calibrando'. |
+| `rango_min` | `decimal(10,2)` | YES | | Minimum expected valid reading. |
+| `rango_max` | `decimal(10,2)` | YES | | Maximum expected valid reading. |
+| `unidad_medida` | `nvarchar(10)` | YES | | Unit of measurement (e.g., '°C', '%'). |
+| `precision` | `decimal(5,2)` | YES | | Sensor accuracy specification. |
+| `fecha_instalacion` | `date` | YES | | Installation date. |
+| `ubicacion_fisica` | `nvarchar(100)` | YES | | Physical location description within greenhouse. |
+| `ultimo_calibrado` | `date` | YES | | Date of last calibration. |
+| `observaciones` | `nvarchar(max)` | YES | | General observations. |
+| `id_marca` | `int` | NO | | Foreign key referencing `Marcas.id_marca`. |
+| `id_modelo` | `int` | NO | | Foreign key referencing `Modelos.id_modelo`. |
+
+**Primary Key:** `id_sensor`  
+**Foreign Keys:**  
+- `FK_Sensores_Dispositivos` → `DispositivosIoT(id_dispositivo)`  
+- `FK_Sensores_Invernaderos` → `Invernaderos(id_invernadero)`  
+- `FK_Sensores_Marcas` → `Marcas(id_marca)`  
+- `FK_Sensores_Modelos` → `Modelos(id_modelo)`
+
+---
+
+### TareasProgramadas
+
+Defines recurring tasks for greenhouse maintenance or operations.
+
+| Column | Data Type | Nullable | Default | Description |
+|--------|-----------|----------|---------|-------------|
+| `id_tarea` | `int` IDENTITY(1,1) | NO | | Primary key, auto-incremented task identifier. |
+| `id_empresa` | `int` | NO | | Foreign key referencing `Empresas.id_empresa`. |
+| `titulo` | `nvarchar(150)` | NO | | Task title. |
+| `descripcion` | `nvarchar(max)` | YES | | Detailed description. |
+| `frecuencia` | `nvarchar(20)` | NO | | Recurrence pattern (e.g., 'Diaria', 'Semanal'). |
+| `proxima_ejecucion` | `datetime` | NO | | Next scheduled execution date/time. |
+| `responsable` | `int` | NO | | Foreign key referencing `Usuarios.id_usuario`. Assigned person. |
+| `estado` | `nvarchar(20)` | NO | `'Activa'` | Task status: 'Activa', 'Completada', 'Cancelada'. |
+
+**Primary Key:** `id_tarea`  
+**Foreign Keys:**  
+- `FK_Tareas_Empresas` → `Empresas(id_empresa)`  
+- `FK_Tareas_Usuario` → `Usuarios(id_usuario)`
+
+---
+
+### TiposSensor
+
+Lookup table for standardized sensor types with default ranges.
+
+| Column | Data Type | Nullable | Default | Description |
+|--------|-----------|----------|---------|-------------|
+| `TipoSensorID` | `int` IDENTITY(1,1) | NO | | Primary key, auto-incremented type identifier. |
+| `Nombre` | `nvarchar(100)` | NO | | Sensor type name (e.g., 'Temperature', 'Humidity'). |
+| `Unidad` | `nvarchar(20)` | YES | | Typical unit of measurement. |
+| `RangoMin` | `decimal(10,2)` | YES | | Recommended minimum range. |
+| `RangoMax` | `decimal(10,2)` | YES | | Recommended maximum range. |
+| `Descripcion` | `nvarchar(500)` | YES | | Description of the sensor type. |
+
+**Primary Key:** `TipoSensorID`
+
+---
+
+### Usuarios
+
+User accounts for system access, linked to a person record.
+
+| Column | Data Type | Nullable | Default | Description |
+|--------|-----------|----------|---------|-------------|
+| `id_usuario` | `int` IDENTITY(1,1) | NO | | Primary key, auto-incremented user identifier. |
+| `nombre` | `nvarchar(100)` | NO | | Display name or username. |
+| `correo` | `nvarchar(100)` | NO | | Unique email address for login. |
+| `contraseña` | `nvarchar(255)` | NO | | Hashed password. |
+| `rol` | `nvarchar(20)` | NO | | User role (e.g., 'Admin', 'Operador', 'Consulta'). |
+| `fecha_registro` | `datetime` | NO | `GETDATE()` | Account creation date. |
+| `id_persona` | `int` | YES | | Foreign key referencing `Personas.id_persona`. |
+| `activo` | `bit` | YES | `1` | Whether the account is active. |
+
+**Primary Key:** `id_usuario`  
+**Unique Constraint:** `UQ_Usuarios_Correo` on `correo`  
+**Foreign Keys:** `FK_Usuarios_Personas` → `Personas(id_persona)`
+
+---
+
+### ZonasRiego
+
+Defines irrigation zones within a greenhouse, with target thresholds.
+
+| Column | Data Type | Nullable | Default | Description |
+|--------|-----------|----------|---------|-------------|
+| `id_zona` | `int` IDENTITY(1,1) | NO | | Primary key, auto-incremented zone identifier. |
+| `nombre` | `nvarchar(100)` | NO | | Zone name (e.g., 'Zona Norte', 'Sector Lechugas'). |
+| `id_invernadero` | `int` | NO | | Foreign key referencing `Invernaderos.id_invernadero`. |
+| `umbral_humedad` | `decimal(5,2)` | NO | | Target humidity threshold (percentage). |
+| `estado` | `nvarchar(20)` | NO | `'Activa'` | Zone status: 'Activa', 'Inactiva'. |
+| `tipo_cultivo` | `nvarchar(100)` | YES | | Type of crop grown in this zone. |
+| `area_m2` | `decimal(10,2)` | YES | | Area in square meters. |
+| `caudal_litros_min` | `decimal(10,2)` | YES | | Flow rate of irrigation system (L/min). |
+| `metodo_riego` | `nvarchar(50)` | YES | | Irrigation method (e.g., 'Goteo', 'Aspersión'). |
+| `fecha_creacion` | `datetime` | YES | `GETDATE()` | Creation date. |
+| `observaciones` | `nvarchar(max)` | YES | | General notes. |
+| `umbral_ph` | `decimal(4,2)` | YES | | Target pH for nutrient solution. |
+| `umbral_ec` | `decimal(5,2)` | YES | | Target electrical conductivity (EC). |
+| `umbral_tds` | `decimal(6,2)` | YES | | Target total dissolved solids (TDS). |
+
+**Primary Key:** `id_zona`  
+**Foreign Keys:** `FK_Zonas_Invernaderos` → `Invernaderos(id_invernadero)`
+
+---
+
+## Stored Procedures
+
+### sp_EvaluarReglas
+
+Evaluates automation rules for a given irrigation zone based on the latest sensor readings.
+
+**Parameters:**
+- `@ZonaID INT` - The ID of the irrigation zone to evaluate.
+
+**Logic:**
+Retrieves all active automation rules associated with the zone, joins with sensor types, and fetches the most recent reading for each rule's sensor type. The rules are ordered by priority.
+
+**Returns:**
+A result set containing:
+- `ReglaID`, `Nombre`, `Operador`, `ValorUmbral`, `AccionTipo`, `AccionParametros`
+- `TipoSensor` (sensor type name)
+- `UltimaLectura` (most recent sensor value)
+
+This procedure is intended to be called by an automation engine that decides whether to trigger actions (e.g., turn on irrigation, send alert) based on the comparison between `UltimaLectura` and `ValorUmbral`.
+
+```sql
+CREATE PROCEDURE [dbo].[sp_EvaluarReglas]
+    @ZonaID INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    SELECT
+        r.ReglaID,
+        r.Nombre,
+        r.Operador,
+        r.ValorUmbral,
+        r.AccionTipo,
+        r.AccionParametros,
+        ts.Nombre AS TipoSensor,
+        (
+            SELECT TOP 1 l.Valor
+            FROM dbo.LecturasSensores l
+            INNER JOIN dbo.Sensores s ON l.SensorID = s.SensorID
+            WHERE s.ZonaID = @ZonaID AND s.TipoSensorID = r.TipoSensorID
+            ORDER BY l.FechaHora DESC
+        ) AS UltimaLectura
+    FROM dbo.ReglasAutomatizacion r
+    INNER JOIN dbo.TiposSensor ts ON r.TipoSensorID = ts.TipoSensorID
+    WHERE r.ZonaID = @ZonaID AND r.Activo = 1
+    ORDER BY r.Prioridad;
+END
+
+Note: The stored procedure references tables ReglasAutomatizacion and columns SensorID, ZonaID which are not present in the provided DDL script. This suggests the procedure may belong to a related or extended schema not fully captured in the script.
+
+Foreign Key Relationships Summary
+Child Table	Foreign Key Name	Parent Table
+Alertas	FK_Alertas_Sensores	Sensores
+AplicacionesFertilizantes	FK_Aplicaciones_PlanFert	PlanFertilizacion
+AplicacionesFertilizantes	FK_Aplicaciones_Usuario	Usuarios
+Bitacora	FK_Bitacora_Dispositivo	DispositivosIoT
+Bitacora	FK_Bitacora_Usuario	Usuarios
+ComandosIoT	FK_Comandos_Dispositivo	DispositivosIoT
+ComandosIoT	FK_Comandos_Usuarios	Usuarios
+ConfiguracionesSistema	FK_Config_Empresa	Empresas
+ConfiguracionesSistema	FK_Config_Usuarios	Usuarios
+ControlPlagas	FK_Plagas_CultivoDetalle	CultivoDetalle
+CultivoDetalle	FK_Detalle_Cultivo	Cultivos
+Cultivos	FK_Cultivos_Invernaderos	Invernaderos
+DispositivosIoT	FK_Dispositivos_Invernaderos	Invernaderos
+EtapasCultivo	FK_Etapas_CultivoDetalle	CultivoDetalle
+Invernaderos	FK_Invernaderos_Empresas	Empresas
+Invernaderos	FK_Invernaderos_Usuario	Usuarios
+IoTLog	FK_IoTLog_Dispositivo	DispositivosIoT
+LecturasSensores	FK_Lecturas_Sensores	Sensores
+MantenimientoEquipos	FK_Mant_Dispositivo	DispositivosIoT
+MantenimientoEquipos	FK_Mant_Usuario	Usuarios
+Modelos	FK_Modelos_Marcas	Marcas
+PasswordResetTokens	FK_PasswordResetTokens_Usuarios	Usuarios
+PlanFertilizacion	FK_PlanFert_CultivoDetalle	CultivoDetalle
+PlanFertilizacion	FK_PlanFert_Fertilizantes	Fertilizantes
+Reportes	FK_Reportes_Invernaderos	Invernaderos
+Riegos	FK_Riegos_Usuarios	Usuarios
+Riegos	FK_Riegos_Zonas	ZonasRiego
+Sensores	FK_Sensores_Dispositivos	DispositivosIoT
+Sensores	FK_Sensores_Invernaderos	Invernaderos
+Sensores	FK_Sensores_Marcas	Marcas
+Sensores	FK_Sensores_Modelos	Modelos
+TareasProgramadas	FK_Tareas_Empresas	Empresas
+TareasProgramadas	FK_Tareas_Usuario	Usuarios
+Usuarios	FK_Usuarios_Personas	Personas
+ZonasRiego	FK_Zonas_Invernaderos	Invernaderos
