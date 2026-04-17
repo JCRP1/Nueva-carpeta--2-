@@ -61,6 +61,37 @@ const DEVICE_STATUS = [
   { value: "Mantenimiento", label: "Mantenimiento" },
 ]
 
+const IP_REGEX = /^(\d{1,3}\.){3}\d{1,3}$/
+const FIRMWARE_REGEX = /^\d+(\.\d+)*$/
+
+function formatIpAddress(value: string): string {
+  const cleaned = value.replace(/[^\d.]/g, "")
+  const parts = cleaned.split(".")
+  const formatted = parts.map((part) => part.replace(/\D/g, "").slice(0, 3)).join(".")
+  const lastDotIndex = formatted.lastIndexOf(".")
+  if (formatted.length > 15 && lastDotIndex !== -1) {
+    return formatted.slice(0, 15)
+  }
+  return formatted.slice(0, 15)
+}
+
+function validateIp(value: string): string | null {
+  if (!value) return null
+  if (!IP_REGEX.test(value)) return "Formato IP invalido (ej: 192.168.1.100)"
+  const parts = value.split(".")
+  for (const part of parts) {
+    const num = parseInt(part, 10)
+    if (num < 0 || num > 255) return "Cada octeto debe ser 0-255"
+  }
+  return null
+}
+
+function validateFirmware(value: string): string | null {
+  if (!value) return null
+  if (!FIRMWARE_REGEX.test(value)) return "Formato invalido (ej: 1.2.3)"
+  return null
+}
+
 export function DispositivosView() {
   const { data: devices, isLoading, mutate } = useSWR<DispositivoData[]>("/api/devices", fetcher)
   const { data: greenhouses } = useSWR<Invernadero[]>("/api/greenhouses", fetcher)
@@ -82,6 +113,8 @@ export function DispositivosView() {
     firmwareVersion: "",
     ipLocal: "",
   })
+  const [ipError, setIpError] = useState<string | null>(null)
+  const [firmwareError, setFirmwareError] = useState<string | null>(null)
 
   const ghList = greenhouses || []
   const deviceList = devices || []
@@ -96,6 +129,8 @@ export function DispositivosView() {
       firmwareVersion: "",
       ipLocal: "",
     })
+    setIpError(null)
+    setFirmwareError(null)
     setEditingDevice(null)
     setEditMode(false)
   }, [])
@@ -123,6 +158,30 @@ export function DispositivosView() {
   const handleSubmit = useCallback(async () => {
     if (!formData.nombre || !formData.idInvernadero || !formData.codigoDispositivo.trim()) {
       toast.error("Complete los campos requeridos", { description: "Nombre, invernadero y codigo son requeridos" })
+      return
+    }
+
+    if (!formData.ipLocal.trim()) {
+      setIpError("IP Local es requerida")
+      toast.error("IP Local es requerida")
+      return
+    }
+    if (!formData.firmwareVersion.trim()) {
+      setFirmwareError("Version Firmware es requerida")
+      toast.error("Version Firmware es requerida")
+      return
+    }
+
+    const ipValidation = validateIp(formData.ipLocal)
+    const firmwareValidation = validateFirmware(formData.firmwareVersion)
+    if (ipValidation) {
+      setIpError(ipValidation)
+      toast.error("IP Local invalida", { description: ipValidation })
+      return
+    }
+    if (firmwareValidation) {
+      setFirmwareError(firmwareValidation)
+      toast.error("Version Firmware invalida", { description: firmwareValidation })
       return
     }
 
@@ -309,26 +368,46 @@ export function DispositivosView() {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="flex flex-col gap-2">
-                <Label>Estado</Label>
-                <Select value={formData.estado} onValueChange={(v) => setFormData({ ...formData, estado: v })}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {DEVICE_STATUS.map((s) => (
-                      <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label>Estado</Label>
+              <Select value={formData.estado} onValueChange={(v) => setFormData({ ...formData, estado: v })}>
+                <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {DEVICE_STATUS.map((s) => (
+                    <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="flex flex-col gap-2">
-                <Label>IP Local</Label>
-                <Input placeholder="Ej: 192.168.1.100" value={formData.ipLocal} onChange={(e) => setFormData({ ...formData, ipLocal: e.target.value })} />
+                <Label>IP Local *</Label>
+                <Input 
+                  placeholder="192.168.1.100" 
+                  value={formData.ipLocal} 
+                  onChange={(e) => {
+                    const formatted = formatIpAddress(e.target.value)
+                    setFormData({ ...formData, ipLocal: formatted })
+                    setIpError(formatted ? validateIp(formatted) : "IP Local es requerida")
+                  }}
+                  className={ipError ? "border-destructive" : ""}
+                />
+                {ipError && <p className="text-xs text-destructive">{ipError}</p>}
               </div>
               <div className="flex flex-col gap-2">
-                <Label>Version Firmware</Label>
-                <Input placeholder="Ej: 1.2.3" value={formData.firmwareVersion} onChange={(e) => setFormData({ ...formData, firmwareVersion: e.target.value })} />
+                <Label>Version Firmware *</Label>
+                <Input 
+                  placeholder="1.2.3" 
+                  value={formData.firmwareVersion} 
+                  onChange={(e) => {
+                    const value = e.target.value.replace(/[^\d.]/g, "")
+                    setFormData({ ...formData, firmwareVersion: value })
+                    setFirmwareError(value ? validateFirmware(value) : "Version Firmware es requerida")
+                  }}
+                  className={firmwareError ? "border-destructive" : ""}
+                />
+                {firmwareError && <p className="text-xs text-destructive">{firmwareError}</p>}
               </div>
             </div>
           </div>

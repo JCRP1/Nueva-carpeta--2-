@@ -199,7 +199,6 @@ export function SensorDetailView({ sensor, onBack, userRole, historialPreload }:
   const [calibrationHistory, setCalibrationHistory] = useState<CalibrationHistory[]>([])
   const [calibrationLoading, setCalibrationLoading] = useState(false)
   const [newCalibrationOpen, setNewCalibrationOpen] = useState(false)
-  const [newCalibrationDate, setNewCalibrationDate] = useState("")
 
   useEffect(() => {
     console.log("========== SENSOR DETAIL VIEW ==========")
@@ -369,18 +368,14 @@ export function SensorDetailView({ sensor, onBack, userRole, historialPreload }:
   }, [programForm, sensor.id])
 
   const handleSaveCalibration = useCallback(async () => {
-    if (!newCalibrationDate) {
-      toast.error("Seleccione una fecha de calibración")
-      return
-    }
+    const calibrationDate = new Date().toISOString().split("T")[0]
     setSaving(true)
     try {
       await api.updateSensor(sensor.id, {
-        ultimoCalibrado: newCalibrationDate,
+        ultimoCalibrado: calibrationDate,
       })
-      toast.success("Calibración registrada")
+      toast.success("Calibración registrada", { description: `Fecha: ${calibrationDate}` })
       setNewCalibrationOpen(false)
-      setNewCalibrationDate("")
       fetch(`/api/sensors/${sensor.id}/calibration-history`)
         .then((res) => res.json())
         .then((data) => {
@@ -393,7 +388,7 @@ export function SensorDetailView({ sensor, onBack, userRole, historialPreload }:
     } finally {
       setSaving(false)
     }
-  }, [sensor.id, newCalibrationDate])
+  }, [sensor.id])
 
   const formatDate = (dateStr: string | undefined) => {
     if (!dateStr) return "N/A"
@@ -963,24 +958,19 @@ export function SensorDetailView({ sensor, onBack, userRole, historialPreload }:
             <DialogTitle>Registrar Calibracion</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-4">
-            <div className="flex flex-col gap-2">
-              <Label>Fecha de Calibracion</Label>
-              <Input
-                type="date"
-                value={newCalibrationDate}
-                onChange={(e) => setNewCalibrationDate(e.target.value)}
-              />
-              <p className="text-xs text-muted-foreground">
-                Esta accion registrara una entrada en el historial de calibraciones
-              </p>
-            </div>
+            <p className="text-sm text-muted-foreground">
+              Se registrara la calibración del sensor con la fecha de hoy: <span className="font-medium text-foreground">{new Date().toLocaleDateString("es-DO")}</span>
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Esta accion creara un registro en el historial de calibraciones.
+            </p>
           </div>
           <DialogFooter>
             <DialogClose asChild>
               <Button variant="outline">Cancelar</Button>
             </DialogClose>
-            <Button onClick={handleSaveCalibration} disabled={saving || !newCalibrationDate}>
-              {saving ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Guardando...</> : "Registrar"}
+            <Button onClick={handleSaveCalibration} disabled={saving}>
+              {saving ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Registrando...</> : "Confirmar Calibracion"}
             </Button>
           </DialogFooter>
         </DialogContent>

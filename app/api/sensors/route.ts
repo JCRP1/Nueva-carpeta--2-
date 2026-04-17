@@ -289,6 +289,12 @@ const mergedRangoMin = rangoMin !== undefined ? rangoMin : umbralMin
     )
 
     if (ultimoCalibrado !== undefined && ultimoCalibrado !== existing.ultimoCalibrado) {
+      let userId: number | null = null
+      if (!BYPASS_AUTH) {
+        const authUser = await requireAuth()
+        userId = (authUser as { userId?: number }).userId || null
+      }
+
       await query(
         `INSERT INTO Bitacora 
          (id_dispositivo, descripcion, severidad, fecha, id_usuario, modulo, entidad, entidad_id, accion, valor_anterior, valor_nuevo, origen)
@@ -297,7 +303,7 @@ const mergedRangoMin = rangoMin !== undefined ? rangoMin : umbralMin
           idDispositivo: existing.idDispositivo != null ? Number(existing.idDispositivo) : null,
           descripcion: `Calibración del sensor ${existing.tipo} - Nueva fecha: ${ultimoCalibrado}`,
           severidad: "info",
-          idUsuario: session.empresaId,
+          idUsuario: userId,
           modulo: "Sensores",
           entidad: "Sensor",
           entidadId: String(id),
