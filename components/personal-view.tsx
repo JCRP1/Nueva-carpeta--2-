@@ -63,6 +63,7 @@ import {
   Wrench,
   Sprout,
   Users,
+  Plus,
 } from "lucide-react"
 import type { UserRole } from "@/lib/greensense-data"
 import { api, fetcher } from "@/lib/api-client"
@@ -96,13 +97,12 @@ function formatDate(ts: string) {
   })
 }
 
-const PUESTOS = [
+const PUESTOS_PRESET = [
   "Operador de Riego",
   "Tecnico Agronomo",
   "Auxiliar de Campo",
   "Supervisor de Invernadero",
   "Analista de Sensores",
-  "Otro",
 ]
 
 export function PersonalView() {
@@ -128,6 +128,12 @@ const [promoteRole, setPromoteRole] = useState<string>("")
   const [formTelefono, setFormTelefono] = useState("")
   const [formCedula, setFormCedula] = useState("")
   const [saving, setSaving] = useState(false)
+
+  // ── Puestos dinámicos ───────────────────────────────────────────────────────
+  const [puestos, setPuestos] = useState<string[]>(PUESTOS_PRESET)
+  const [cargoDialogOpen, setCargoDialogOpen] = useState(false)
+  const [nuevoCargo, setNuevoCargo] = useState("")
+  const [savingCargo, setSavingCargo] = useState(false)
 
   // ── Promote state ────────────────────────────────────────────────────────────
   const [promoteTarget, setPromoteTarget] = useState<PersonalData | null>(null)
@@ -166,7 +172,7 @@ const [promoteRole, setPromoteRole] = useState<string>("")
     setEditTarget(p)
     setFormNombre(p.nombre)
     setFormEmail(p.email)
-    const isPreset = PUESTOS.includes(p.puesto || "")
+    const isPreset = puestos.includes(p.puesto || "")
     setFormPuesto(isPreset ? (p.puesto || "") : "Otro")
     setFormPuestoCustom(!isPreset ? (p.puesto || "") : "")
     setFormTelefono(p.telefono || "")
@@ -252,6 +258,30 @@ const [promoteRole, setPromoteRole] = useState<string>("")
       toast.error("Error al eliminar", { description: err instanceof Error ? err.message : "Error" })
     } finally {
       setDeleting(false)
+    }
+  }
+
+  async function handleAddCargo() {
+    const trimmed = nuevoCargo.trim()
+    if (!trimmed) {
+      toast.error("El nombre del cargo es requerido")
+      return
+    }
+    if (puestos.includes(trimmed)) {
+      toast.error("Este cargo ya existe")
+      return
+    }
+    setSavingCargo(true)
+    try {
+      setPuestos([...puestos, trimmed])
+      setFormPuesto(trimmed)
+      setCargoDialogOpen(false)
+      setNuevoCargo("")
+      toast.success("Cargo agregado", { description: trimmed })
+    } catch (err) {
+      toast.error("Error", { description: err instanceof Error ? err.message : "Error" })
+    } finally {
+      setSavingCargo(false)
     }
   }
 
@@ -514,18 +544,23 @@ const [promoteRole, setPromoteRole] = useState<string>("")
 
               <div className="col-span-2 flex flex-col gap-1.5">
                 <Label>Cargo</Label>
-                <Select value={formCargo} onValueChange={setFormPuesto}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Seleccionar cargo..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {PUESTOS.map((c) => (
-                      <SelectItem key={c} value={c}>
-                        {c}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <div className="flex gap-2">
+                  <Select value={formCargo} onValueChange={setFormPuesto}>
+                    <SelectTrigger className="flex-1">
+                      <SelectValue placeholder="Seleccionar cargo..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {puestos.map((c) => (
+                        <SelectItem key={c} value={c}>
+                          {c}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Button type="button" variant="outline" size="icon" onClick={() => setCargoDialogOpen(true)} title="Agregar cargo">
+                    <Plus className="h-4 w-4" />
+                  </Button>
+                </div>
                 {formCargo === "Otro" && (
                   <Input
                     placeholder="Especifique el cargo..."
@@ -669,6 +704,43 @@ const [promoteRole, setPromoteRole] = useState<string>("")
                   <ArrowUpRight className="mr-2 h-4 w-4" />
                   Dar Acceso
                 </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Nuevo Cargo Dialog ────────────────────────────────────────────────── */}
+      <Dialog open={cargoDialogOpen} onOpenChange={(open) => { setCargoDialogOpen(open); if (!open) setNuevoCargo("") }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="text-foreground">Nuevo Cargo</DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-col gap-4 py-2">
+            <div className="flex flex-col gap-1.5">
+              <Label>Nombre del Cargo *</Label>
+              <Input
+                placeholder="Ej: Coordinador de Campo"
+                value={nuevoCargo}
+                onChange={(e) => setNuevoCargo(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault()
+                    handleAddCargo()
+                  }
+                }}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setCargoDialogOpen(false); setNuevoCargo("") }}>
+              Cancelar
+            </Button>
+            <Button onClick={handleAddCargo} disabled={savingCargo}>
+              {savingCargo ? (
+                <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Guardando...</>
+              ) : (
+                "Agregar"
               )}
             </Button>
           </DialogFooter>
