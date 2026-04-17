@@ -293,7 +293,7 @@ export function UsersView() {
                         {personas.length === 0 ? (
                           <div className="relative flex w-full cursor-default select-none items-center rounded-sm py-1.5 pl-8 pr-2 text-sm text-muted-foreground">Cargando personas...</div>
                         ) : (
-                          personas.map((p) => (
+                          [...personas].sort((a, b) => a.nombre.localeCompare(b.nombre)).map((p) => (
             <SelectItem key={p.id} value={p.id}>
               {p.nombre}
             </SelectItem>)))}
