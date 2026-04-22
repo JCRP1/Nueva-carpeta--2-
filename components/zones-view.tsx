@@ -34,6 +34,7 @@ import {
 } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
 import { Slider } from "@/components/ui/slider"
 import {
   Select,
@@ -63,6 +64,12 @@ interface ZoneData {
   estadoRiego: string
   modoRiego: string
   umbralHumedad: number
+  area_m2: number
+  caudal_litros_min: number
+  umbral_ph: number
+  umbral_ec: number
+  umbral_tds: number
+  observaciones: string
   humedadActual: number
   ultimoRiego: string
   duracionUltimoRiego: number
@@ -194,6 +201,7 @@ function ZoneCard({
   zona,
   greenhouses,
   crops,
+  metodosRiego,
   onToggleIrrigation,
   onSaveConfig,
   onToggleAuto,
@@ -202,14 +210,22 @@ function ZoneCard({
   zona: ZoneData
   greenhouses: Invernadero[]
   crops: Cultivo[]
+  metodosRiego: Array<{ id: string; nombre: string }>
   onToggleIrrigation: (id: string) => void
-  onSaveConfig: (id: string, nombre: string, cultivo: string, umbral: number) => void
+  onSaveConfig: (id: string, data: Record<string, unknown>) => void
   onToggleAuto: (id: string) => void
   userRole: UserRole
 }) {
   const [configNombre, setConfigNombre] = useState(zona.nombre)
   const [configCultivo, setConfigCultivo] = useState(zona.cultivoActual)
   const [configUmbral, setConfigUmbral] = useState(zona.umbralHumedad)
+  const [configArea, setConfigArea] = useState(zona.area_m2)
+  const [configCaudal, setConfigCaudal] = useState(zona.caudal_litros_min)
+  const [configMetodo, setConfigMetodo] = useState(zona.modoRiego || "")
+  const [configUmbralPh, setConfigUmbralPh] = useState(zona.umbral_ph)
+  const [configUmbralEc, setConfigUmbralEc] = useState(zona.umbral_ec)
+  const [configUmbralTds, setConfigUmbralTds] = useState(zona.umbral_tds)
+  const [configObservaciones, setConfigObservaciones] = useState(zona.observaciones)
   const [saving, setSaving] = useState(false)
   const [configOpen, setConfigOpen] = useState(false)
 
@@ -221,7 +237,18 @@ function ZoneCard({
 
   function handleSaveConfig() {
     setSaving(true)
-    onSaveConfig(zona.id, configNombre, configCultivo, configUmbral)
+    onSaveConfig(zona.id, {
+      nombre: configNombre,
+      cultivoActual: configCultivo,
+      umbralHumedad: configUmbral,
+      area_m2: configArea,
+      caudal_litros_min: configCaudal,
+      modoRiego: configMetodo,
+      umbral_ph: configUmbralPh,
+      umbral_ec: configUmbralEc,
+      umbral_tds: configUmbralTds,
+      observaciones: configObservaciones,
+    })
     setTimeout(() => {
       setSaving(false)
       setConfigOpen(false)
@@ -232,6 +259,13 @@ function ZoneCard({
     setConfigNombre(zona.nombre)
     setConfigCultivo(zona.cultivoActual)
     setConfigUmbral(zona.umbralHumedad)
+    setConfigArea(zona.area_m2)
+    setConfigCaudal(zona.caudal_litros_min)
+    setConfigMetodo(zona.modoRiego || metodosRiego[0]?.nombre || "")
+    setConfigUmbralPh(zona.umbral_ph)
+    setConfigUmbralEc(zona.umbral_ec)
+    setConfigUmbralTds(zona.umbral_tds)
+    setConfigObservaciones(zona.observaciones)
     setConfigOpen(true)
   }
 
@@ -320,7 +354,7 @@ function ZoneCard({
                     <Settings className="mr-1 h-3.5 w-3.5" />Config
                   </Button>
                 </DialogTrigger>
-                <DialogContent>
+                <DialogContent className="max-w-lg">
                   <DialogHeader>
                     <DialogTitle className="text-foreground">Configurar Zona</DialogTitle>
                   </DialogHeader>
@@ -347,6 +381,45 @@ function ZoneCard({
                     <div className="flex flex-col gap-2">
                       <Label>Umbral de Humedad: {configUmbral}%</Label>
                       <Slider value={[configUmbral]} onValueChange={(v) => setConfigUmbral(v[0])} min={10} max={80} step={5} />
+                    </div>
+<div className="grid grid-cols-2 gap-4">
+                      <div className="flex flex-col gap-2">
+                        <Label>Area (m²)</Label>
+                        <Input type="number" value={configArea} onChange={(e) => setConfigArea(Number(e.target.value))} min={1} />
+                      </div>
+                      <div className="flex flex-col gap-2">
+                        <Label>Caudal (L/min)</Label>
+                        <Input type="number" value={configCaudal} onChange={(e) => setConfigCaudal(Number(e.target.value))} min={1} step={0.5} />
+                      </div>
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      <Label>Metodo de Riego</Label>
+                      <Select value={configMetodo} onValueChange={setConfigMetodo}>
+                        <SelectTrigger><SelectValue placeholder="Seleccionar metodo" /></SelectTrigger>
+                        <SelectContent>
+                          {metodosRiego.map((met) => (
+                            <SelectItem key={met.id} value={met.nombre}>{met.nombre}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="grid grid-cols-3 gap-4">
+                      <div className="flex flex-col gap-2">
+                        <Label>Umbral pH</Label>
+                        <Input type="number" value={configUmbralPh} onChange={(e) => setConfigUmbralPh(Number(e.target.value))} min={0} max={14} step={0.1} />
+                      </div>
+                      <div className="flex flex-col gap-2">
+                        <Label>Umbral EC</Label>
+                        <Input type="number" value={configUmbralEc} onChange={(e) => setConfigUmbralEc(Number(e.target.value))} min={0} step={0.1} />
+                      </div>
+                      <div className="flex flex-col gap-2">
+                        <Label>Umbral TDS</Label>
+                        <Input type="number" value={configUmbralTds} onChange={(e) => setConfigUmbralTds(Number(e.target.value))} min={0} step={10} />
+                      </div>
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      <Label>Observaciones</Label>
+                      <Textarea value={configObservaciones} onChange={(e) => setConfigObservaciones(e.target.value)} placeholder="Notas adicionales..." />
                     </div>
                   </div>
                   <DialogFooter>
@@ -404,12 +477,25 @@ export function ZonesView({ selectedGreenhouse, userRole }: ZonesViewProps) {
   const [newZoneCultivo, setNewZoneCultivo] = useState("")
   const [newZoneGreenhouse, setNewZoneGreenhouse] = useState(selectedGreenhouse)
   const [newZoneUmbral, setNewZoneUmbral] = useState(40)
+  const [newZoneArea, setNewZoneArea] = useState(100)
+  const [newZoneCaudal, setNewZoneCaudal] = useState(10)
+  const [newZoneMetodo, setNewZoneMetodo] = useState("goteo")
+  const [newZoneUmbralPh, setNewZoneUmbralPh] = useState(6.0)
+  const [newZoneUmbralEc, setNewZoneUmbralEc] = useState(1.5)
+  const [newZoneUmbralTds, setNewZoneUmbralTds] = useState(800)
+  const [newZoneObservaciones, setNewZoneObservaciones] = useState("")
   const [creatingZone, setCreatingZone] = useState(false)
+  const [newMethodDialogOpen, setNewMethodDialogOpen] = useState(false)
+  const [newMethodName, setNewMethodName] = useState("")
+  const [newMethodDesc, setNewMethodDesc] = useState("")
+  const [newMethodEficiencia, setNewMethodEficiencia] = useState(80)
+  const [creatingMethod, setCreatingMethod] = useState(false)
 
   const { data: newZoneCrops } = useSWR<Cultivo[]>(
     newZoneGreenhouse ? `/api/crops?greenhouse=${newZoneGreenhouse}` : null,
     fetcher
   )
+  const { data: metodosRiego } = useSWR<Array<{ id: string; nombre: string }>>("/api/metodos-riego", fetcher)
 
   useEffect(() => {
     setNewZoneCultivo("")
@@ -445,11 +531,11 @@ export function ZonesView({ selectedGreenhouse, userRole }: ZonesViewProps) {
     }
   }, [zoneList, mutate])
 
-  const handleSaveConfig = useCallback(async (id: string, nombre: string, cultivo: string, umbral: number) => {
+  const handleSaveConfig = useCallback(async (id: string, data: Record<string, unknown>) => {
     try {
-      await api.updateZone(id, { nombre, cultivoActual: cultivo, umbralHumedad: umbral })
+      await api.updateZone(id, data)
       mutate()
-      toast.success("Configuracion guardada", { description: `Zona: ${nombre}` })
+      toast.success("Configuracion guardada", { description: `Zona: ${data.nombre}` })
     } catch (err) {
       toast.error("Error al guardar", { description: err instanceof Error ? err.message : "Error" })
     }
@@ -462,17 +548,32 @@ export function ZonesView({ selectedGreenhouse, userRole }: ZonesViewProps) {
     }
     setCreatingZone(true)
     try {
+      const selectedMetodo = metodosRiego?.find((m) => m.nombre === newZoneMetodo)
       await api.createZone({
         nombre: newZoneName,
         invernaderoId: newZoneGreenhouse,
         cultivoActual: newZoneCultivo,
         umbralHumedad: newZoneUmbral,
+        area_m2: newZoneArea,
+        caudal_litros_min: newZoneCaudal,
+        id_metodo_riego: selectedMetodo?.id || "1",
+        umbral_ph: newZoneUmbralPh,
+        umbral_ec: newZoneUmbralEc,
+        umbral_tds: newZoneUmbralTds,
+        observaciones: newZoneObservaciones,
       })
       mutate()
       setNewZoneOpen(false)
       setNewZoneName("")
       setNewZoneCultivo("")
       setNewZoneUmbral(40)
+      setNewZoneArea(100)
+      setNewZoneCaudal(10)
+      setNewZoneMetodo("goteo")
+      setNewZoneUmbralPh(6.0)
+      setNewZoneUmbralEc(1.5)
+      setNewZoneUmbralTds(800)
+      setNewZoneObservaciones("")
       toast.success("Zona creada exitosamente", { description: `${newZoneName} agregada al sistema` })
     } catch (err) {
       toast.error("Error al crear zona", { description: err instanceof Error ? err.message : "Error" })
@@ -498,7 +599,8 @@ export function ZonesView({ selectedGreenhouse, userRole }: ZonesViewProps) {
             {isAdmin ? "Gestione y controle" : "Visualice"} las zonas de riego ({zoneList.length} zonas)
           </p>
         </div>
-        {isAdmin && (
+{isAdmin && (
+          <>
           <Dialog open={newZoneOpen} onOpenChange={setNewZoneOpen}>
             <DialogTrigger asChild>
               <Button size="sm">
@@ -544,6 +646,52 @@ export function ZonesView({ selectedGreenhouse, userRole }: ZonesViewProps) {
                   <Label>Umbral de Humedad: {newZoneUmbral}%</Label>
                   <Slider value={[newZoneUmbral]} onValueChange={(v) => setNewZoneUmbral(v[0])} min={10} max={80} step={5} />
                 </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="flex flex-col gap-2">
+                    <Label>Area (m²)</Label>
+                    <Input type="number" value={newZoneArea} onChange={(e) => setNewZoneArea(Number(e.target.value))} min={1} />
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <Label>Caudal (L/min)</Label>
+                    <Input type="number" value={newZoneCaudal} onChange={(e) => setNewZoneCaudal(Number(e.target.value))} min={1} step={0.5} />
+                  </div>
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Label>Metodo de Riego</Label>
+                  <div className="flex gap-2">
+                    <div className="flex-1">
+                      <Select value={newZoneMetodo} onValueChange={setNewZoneMetodo}>
+                        <SelectTrigger><SelectValue placeholder="Seleccionar metodo" /></SelectTrigger>
+                        <SelectContent>
+                          {(metodosRiego || []).map((met) => (
+                            <SelectItem key={met.id} value={met.nombre}>{met.nombre}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <Button variant="outline" size="icon" onClick={() => setNewMethodDialogOpen(true)}>
+                      <Plus className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="flex flex-col gap-2">
+                    <Label>Umbral pH</Label>
+                    <Input type="number" value={newZoneUmbralPh} onChange={(e) => setNewZoneUmbralPh(Number(e.target.value))} min={0} max={14} step={0.1} />
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <Label>Umbral EC</Label>
+                    <Input type="number" value={newZoneUmbralEc} onChange={(e) => setNewZoneUmbralEc(Number(e.target.value))} min={0} step={0.1} />
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <Label>Umbral TDS</Label>
+                    <Input type="number" value={newZoneUmbralTds} onChange={(e) => setNewZoneUmbralTds(Number(e.target.value))} min={0} step={10} />
+                  </div>
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Label>Observaciones</Label>
+                  <Textarea placeholder="Notas adicionales..." value={newZoneObservaciones} onChange={(e) => setNewZoneObservaciones(e.target.value)} />
+                </div>
               </div>
               <DialogFooter>
                 <Button onClick={handleCreateZone} disabled={creatingZone}>
@@ -552,6 +700,81 @@ export function ZonesView({ selectedGreenhouse, userRole }: ZonesViewProps) {
               </DialogFooter>
             </DialogContent>
           </Dialog>
+          <Dialog open={newMethodDialogOpen} onOpenChange={setNewMethodDialogOpen}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Agregar Metodo de Riego</DialogTitle>
+              </DialogHeader>
+              <div className="flex flex-col gap-4 py-4">
+                <div className="flex flex-col gap-2">
+                  <Label>Nombre del Metodo</Label>
+                  <Input
+                    placeholder="Ej: Riego por goteo subterraneo"
+                    value={newMethodName}
+                    onChange={(e) => setNewMethodName(e.target.value)}
+                  />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Label>Descripcion</Label>
+                  <Textarea
+                    placeholder="Descripcion del metodo de riego..."
+                    value={newMethodDesc}
+                    onChange={(e) => setNewMethodDesc(e.target.value)}
+                  />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Label>Eficiencia: {newMethodEficiencia}%</Label>
+                  <Slider
+                    value={[newMethodEficiencia]}
+                    onValueChange={(v) => setNewMethodEficiencia(v[0])}
+                    min={10}
+                    max={100}
+                    step={5}
+                  />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setNewMethodName("")
+                    setNewMethodDesc("")
+                    setNewMethodEficiencia(80)
+                    setNewMethodDialogOpen(false)
+                  }}
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  onClick={async () => {
+                    if (!newMethodName.trim()) return
+                    setCreatingMethod(true)
+                    try {
+                      const res = await api.createMetodoRiego({
+                        nombre: newMethodName.trim(),
+                        descripcion: newMethodDesc.trim(),
+                        eficiencia: newMethodEficiencia / 100,
+                      }) as { id: string; nombre: string }
+                      setNewZoneMetodo(res.nombre)
+                      setNewMethodName("")
+                      setNewMethodDesc("")
+                      setNewMethodEficiencia(80)
+                      setNewMethodDialogOpen(false)
+                      toast.success("Metodo creado", { description: res.nombre })
+                    } catch (err) {
+                      toast.error("Error", { description: err instanceof Error ? err.message : "Error" })
+                    } finally {
+                      setCreatingMethod(false)
+                    }
+                  }}
+                  disabled={!newMethodName.trim() || creatingMethod}
+                >
+                  {creatingMethod ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Creando...</> : "Crear Metodo"}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+          </>
         )}
       </div>
 
@@ -582,6 +805,7 @@ export function ZonesView({ selectedGreenhouse, userRole }: ZonesViewProps) {
               zona={zona}
               greenhouses={ghList}
               crops={selectedGreenhouseCrops || []}
+              metodosRiego={metodosRiego || []}
               onToggleIrrigation={handleToggleIrrigation}
               onSaveConfig={handleSaveConfig}
               onToggleAuto={handleToggleAuto}

@@ -29,6 +29,7 @@ This document provides a detailed description of every table, column, constraint
   - [LecturasSensores](#lecturassensores)
   - [MantenimientoEquipos](#mantenimientoequipos)
   - [Marcas](#marcas)
+  - [MetodoRiego](#metodoriego)
   - [Modelos](#modelos)
   - [PasswordResetTokens](#passwordresettokens)
   - [Personas](#personas)
@@ -420,6 +421,24 @@ Catalog of sensor and equipment manufacturers.
 
 ---
 
+### MetodoRiego
+
+Catalog of irrigation methods with efficiency ratings.
+
+| Column | Data Type | Nullable | Default | Description |
+|--------|-----------|----------|---------|-------------|
+| `id_metodo_riego` | `int` IDENTITY(1,1) | NO | | Primary key, auto-incremented method identifier. |
+| `nombre` | `nvarchar(50)` | NO | | Irrigation method name (e.g., 'Goteo', 'Aspersión'). |
+| `descripcion` | `nvarchar(200)` | YES | | Description of the method. |
+| `eficiencia` | `decimal(5,2)` | YES | | Typical efficiency percentage. |
+| `activo` | `bit` | NO | `1` | Whether the method is active. |
+| `fecha_creacion` | `datetime` | NO | `GETDATE()` | Creation timestamp. |
+
+**Primary Key:** `id_metodo_riego`  
+**Unique Constraint:** `UQ_MetodoRiego_nombre` on `nombre`
+
+---
+
 ### Modelos
 
 Catalog of specific sensor/equipment models belonging to a brand.
@@ -663,12 +682,12 @@ Defines irrigation zones within a greenhouse, with target thresholds.
 | `id_zona` | `int` IDENTITY(1,1) | NO | | Primary key, auto-incremented zone identifier. |
 | `nombre` | `nvarchar(100)` | NO | | Zone name (e.g., 'Zona Norte', 'Sector Lechugas'). |
 | `id_invernadero` | `int` | NO | | Foreign key referencing `Invernaderos.id_invernadero`. |
+| `id_metodo_riego` | `int` | NO | | Foreign key referencing `MetodoRiego.id_metodo_riego`. |
 | `umbral_humedad` | `decimal(5,2)` | NO | | Target humidity threshold (percentage). |
 | `estado` | `nvarchar(20)` | NO | `'Activa'` | Zone status: 'Activa', 'Inactiva'. |
 | `tipo_cultivo` | `nvarchar(100)` | YES | | Type of crop grown in this zone. |
 | `area_m2` | `decimal(10,2)` | YES | | Area in square meters. |
 | `caudal_litros_min` | `decimal(10,2)` | YES | | Flow rate of irrigation system (L/min). |
-| `metodo_riego` | `nvarchar(50)` | YES | | Irrigation method (e.g., 'Goteo', 'Aspersión'). |
 | `fecha_creacion` | `datetime` | YES | `GETDATE()` | Creation date. |
 | `observaciones` | `nvarchar(max)` | YES | | General notes. |
 | `umbral_ph` | `decimal(4,2)` | YES | | Target pH for nutrient solution. |
@@ -676,7 +695,9 @@ Defines irrigation zones within a greenhouse, with target thresholds.
 | `umbral_tds` | `decimal(6,2)` | YES | | Target total dissolved solids (TDS). |
 
 **Primary Key:** `id_zona`  
-**Foreign Keys:** `FK_Zonas_Invernaderos` → `Invernaderos(id_invernadero)`
+**Foreign Keys:**  
+- `FK_Zonas_Invernaderos` → `Invernaderos(id_invernadero)`  
+- `FK_ZonasRiego_MetodoRiego` → `MetodoRiego(id_metodo_riego)`
 
 ---
 
@@ -752,6 +773,7 @@ IoTLog	FK_IoTLog_Dispositivo	DispositivosIoT
 LecturasSensores	FK_Lecturas_Sensores	Sensores
 MantenimientoEquipos	FK_Mant_Dispositivo	DispositivosIoT
 MantenimientoEquipos	FK_Mant_Usuario	Usuarios
+MetodoRiego	(catalog table, no FK)	-
 Modelos	FK_Modelos_Marcas	Marcas
 PasswordResetTokens	FK_PasswordResetTokens_Usuarios	Usuarios
 PlanFertilizacion	FK_PlanFert_CultivoDetalle	CultivoDetalle
@@ -767,3 +789,4 @@ TareasProgramadas	FK_Tareas_Empresas	Empresas
 TareasProgramadas	FK_Tareas_Usuario	Usuarios
 Usuarios	FK_Usuarios_Personas	Personas
 ZonasRiego	FK_Zonas_Invernaderos	Invernaderos
+ZonasRiego	FK_ZonasRiego_MetodoRiego	MetodoRiego

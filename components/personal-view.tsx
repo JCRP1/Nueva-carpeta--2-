@@ -146,15 +146,18 @@ const [promoteRole, setPromoteRole] = useState<string>("")
   const [deleting, setDeleting] = useState(false)
 
   // ── Filtered list ─────────────────────────────────────────────────────────────
-  const list = (personal || []).filter((p) => {
-    const q = search.toLowerCase()
-    return (
-      p.nombre.toLowerCase().includes(q) ||
-      (p.puesto || "").toLowerCase().includes(q) ||
-      (p.cedula || "").includes(q) ||
-      (p.email || "").toLowerCase().includes(q)
-    )
-  })
+  const list = (personal || [])
+    .slice()
+    .sort((a, b) => a.nombre.localeCompare(b.nombre, "es", { sensitivity: "base" }))
+    .filter((p) => {
+      const q = search.toLowerCase()
+      return (
+        p.nombre.toLowerCase().includes(q) ||
+        (p.puesto || "").toLowerCase().includes(q) ||
+        (p.cedula || "").includes(q) ||
+        (p.email || "").toLowerCase().includes(q)
+      )
+    })
 
   // ── Helpers ───────────────────────────────────────────────────────────────────
   function openAdd() {

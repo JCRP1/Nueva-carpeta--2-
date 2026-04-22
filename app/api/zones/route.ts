@@ -17,10 +17,15 @@ export async function GET(req: Request) {
         z.tipo_cultivo AS cultivoActual,
         z.estado AS estadoRiego,
         z.umbral_humedad AS umbralHumedad,
-        z.metodo_riego AS modoRiego,
+        m.nombre AS modoRiego,
         z.area_m2,
-        z.caudal_litros_min
+        z.caudal_litros_min,
+        z.umbral_ph,
+        z.umbral_ec,
+        z.umbral_tds,
+        z.observaciones
       FROM ZonasRiego z
+      LEFT JOIN MetodoRiego m ON z.id_metodo_riego = m.id_metodo_riego
     `
     const params: Record<string, unknown> = {}
     if (gh) {
@@ -81,13 +86,18 @@ export async function GET(req: Request) {
           invernaderoId: String(z.invernaderoId),
           cultivoActual: z.cultivoActual || "",
           estadoRiego: (z.estadoRiego as string)?.toLowerCase() === "activa" ? "inactivo" : (z.estadoRiego as string) || "inactivo",
-          modoRiego: z.modoRiego || "automatico",
+          modoRiego: z.modoRiego || "goteo",
           umbralHumedad: Number(z.umbralHumedad) || 40,
+          area_m2: Number(z.area_m2) || 100,
+          caudal_litros_min: Number(z.caudal_litros_min) || 10,
+          umbral_ph: Number(z.umbral_ph) || 6.0,
+          umbral_ec: Number(z.umbral_ec) || 1.5,
+          umbral_tds: Number(z.umbral_tds) || 800,
+          observaciones: z.observaciones || "",
           humedadActual: sensorReadings.humedad_suelo?.valor ?? 0,
           ultimoRiego: lastRiego?.fecha_inicio ? String(lastRiego.fecha_inicio) : "",
           duracionUltimoRiego: lastRiego ? Number(lastRiego.duracion_min) : 0,
           volumenUltimoRiego: lastRiego ? Number(lastRiego.volumen_litros) : 0,
-          // New: all 4 sensor readings
           sensores: sensorReadings,
         }
       })
@@ -108,15 +118,21 @@ export async function POST(req: Request) {
 
     const body = await req.json()
     const result = await execute(
-      `INSERT INTO ZonasRiego (nombre, id_invernadero, umbral_humedad, tipo_cultivo, metodo_riego, estado)
+      `INSERT INTO ZonasRiego (nombre, id_invernadero, umbral_humedad, tipo_cultivo, id_metodo_riego, estado, area_m2, caudal_litros_min, umbral_ph, umbral_ec, umbral_tds, observaciones)
        OUTPUT INSERTED.id_zona
-       VALUES (@nombre, @invId, @umbral, @cultivo, @metodo, 'Activa')`,
+       VALUES (@nombre, @invId, @umbral, @cultivo, @metodoId, 'Activa', @area, @caudal, @ph, @ec, @tds, @obs)`,
       {
         nombre: body.nombre || "Nueva Zona",
         invId: Number(body.invernaderoId) || 1,
         umbral: body.umbralHumedad || 40,
         cultivo: body.cultivoActual || "",
-        metodo: body.modoRiego || "automatico",
+        metodoId: Number(body.id_metodo_riego) || 1,
+        area: body.area_m2 || 100,
+        caudal: body.caudal_litros_min || 10,
+        ph: body.umbral_ph || 6.0,
+        ec: body.umbral_ec || 1.5,
+        tds: body.umbral_tds || 800,
+        obs: body.observaciones || "",
       }
     )
     const newId = result.recordset?.[0]?.id_zona
@@ -130,14 +146,25 @@ export async function POST(req: Request) {
       accion: "CREATE",
       valorNuevo: body,
     })
+    const metodoRows = (await query(
+      `SELECT nombre FROM MetodoRiego WHERE id_metodo_riego = @id`,
+      { id: Number(body.id_metodo_riego) || 1 }
+    )) as Record<string, unknown>[]
+
     return NextResponse.json({
       id: String(newId),
       nombre: body.nombre || "Nueva Zona",
       invernaderoId: String(body.invernaderoId || 1),
       cultivoActual: body.cultivoActual || "",
       estadoRiego: "inactivo",
-      modoRiego: body.modoRiego || "automatico",
+      modoRiego: (metodoRows[0]?.nombre as string) || "Goteo",
       umbralHumedad: body.umbralHumedad || 40,
+      area_m2: body.area_m2 || 100,
+      caudal_litros_min: body.caudal_litros_min || 10,
+      umbral_ph: body.umbral_ph || 6.0,
+      umbral_ec: body.umbral_ec || 1.5,
+      umbral_tds: body.umbral_tds || 800,
+      observaciones: body.observaciones || "",
       humedadActual: 0,
       ultimoRiego: "",
       duracionUltimoRiego: 0,
@@ -163,9 +190,10 @@ export async function PATCH(req: Request) {
     }
 
     const previousRows = await query<Record<string, unknown>[]>(
-      `SELECT nombre, umbral_humedad AS umbralHumedad, tipo_cultivo AS cultivoActual, metodo_riego AS modoRiego, estado AS estadoRiego
-       FROM ZonasRiego
-       WHERE id_zona = @id`,
+      `SELECT z.nombre, z.umbral_humedad AS umbralHumedad, z.tipo_cultivo AS cultivoActual, m.nombre AS modoRiego, z.estado AS estadoRiego, z.area_m2, z.caudal_litros_min, z.umbral_ph, z.umbral_ec, z.umbral_tds, z.observaciones
+       FROM ZonasRiego z
+       LEFT JOIN MetodoRiego m ON z.id_metodo_riego = m.id_metodo_riego
+       WHERE z.id_zona = @id`,
       { id: Number(id) }
     )
 
@@ -173,8 +201,13 @@ export async function PATCH(req: Request) {
       nombre: "nombre",
       umbralHumedad: "umbral_humedad",
       cultivoActual: "tipo_cultivo",
-      modoRiego: "metodo_riego",
       estadoRiego: "estado",
+      area_m2: "area_m2",
+      caudal_litros_min: "caudal_litros_min",
+      umbral_ph: "umbral_ph",
+      umbral_ec: "umbral_ec",
+      umbral_tds: "umbral_tds",
+      observaciones: "observaciones",
     }
 
     const setClauses: string[] = []
@@ -193,6 +226,19 @@ export async function PATCH(req: Request) {
         `UPDATE ZonasRiego SET ${setClauses.join(", ")} WHERE id_zona = @id`,
         params
       )
+    }
+
+    if (updates.modoRiego !== undefined) {
+      const metodoRows = (await query(
+        `SELECT id_metodo_riego FROM MetodoRiego WHERE nombre = @nombre`,
+        { nombre: updates.modoRiego }
+      )) as Record<string, unknown>[]
+      if (metodoRows[0]) {
+        await execute(
+          `UPDATE ZonasRiego SET id_metodo_riego = @metodoId WHERE id_zona = @id`,
+          { metodoId: Number(metodoRows[0].id_metodo_riego), id: Number(id) }
+        )
+      }
     }
 
     if (updates.estadoRiego === "activo") {

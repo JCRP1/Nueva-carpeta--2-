@@ -1,21 +1,27 @@
-"use client"
+"use client";
 
-import { useState, useCallback, useEffect } from "react"
-import useSWR from "swr"
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Switch } from "@/components/ui/switch"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { useState, useCallback, useEffect } from "react";
+import useSWR from "swr";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select"
-import { Slider } from "@/components/ui/slider"
+} from "@/components/ui/select";
+import { Slider } from "@/components/ui/slider";
 import {
   Building2,
   Wifi,
@@ -29,37 +35,37 @@ import {
   RefreshCw,
   PlugZap,
   Radio,
-} from "lucide-react"
-import type { Invernadero } from "@/lib/greensense-data"
-import { api, fetcher } from "@/lib/api-client"
-import { toast } from "sonner"
+} from "lucide-react";
+import type { Invernadero } from "@/lib/greensense-data";
+import { api, fetcher } from "@/lib/api-client";
+import { toast } from "sonner";
 
 interface SettingsState {
-  empresaNombre: string
-  empresaUbicacion: string
-  timezone: string
-  autoIrrigation: boolean
-  maxDuration: number
-  maxVolume: number
-  mqttEnabled: boolean
-  brokerUrl: string
-  topicBase: string
-  clientId: string
-  sensorInterval: number
-  connectionTimeout: number
-  retries: number
-  emailAlerts: boolean
-  smsAlerts: boolean
-  criticalOnly: boolean
-  alertEmail: string
-  alertPhone: string
-  jwtDuration: number
-  refreshDuration: number
-  maxLoginAttempts: number
-  lockoutMinutes: number
-  dataRetention: number
-  allowedOrigins: string
-  rateLimit: number
+  empresaNombre: string;
+  empresaUbicacion: string;
+  timezone: string;
+  autoIrrigation: boolean;
+  maxDuration: number;
+  maxVolume: number;
+  mqttEnabled: boolean;
+  brokerUrl: string;
+  topicBase: string;
+  clientId: string;
+  sensorInterval: number;
+  connectionTimeout: number;
+  retries: number;
+  emailAlerts: boolean;
+  smsAlerts: boolean;
+  criticalOnly: boolean;
+  alertEmail: string;
+  alertPhone: string;
+  jwtDuration: number;
+  refreshDuration: number;
+  maxLoginAttempts: number;
+  lockoutMinutes: number;
+  dataRetention: number;
+  allowedOrigins: string;
+  rateLimit: number;
 }
 
 const defaultSettings: SettingsState = {
@@ -88,29 +94,39 @@ const defaultSettings: SettingsState = {
   dataRetention: 365,
   allowedOrigins: "https://app.greensense.io",
   rateLimit: 100,
-}
+};
 
 interface DeviceState {
-  id: string
-  nombre: string
-  tipo: string
-  codigoDispositivo?: string
-  estado: string
-  ipLocal?: string
-  firmwareVersion?: string
-  ultimoReporte?: string
-  invernaderoId?: string
-  nombreInvernadero?: string
+  id: string;
+  nombre: string;
+  tipo: string;
+  codigoDispositivo?: string;
+  estado: string;
+  ipLocal?: string;
+  firmwareVersion?: string;
+  ultimoReporte?: string;
+  invernaderoId?: string;
+  nombreInvernadero?: string;
 }
 
 export function SettingsView() {
-  const { data: serverSettings, mutate: mutateSettings } = useSWR<Record<string, unknown>>("/api/settings", fetcher)
-  const { data: greenhouses } = useSWR<Invernadero[]>("/api/greenhouses", fetcher)
-  const { data: iotDevices, mutate: mutateDevices } = useSWR<DeviceState[]>("/api/devices", fetcher)
+  const { data: serverSettings, mutate: mutateSettings } = useSWR<
+    Record<string, unknown>
+  >("/api/settings", fetcher);
+  const { data: greenhouses } = useSWR<Invernadero[]>(
+    "/api/greenhouses",
+    fetcher,
+  );
+  const { data: iotDevices, mutate: mutateDevices } = useSWR<DeviceState[]>(
+    "/api/devices",
+    fetcher,
+  );
 
-  const [settings, setSettings] = useState<SettingsState>({ ...defaultSettings })
-  const [saving, setSaving] = useState(false)
-  const [savingSection, setSavingSection] = useState<string | null>(null)
+  const [settings, setSettings] = useState<SettingsState>({
+    ...defaultSettings,
+  });
+  const [saving, setSaving] = useState(false);
+  const [savingSection, setSavingSection] = useState<string | null>(null);
 
   // Hydrate local form from server settings
   useEffect(() => {
@@ -119,21 +135,25 @@ export function SettingsView() {
         ...prev,
         mqttEnabled: serverSettings.mqttBroker ? true : prev.mqttEnabled,
         brokerUrl: (serverSettings.mqttBroker as string) || prev.brokerUrl,
-        sensorInterval: (serverSettings.lecturaIntervalo as number) || prev.sensorInterval,
+        sensorInterval:
+          (serverSettings.lecturaIntervalo as number) || prev.sensorInterval,
         emailAlerts: (serverSettings.notifEmail as boolean) ?? prev.emailAlerts,
         smsAlerts: (serverSettings.notifSms as boolean) ?? prev.smsAlerts,
-      }))
+      }));
     }
-  }, [serverSettings])
+  }, [serverSettings]);
 
-  const ghList = greenhouses || []
+  const ghList = greenhouses || [];
 
-  const update = useCallback(<K extends keyof SettingsState>(key: K, value: SettingsState[K]) => {
-    setSettings((prev) => ({ ...prev, [key]: value }))
-  }, [])
+  const update = useCallback(
+    <K extends keyof SettingsState>(key: K, value: SettingsState[K]) => {
+      setSettings((prev) => ({ ...prev, [key]: value }));
+    },
+    [],
+  );
 
   async function handleSaveAll() {
-    setSaving(true)
+    setSaving(true);
     try {
       await api.updateSettings({
         mqttBroker: settings.brokerUrl,
@@ -144,27 +164,29 @@ export function SettingsView() {
         notifSms: settings.smsAlerts,
         alertaCritica: settings.criticalOnly,
         sesionTimeout: settings.jwtDuration * 60,
-      })
-      mutateSettings()
+      });
+      mutateSettings();
       toast.success("Configuracion guardada", {
         description: "Todos los parametros han sido actualizados correctamente",
-      })
+      });
     } catch (err) {
-      toast.error("Error al guardar", { description: err instanceof Error ? err.message : "Error" })
+      toast.error("Error al guardar", {
+        description: err instanceof Error ? err.message : "Error",
+      });
     } finally {
-      setSaving(false)
+      setSaving(false);
     }
   }
 
   function handleRestore() {
-    setSettings({ ...defaultSettings })
+    setSettings({ ...defaultSettings });
     toast.info("Configuracion restaurada", {
       description: "Se han restaurado los valores predeterminados del sistema",
-    })
+    });
   }
 
   async function handleSaveSection(section: string) {
-    setSavingSection(section)
+    setSavingSection(section);
     try {
       await api.updateSettings({
         mqttBroker: settings.brokerUrl,
@@ -174,56 +196,62 @@ export function SettingsView() {
         notifSms: settings.smsAlerts,
         alertaCritica: settings.criticalOnly,
         sesionTimeout: settings.jwtDuration * 60,
-      })
-      mutateSettings()
+      });
+      mutateSettings();
       toast.success(`Seccion "${section}" guardada`, {
         description: "Los cambios han sido aplicados",
-      })
+      });
     } catch (err) {
-      toast.error("Error al guardar", { description: err instanceof Error ? err.message : "Error" })
+      toast.error("Error al guardar", {
+        description: err instanceof Error ? err.message : "Error",
+      });
     } finally {
-      setSavingSection(null)
+      setSavingSection(null);
     }
   }
 
   function isDeviceOnline(device: DeviceState) {
-    if (!device.ultimoReporte) return false
-    const lastReport = new Date(device.ultimoReporte)
-    if (Number.isNaN(lastReport.getTime())) return false
-    return Date.now() - lastReport.getTime() <= settings.sensorInterval * 4000
+    if (!device.ultimoReporte) return false;
+    const lastReport = new Date(device.ultimoReporte);
+    if (Number.isNaN(lastReport.getTime())) return false;
+    return Date.now() - lastReport.getTime() <= settings.sensorInterval * 4000;
   }
 
   async function handlePingDevice(device: DeviceState) {
-    await mutateDevices()
+    await mutateDevices();
 
     if (isDeviceOnline(device)) {
       toast.success(`${device.nombre} reporta correctamente`, {
-        description: device.ipLocal ? `Ultima IP registrada: ${device.ipLocal}` : "El dispositivo tiene reportes recientes",
-      })
-      return
+        description: device.ipLocal
+          ? `Ultima IP registrada: ${device.ipLocal}`
+          : "El dispositivo tiene reportes recientes",
+      });
+      return;
     }
 
     toast.error(`${device.nombre} sin reportes recientes`, {
       description: device.ultimoReporte
         ? `Ultimo reporte: ${new Date(device.ultimoReporte).toLocaleString()}`
         : "Aun no se ha recibido ninguna lectura de este dispositivo",
-    })
+    });
   }
 
-  const deviceList = iotDevices || []
+  const deviceList = iotDevices || [];
   const exampleBaseUrl =
-    typeof window !== "undefined" ? window.location.origin : "https://tu-dominio"
+    typeof window !== "undefined"
+      ? window.location.origin
+      : "https://tu-dominio";
   const examplePayload = `{
   "codigoDispositivo": "ESP32-INV-A-01",
   "tipo": "temperatura",
   "valor": 27.4,
   "unidad": "C",
   "timestamp": "2026-04-05T14:30:00Z"
-}`
+}`;
   const exampleCurl = `curl -X POST "${exampleBaseUrl}/api/iot/readings" \\
   -H "Content-Type: application/json" \\
   -H "x-iot-key: TU_IOT_API_KEY" \\
-  -d '${examplePayload}'`
+  -d '${examplePayload}'`;
 
   return (
     <div className="flex flex-col gap-6">
@@ -282,47 +310,12 @@ export function SettingsView() {
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             <Card>
               <CardHeader>
-                <CardTitle className="text-sm text-foreground">Datos de la Empresa</CardTitle>
-                <CardDescription>Informacion general del invernadero</CardDescription>
-              </CardHeader>
-              <CardContent className="flex flex-col gap-4">
-                <div className="flex flex-col gap-2">
-                  <Label>Nombre de la Empresa</Label>
-                  <Input value={settings.empresaNombre} onChange={(e) => update("empresaNombre", e.target.value)} />
-                </div>
-                <div className="flex flex-col gap-2">
-                  <Label>Ubicacion</Label>
-                  <Input value={settings.empresaUbicacion} onChange={(e) => update("empresaUbicacion", e.target.value)} />
-                </div>
-                <div className="flex flex-col gap-2">
-                  <Label>Zona Horaria</Label>
-                  <Select value={settings.timezone} onValueChange={(v) => update("timezone", v)}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="america_santo_domingo">America/Santo Domingo (AST)</SelectItem>
-                      <SelectItem value="america_new_york">America/New York (EST)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <Button
-                  className="self-end"
-                  onClick={() => handleSaveSection("Empresa")}
-                  disabled={savingSection === "Empresa"}
-                >
-                  {savingSection === "Empresa" ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : null}
-                  Guardar Cambios
-                </Button>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm text-foreground">Invernaderos Registrados</CardTitle>
-                <CardDescription>Listado de invernaderos en el sistema</CardDescription>
+                <CardTitle className="text-sm text-foreground">
+                  Invernaderos Registrados
+                </CardTitle>
+                <CardDescription>
+                  Listado de invernaderos en el sistema
+                </CardDescription>
               </CardHeader>
               <CardContent className="flex flex-col gap-3">
                 {ghList.map((inv) => (
@@ -331,7 +324,9 @@ export function SettingsView() {
                     className="flex items-center justify-between rounded-lg border p-3"
                   >
                     <div>
-                      <p className="text-sm font-medium text-foreground">{inv.nombre}</p>
+                      <p className="text-sm font-medium text-foreground">
+                        {inv.nombre}
+                      </p>
                       <p className="text-xs text-muted-foreground">
                         {inv.ubicacion} - {inv.area}m2
                       </p>
@@ -352,13 +347,17 @@ export function SettingsView() {
 
             <Card>
               <CardHeader>
-                <CardTitle className="text-sm text-foreground">Riego Automatico</CardTitle>
+                <CardTitle className="text-sm text-foreground">
+                  Riego Automatico
+                </CardTitle>
                 <CardDescription>Parametros globales de riego</CardDescription>
               </CardHeader>
               <CardContent className="flex flex-col gap-4">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm text-foreground">Riego Automatico Global</p>
+                    <p className="text-sm text-foreground">
+                      Riego Automatico Global
+                    </p>
                     <p className="text-xs text-muted-foreground">
                       Activar riego automatico basado en umbrales
                     </p>
@@ -366,8 +365,12 @@ export function SettingsView() {
                   <Switch
                     checked={settings.autoIrrigation}
                     onCheckedChange={(v) => {
-                      update("autoIrrigation", v)
-                      toast(v ? "Riego automatico activado" : "Riego automatico desactivado")
+                      update("autoIrrigation", v);
+                      toast(
+                        v
+                          ? "Riego automatico activado"
+                          : "Riego automatico desactivado",
+                      );
                     }}
                   />
                 </div>
@@ -376,7 +379,9 @@ export function SettingsView() {
                   <Input
                     type="number"
                     value={settings.maxDuration}
-                    onChange={(e) => update("maxDuration", Number(e.target.value))}
+                    onChange={(e) =>
+                      update("maxDuration", Number(e.target.value))
+                    }
                   />
                 </div>
                 <div className="flex flex-col gap-2">
@@ -384,7 +389,9 @@ export function SettingsView() {
                   <Input
                     type="number"
                     value={settings.maxVolume}
-                    onChange={(e) => update("maxVolume", Number(e.target.value))}
+                    onChange={(e) =>
+                      update("maxVolume", Number(e.target.value))
+                    }
                   />
                 </div>
                 <Button
@@ -407,34 +414,56 @@ export function SettingsView() {
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             <Card>
               <CardHeader>
-                <CardTitle className="text-sm text-foreground">Configuracion MQTT</CardTitle>
-                <CardDescription>Parametros de comunicacion con dispositivos IoT</CardDescription>
+                <CardTitle className="text-sm text-foreground">
+                  Configuracion MQTT
+                </CardTitle>
+                <CardDescription>
+                  Parametros de comunicacion con dispositivos IoT
+                </CardDescription>
               </CardHeader>
               <CardContent className="flex flex-col gap-4">
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm text-foreground">Broker MQTT</p>
-                    <p className="text-xs text-muted-foreground">Conexion al broker de mensajes</p>
+                    <p className="text-xs text-muted-foreground">
+                      Conexion al broker de mensajes
+                    </p>
                   </div>
                   <Switch
                     checked={settings.mqttEnabled}
                     onCheckedChange={(v) => {
-                      update("mqttEnabled", v)
-                      toast(v ? "Broker MQTT habilitado" : "Broker MQTT deshabilitado")
+                      update("mqttEnabled", v);
+                      toast(
+                        v
+                          ? "Broker MQTT habilitado"
+                          : "Broker MQTT deshabilitado",
+                      );
                     }}
                   />
                 </div>
                 <div className="flex flex-col gap-2">
                   <Label>URL del Broker</Label>
-                  <Input value={settings.brokerUrl} onChange={(e) => update("brokerUrl", e.target.value)} className="font-mono text-xs" />
+                  <Input
+                    value={settings.brokerUrl}
+                    onChange={(e) => update("brokerUrl", e.target.value)}
+                    className="font-mono text-xs"
+                  />
                 </div>
                 <div className="flex flex-col gap-2">
                   <Label>Topic Base</Label>
-                  <Input value={settings.topicBase} onChange={(e) => update("topicBase", e.target.value)} className="font-mono text-xs" />
+                  <Input
+                    value={settings.topicBase}
+                    onChange={(e) => update("topicBase", e.target.value)}
+                    className="font-mono text-xs"
+                  />
                 </div>
                 <div className="flex flex-col gap-2">
                   <Label>Cliente ID</Label>
-                  <Input value={settings.clientId} onChange={(e) => update("clientId", e.target.value)} className="font-mono text-xs" />
+                  <Input
+                    value={settings.clientId}
+                    onChange={(e) => update("clientId", e.target.value)}
+                    className="font-mono text-xs"
+                  />
                 </div>
                 <Button
                   className="self-end"
@@ -451,8 +480,12 @@ export function SettingsView() {
 
             <Card>
               <CardHeader>
-                <CardTitle className="text-sm text-foreground">Intervalo de Lectura</CardTitle>
-                <CardDescription>Frecuencia de adquisicion de datos</CardDescription>
+                <CardTitle className="text-sm text-foreground">
+                  Intervalo de Lectura
+                </CardTitle>
+                <CardDescription>
+                  Frecuencia de adquisicion de datos
+                </CardDescription>
               </CardHeader>
               <CardContent className="flex flex-col gap-4">
                 <div className="flex flex-col gap-2">
@@ -475,7 +508,9 @@ export function SettingsView() {
                   <Input
                     type="number"
                     value={settings.connectionTimeout}
-                    onChange={(e) => update("connectionTimeout", Number(e.target.value))}
+                    onChange={(e) =>
+                      update("connectionTimeout", Number(e.target.value))
+                    }
                   />
                 </div>
                 <div className="flex flex-col gap-2">
@@ -501,13 +536,17 @@ export function SettingsView() {
 
             <Card className="lg:col-span-2">
               <CardHeader>
-                <CardTitle className="text-sm text-foreground">Dispositivos ESP32</CardTitle>
-                <CardDescription>Estado real de dispositivos registrados en la base de datos</CardDescription>
+                <CardTitle className="text-sm text-foreground">
+                  Dispositivos ESP32
+                </CardTitle>
+                <CardDescription>
+                  Estado real de dispositivos registrados en la base de datos
+                </CardDescription>
               </CardHeader>
               <CardContent className="flex flex-col gap-3">
                 {deviceList.length > 0 ? (
                   deviceList.map((device) => {
-                    const online = isDeviceOnline(device)
+                    const online = isDeviceOnline(device);
 
                     return (
                       <div
@@ -515,14 +554,21 @@ export function SettingsView() {
                         className="flex items-center justify-between rounded-lg border p-3"
                       >
                         <div className="flex items-center gap-3">
-                          <div className={`h-2.5 w-2.5 rounded-full ${online ? "bg-emerald-500" : "bg-red-500"}`} />
+                          <div
+                            className={`h-2.5 w-2.5 rounded-full ${online ? "bg-emerald-500" : "bg-red-500"}`}
+                          />
                           <div>
-                            <p className="text-sm font-medium text-foreground">{device.nombre}</p>
+                            <p className="text-sm font-medium text-foreground">
+                              {device.nombre}
+                            </p>
                             <p className="font-mono text-xs text-muted-foreground">
-                              {device.codigoDispositivo || `ID ${device.id}`} - {device.tipo || "gateway"} - {device.ipLocal || "sin IP"}
+                              {device.codigoDispositivo || `ID ${device.id}`} -{" "}
+                              {device.tipo || "gateway"} -{" "}
+                              {device.ipLocal || "sin IP"}
                             </p>
                             <p className="text-xs text-muted-foreground">
-                              {device.nombreInvernadero || "Sin invernadero"} - {device.firmwareVersion || "sin firmware"} -{" "}
+                              {device.nombreInvernadero || "Sin invernadero"} -{" "}
+                              {device.firmwareVersion || "sin firmware"} -{" "}
                               {device.ultimoReporte
                                 ? `ultimo reporte ${new Date(device.ultimoReporte).toLocaleString()}`
                                 : "sin lecturas reportadas"}
@@ -543,11 +589,12 @@ export function SettingsView() {
                           </Button>
                         </div>
                       </div>
-                    )
+                    );
                   })
                 ) : (
                   <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
-                    No hay dispositivos IoT registrados. Cree un dispositivo y luego asocie sensores a ese dispositivo.
+                    No hay dispositivos IoT registrados. Cree un dispositivo y
+                    luego asocie sensores a ese dispositivo.
                   </div>
                 )}
               </CardContent>
@@ -559,26 +606,38 @@ export function SettingsView() {
                   <PlugZap className="h-4 w-4" />
                   Integracion de Sensores
                 </CardTitle>
-                <CardDescription>Contrato tecnico para conectar ESP32, Arduino o gateways externos</CardDescription>
+                <CardDescription>
+                  Contrato tecnico para conectar ESP32, Arduino o gateways
+                  externos
+                </CardDescription>
               </CardHeader>
               <CardContent className="flex flex-col gap-4">
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
                   <div className="rounded-lg border p-3">
-                    <p className="mb-1 text-sm font-medium text-foreground">1. Registrar hardware</p>
+                    <p className="mb-1 text-sm font-medium text-foreground">
+                      1. Registrar hardware
+                    </p>
                     <p className="text-xs text-muted-foreground">
-                      Cree un dispositivo en el modulo de dispositivos y use su codigo fisico unico.
+                      Cree un dispositivo en el modulo de dispositivos y use su
+                      codigo fisico unico.
                     </p>
                   </div>
                   <div className="rounded-lg border p-3">
-                    <p className="mb-1 text-sm font-medium text-foreground">2. Asociar sensor</p>
+                    <p className="mb-1 text-sm font-medium text-foreground">
+                      2. Asociar sensor
+                    </p>
                     <p className="text-xs text-muted-foreground">
-                      Cree el sensor y seleccione el dispositivo para que el backend pueda enrutar la lectura.
+                      Cree el sensor y seleccione el dispositivo para que el
+                      backend pueda enrutar la lectura.
                     </p>
                   </div>
                   <div className="rounded-lg border p-3">
-                    <p className="mb-1 text-sm font-medium text-foreground">3. Enviar lecturas</p>
+                    <p className="mb-1 text-sm font-medium text-foreground">
+                      3. Enviar lecturas
+                    </p>
                     <p className="text-xs text-muted-foreground">
-                      El microcontrolador debe hacer `POST` a `/api/iot/readings` con `x-iot-key`.
+                      El microcontrolador debe hacer `POST` a
+                      `/api/iot/readings` con `x-iot-key`.
                     </p>
                   </div>
                 </div>
@@ -586,26 +645,36 @@ export function SettingsView() {
                 <div className="rounded-lg border p-3">
                   <div className="mb-2 flex items-center gap-2">
                     <Radio className="h-4 w-4 text-primary" />
-                    <p className="text-sm font-medium text-foreground">Endpoint</p>
+                    <p className="text-sm font-medium text-foreground">
+                      Endpoint
+                    </p>
                   </div>
-                  <p className="font-mono text-xs text-muted-foreground">{exampleBaseUrl}/api/iot/readings</p>
+                  <p className="font-mono text-xs text-muted-foreground">
+                    {exampleBaseUrl}/api/iot/readings
+                  </p>
                   <p className="mt-2 text-xs text-muted-foreground">
-                    Headers aceptados: `x-iot-key`, `x-api-key` o `Authorization: Bearer ...`
+                    Headers aceptados: `x-iot-key`, `x-api-key` o
+                    `Authorization: Bearer ...`
                   </p>
                   <p className="text-xs text-muted-foreground">
-                    Variables requeridas en servidor: `IOT_API_KEY` y una URL publica accesible desde el dispositivo.
+                    Variables requeridas en servidor: `IOT_API_KEY` y una URL
+                    publica accesible desde el dispositivo.
                   </p>
                 </div>
 
                 <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
                   <div className="rounded-lg border p-3">
-                    <p className="mb-2 text-sm font-medium text-foreground">Payload ejemplo</p>
+                    <p className="mb-2 text-sm font-medium text-foreground">
+                      Payload ejemplo
+                    </p>
                     <pre className="overflow-x-auto rounded-md bg-muted p-3 text-xs text-muted-foreground">
                       <code>{examplePayload}</code>
                     </pre>
                   </div>
                   <div className="rounded-lg border p-3">
-                    <p className="mb-2 text-sm font-medium text-foreground">Prueba rapida</p>
+                    <p className="mb-2 text-sm font-medium text-foreground">
+                      Prueba rapida
+                    </p>
                     <pre className="overflow-x-auto rounded-md bg-muted p-3 text-xs text-muted-foreground">
                       <code>{exampleCurl}</code>
                     </pre>
@@ -613,8 +682,10 @@ export function SettingsView() {
                 </div>
 
                 <div className="rounded-lg border p-3 text-xs text-muted-foreground">
-                  La forma recomendada es enviar `codigoDispositivo + tipo`. El backend buscara el sensor asociado,
-                  guardara la lectura en `LecturasSensores` y actualizara `ultimo_reporte` del dispositivo.
+                  La forma recomendada es enviar `codigoDispositivo + tipo`. El
+                  backend buscara el sensor asociado, guardara la lectura en
+                  `LecturasSensores` y actualizara `ultimo_reporte` del
+                  dispositivo.
                 </div>
               </CardContent>
             </Card>
@@ -625,8 +696,12 @@ export function SettingsView() {
         <TabsContent value="alertas" className="mt-4">
           <Card>
             <CardHeader>
-              <CardTitle className="text-sm text-foreground">Configuracion de Notificaciones</CardTitle>
-              <CardDescription>Gestione como y cuando recibe alertas</CardDescription>
+              <CardTitle className="text-sm text-foreground">
+                Configuracion de Notificaciones
+              </CardTitle>
+              <CardDescription>
+                Gestione como y cuando recibe alertas
+              </CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col gap-4">
               <div className="flex items-center justify-between">
@@ -639,8 +714,12 @@ export function SettingsView() {
                 <Switch
                   checked={settings.emailAlerts}
                   onCheckedChange={(v) => {
-                    update("emailAlerts", v)
-                    toast(v ? "Alertas por email activadas" : "Alertas por email desactivadas")
+                    update("emailAlerts", v);
+                    toast(
+                      v
+                        ? "Alertas por email activadas"
+                        : "Alertas por email desactivadas",
+                    );
                   }}
                 />
               </div>
@@ -654,14 +733,20 @@ export function SettingsView() {
                 <Switch
                   checked={settings.smsAlerts}
                   onCheckedChange={(v) => {
-                    update("smsAlerts", v)
-                    toast(v ? "Alertas por SMS activadas" : "Alertas por SMS desactivadas")
+                    update("smsAlerts", v);
+                    toast(
+                      v
+                        ? "Alertas por SMS activadas"
+                        : "Alertas por SMS desactivadas",
+                    );
                   }}
                 />
               </div>
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-foreground">Solo Alertas Criticas</p>
+                  <p className="text-sm text-foreground">
+                    Solo Alertas Criticas
+                  </p>
                   <p className="text-xs text-muted-foreground">
                     Notificar solo cuando haya alertas criticas
                   </p>
@@ -669,18 +754,30 @@ export function SettingsView() {
                 <Switch
                   checked={settings.criticalOnly}
                   onCheckedChange={(v) => {
-                    update("criticalOnly", v)
-                    toast(v ? "Solo alertas criticas" : "Todas las alertas habilitadas")
+                    update("criticalOnly", v);
+                    toast(
+                      v
+                        ? "Solo alertas criticas"
+                        : "Todas las alertas habilitadas",
+                    );
                   }}
                 />
               </div>
               <div className="flex flex-col gap-2">
                 <Label>Email de Notificaciones</Label>
-                <Input type="email" value={settings.alertEmail} onChange={(e) => update("alertEmail", e.target.value)} />
+                <Input
+                  type="email"
+                  value={settings.alertEmail}
+                  onChange={(e) => update("alertEmail", e.target.value)}
+                />
               </div>
               <div className="flex flex-col gap-2">
                 <Label>Telefono SMS</Label>
-                <Input type="tel" value={settings.alertPhone} onChange={(e) => update("alertPhone", e.target.value)} />
+                <Input
+                  type="tel"
+                  value={settings.alertPhone}
+                  onChange={(e) => update("alertPhone", e.target.value)}
+                />
               </div>
               <Button
                 className="self-end"
@@ -701,25 +798,53 @@ export function SettingsView() {
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             <Card>
               <CardHeader>
-                <CardTitle className="text-sm text-foreground">Autenticacion</CardTitle>
-                <CardDescription>Parametros de seguridad de acceso</CardDescription>
+                <CardTitle className="text-sm text-foreground">
+                  Autenticacion
+                </CardTitle>
+                <CardDescription>
+                  Parametros de seguridad de acceso
+                </CardDescription>
               </CardHeader>
               <CardContent className="flex flex-col gap-4">
                 <div className="flex flex-col gap-2">
                   <Label>Duracion del Token JWT (horas)</Label>
-                  <Input type="number" value={settings.jwtDuration} onChange={(e) => update("jwtDuration", Number(e.target.value))} />
+                  <Input
+                    type="number"
+                    value={settings.jwtDuration}
+                    onChange={(e) =>
+                      update("jwtDuration", Number(e.target.value))
+                    }
+                  />
                 </div>
                 <div className="flex flex-col gap-2">
                   <Label>Duracion Refresh Token (dias)</Label>
-                  <Input type="number" value={settings.refreshDuration} onChange={(e) => update("refreshDuration", Number(e.target.value))} />
+                  <Input
+                    type="number"
+                    value={settings.refreshDuration}
+                    onChange={(e) =>
+                      update("refreshDuration", Number(e.target.value))
+                    }
+                  />
                 </div>
                 <div className="flex flex-col gap-2">
                   <Label>Intentos de Login antes de Bloqueo</Label>
-                  <Input type="number" value={settings.maxLoginAttempts} onChange={(e) => update("maxLoginAttempts", Number(e.target.value))} />
+                  <Input
+                    type="number"
+                    value={settings.maxLoginAttempts}
+                    onChange={(e) =>
+                      update("maxLoginAttempts", Number(e.target.value))
+                    }
+                  />
                 </div>
                 <div className="flex flex-col gap-2">
                   <Label>Tiempo de Bloqueo (minutos)</Label>
-                  <Input type="number" value={settings.lockoutMinutes} onChange={(e) => update("lockoutMinutes", Number(e.target.value))} />
+                  <Input
+                    type="number"
+                    value={settings.lockoutMinutes}
+                    onChange={(e) =>
+                      update("lockoutMinutes", Number(e.target.value))
+                    }
+                  />
                 </div>
                 <Button
                   className="self-end"
@@ -736,7 +861,9 @@ export function SettingsView() {
 
             <Card>
               <CardHeader>
-                <CardTitle className="text-sm text-foreground">Base de Datos</CardTitle>
+                <CardTitle className="text-sm text-foreground">
+                  Base de Datos
+                </CardTitle>
                 <CardDescription>Conexion y mantenimiento</CardDescription>
               </CardHeader>
               <CardContent className="flex flex-col gap-4">
@@ -744,7 +871,9 @@ export function SettingsView() {
                   <div className="flex items-center gap-3">
                     <Database className="h-5 w-5 text-primary" />
                     <div>
-                      <p className="text-sm font-medium text-foreground">SQL Server</p>
+                      <p className="text-sm font-medium text-foreground">
+                        SQL Server
+                      </p>
                       <p className="font-mono text-xs text-muted-foreground">
                         greensense-db.database.local
                       </p>
@@ -756,7 +885,9 @@ export function SettingsView() {
                   <div className="flex items-center gap-3">
                     <Server className="h-5 w-5 text-blue-400" />
                     <div>
-                      <p className="text-sm font-medium text-foreground">API Server</p>
+                      <p className="text-sm font-medium text-foreground">
+                        API Server
+                      </p>
                       <p className="font-mono text-xs text-muted-foreground">
                         api.greensense.io:3000
                       </p>
@@ -766,9 +897,16 @@ export function SettingsView() {
                 </div>
                 <div className="flex flex-col gap-2">
                   <Label>Retencion de Datos (dias)</Label>
-                  <Input type="number" value={settings.dataRetention} onChange={(e) => update("dataRetention", Number(e.target.value))} />
+                  <Input
+                    type="number"
+                    value={settings.dataRetention}
+                    onChange={(e) =>
+                      update("dataRetention", Number(e.target.value))
+                    }
+                  />
                   <p className="text-xs text-muted-foreground">
-                    Tiempo que se mantienen las lecturas de sensores en la base de datos
+                    Tiempo que se mantienen las lecturas de sensores en la base
+                    de datos
                   </p>
                 </div>
               </CardContent>
@@ -776,17 +914,31 @@ export function SettingsView() {
 
             <Card>
               <CardHeader>
-                <CardTitle className="text-sm text-foreground">CORS y Seguridad API</CardTitle>
-                <CardDescription>Configuracion de origenes permitidos</CardDescription>
+                <CardTitle className="text-sm text-foreground">
+                  CORS y Seguridad API
+                </CardTitle>
+                <CardDescription>
+                  Configuracion de origenes permitidos
+                </CardDescription>
               </CardHeader>
               <CardContent className="flex flex-col gap-4">
                 <div className="flex flex-col gap-2">
                   <Label>Origenes Permitidos</Label>
-                  <Input value={settings.allowedOrigins} onChange={(e) => update("allowedOrigins", e.target.value)} className="font-mono text-xs" />
+                  <Input
+                    value={settings.allowedOrigins}
+                    onChange={(e) => update("allowedOrigins", e.target.value)}
+                    className="font-mono text-xs"
+                  />
                 </div>
                 <div className="flex flex-col gap-2">
                   <Label>Rate Limit (peticiones/min)</Label>
-                  <Input type="number" value={settings.rateLimit} onChange={(e) => update("rateLimit", Number(e.target.value))} />
+                  <Input
+                    type="number"
+                    value={settings.rateLimit}
+                    onChange={(e) =>
+                      update("rateLimit", Number(e.target.value))
+                    }
+                  />
                 </div>
                 <div className="flex items-center justify-between">
                   <div>
@@ -813,5 +965,5 @@ export function SettingsView() {
         </TabsContent>
       </Tabs>
     </div>
-  )
+  );
 }

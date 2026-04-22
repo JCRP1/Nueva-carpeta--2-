@@ -67,6 +67,8 @@ interface AppSidebarProps {
   onViewChange: (view: string) => void
   onLogout: () => void
   currentUser: UserType
+  empresaNombre?: string
+  empresaRNC?: string
 }
 
 const roleAccess: Record<string, string[]> = {
@@ -94,7 +96,15 @@ const adminItems = [
   { id: "configuracion", label: "Configuracion", icon: Settings },
 ]
 
-export function AppSidebar({ activeView, onViewChange, onLogout, currentUser }: AppSidebarProps) {
+function formatRNC(value: string): string {
+  if (!value) return ""
+  const clean = value.replace(/[^0-9]/g, "")
+  if (clean.length > 8) return clean.slice(0,3) + "-" + clean.slice(3,8) + "-" + clean.slice(8)
+  if (clean.length > 3) return clean.slice(0,3) + "-" + clean.slice(3)
+  return clean
+}
+
+export function AppSidebar({ activeView, onViewChange, onLogout, currentUser, empresaNombre, empresaRNC }: AppSidebarProps) {
   const [profileOpen, setProfileOpen] = useState(false)
   const [profileName, setProfileName] = useState(currentUser.nombre)
   const [profileEmail, setProfileEmail] = useState(currentUser.email)
@@ -167,8 +177,8 @@ export function AppSidebar({ activeView, onViewChange, onLogout, currentUser }: 
               <Leaf className="h-5 w-5 text-sidebar-primary-foreground" />
             </div>
             <div className="flex flex-col">
-              <span className="text-sm font-semibold text-sidebar-foreground">GreenSense</span>
-              <span className="text-xs text-sidebar-foreground/60">IoT Fertirriego</span>
+              <span className="text-sm font-semibold text-sidebar-foreground">{empresaNombre || "GreenSense"}</span>
+              <span className="text-xs text-sidebar-foreground/60">{empresaRNC ? formatRNC(empresaRNC) : "IoT Fertirriego"}</span>
             </div>
           </div>
         </SidebarHeader>

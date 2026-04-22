@@ -230,9 +230,14 @@ deleteUser: (id: string) =>
       method: "DELETE",
       body: JSON.stringify({ id }),
     }),
+
+  createMetodoRiego: (data: Record<string, unknown>) =>
+    request<Record<string, unknown>>("/metodos-riego", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
 }
 
-// SWR fetcher - ensure cookies are sent
 export const fetcher = async (url: string) => {
   const res = await fetch(url, {
     credentials: "include",

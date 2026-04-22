@@ -75,6 +75,13 @@ export default function Page() {
     fetcher
   )
 
+  // Fetch empresa
+  const { data: empresas } = useSWR<Array<{ id: string; nombre: string; rnc?: string }>>(
+    currentUser ? "/api/empresas" : null,
+    fetcher
+  )
+  const currentEmpresa = empresas?.[0]
+
   // Auto-select first greenhouse when greenhouses load
   useEffect(() => {
     if (greenhouses && greenhouses.length > 0 && !selectedGreenhouse) {
@@ -261,6 +268,8 @@ function renderView() {
         onViewChange={handleViewChange}
         onLogout={handleLogout}
         currentUser={currentUser}
+        empresaNombre={currentEmpresa?.nombre}
+        empresaRNC={currentEmpresa?.rnc}
       />
       <SidebarInset>
         <header className="flex h-14 items-center gap-2 border-b px-4">
