@@ -49,8 +49,6 @@ import {
 } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
-  LineChart,
-  Line,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -201,36 +199,23 @@ export function SensorDetailView({ sensor, onBack, userRole, historialPreload }:
   const [newCalibrationOpen, setNewCalibrationOpen] = useState(false)
 
   useEffect(() => {
-    console.log("========== SENSOR DETAIL VIEW ==========")
-    console.log("Sensor recibido:", JSON.stringify(sensor, null, 2))
-    console.log("historialPreload:", JSON.stringify(historialPreload, null, 2))
-    console.log("========================================")
-
     if (historialPreload && historialPreload.length > 0) {
-      console.log("Usando historial preload directo")
       setHistorialData(historialPreload)
     } else {
-      console.log("Fetching historial desde API:", `/api/sensors/${sensor.id}/history`)
+      setIsLoading(true)
+      setHistorialData([])
       fetch(`/api/sensors/${sensor.id}/history`)
-        .then(res => {
-          console.log("Response historial:", res.status)
-          return res.json()
-        })
+        .then(res => res.json())
         .then(data => {
-          console.log("Datos historial API:", JSON.stringify(data, null, 2))
-          if (Array.isArray(data) && data.length > 0) {
-            setHistorialData(data)
-          } else {
-            console.log("No hay datos del API, generando mock")
-          }
+          setHistorialData(Array.isArray(data) ? data : [])
         })
         .catch(err => console.error("Error historial:", err))
+        .finally(() => setIsLoading(false))
     }
 
     fetch(`/api/alerts?sensor=${sensor.id}`)
       .then(res => res.json())
       .then(data => {
-        console.log("Datos alertas:", JSON.stringify(data, null, 2))
         if (Array.isArray(data)) {
           setAlertas(data)
         }
@@ -286,9 +271,7 @@ export function SensorDetailView({ sensor, onBack, userRole, historialPreload }:
   }, [greenhouses, sensor.invernaderoId])
 
   const chartData = useMemo(() => {
-    console.log("chartData memo - historialData:", JSON.stringify(historialData, null, 2))
     if (historialData && historialData.length > 0) {
-      console.log("Usando historialData real con", historialData.length, "puntos")
       return historialData.map((h) => ({
         ...h,
         time: new Date(h.timestamp).toLocaleTimeString("es-DO", {
@@ -301,14 +284,10 @@ export function SensorDetailView({ sensor, onBack, userRole, historialPreload }:
         }),
       }))
     }
-    console.log("Generando mock history para:", sensor.tipo, "base:", sensor.ultimaLectura)
-    const mock = generateMockHistory(sensor)
-    console.log("Mock generado:", mock.length, "puntos")
-    return mock
-  }, [historialData, sensor])
+    return []
+  }, [historialData])
 
   const stats = useMemo(() => {
-    console.log("stats memo - chartData length:", chartData?.length)
     if (!chartData || chartData.length === 0) return null
     const values = chartData.map((h) => h.valor)
     const min = Math.min(...values)
@@ -317,7 +296,6 @@ export function SensorDetailView({ sensor, onBack, userRole, historialPreload }:
     const current = values[values.length - 1]
     const previous = values[values.length - 2] || current
     const trend = current - previous
-    console.log("stats calculados:", { min, max, avg, current, trend })
     return { min, max, avg, current, trend }
   }, [chartData])
 
@@ -455,6 +433,10 @@ export function SensorDetailView({ sensor, onBack, userRole, historialPreload }:
               <div className="flex h-[300px] items-center justify-center">
                 <Loader2 className="h-8 w-8 animate-spin text-primary" />
               </div>
+            ) : chartData.length === 0 ? (
+              <div className="flex h-[300px] items-center justify-center rounded-md border border-dashed text-sm text-muted-foreground">
+                Sin lecturas guardadas para este sensor
+              </div>
             ) : (
               <div className="h-[300px]">
                 <ResponsiveContainer width="100%" height="100%">
@@ -550,7 +532,7 @@ export function SensorDetailView({ sensor, onBack, userRole, historialPreload }:
                 )}
               </div>
               <div className="mt-4 text-xs text-muted-foreground">
-                Ultima actualizacion: {sensor.ultimoReporte ? formatDateTime(sensor.ultimoReporte) : "Reciente"}
+                Ultima actualizacion: {sensor.ultimoReporte ? formatDateTime(sensor.ultimoReporte) : "Sin lecturas"}
               </div>
             </CardContent>
           </Card>
@@ -979,19 +961,3 @@ export function SensorDetailView({ sensor, onBack, userRole, historialPreload }:
   )
 }
 
-function generateMockHistory(sensor: SensorData): LecturaHistorial[] {
-  const data: LecturaHistorial[] = []
-  const now = new Date()
-  const baseValue = sensor.ultimaLectura || 50
-  const variance = sensor.tipo === "temperatura" ? 3 : sensor.tipo === "tds" ? 100 : 8
-
-  for (let i = 47; i >= 0; i--) {
-    const time = new Date(now.getTime() - i * 15 * 60 * 1000)
-    const noise = (Math.random() - 0.5) * variance * 2
-    data.push({
-      timestamp: time.toISOString(),
-      valor: Math.round((baseValue + noise) * 10) / 10,
-    })
-  }
-  return data
-}

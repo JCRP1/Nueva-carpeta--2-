@@ -11,6 +11,7 @@ import {
   Droplets,
   FlaskConical,
   Activity,
+  Calendar,
   Plus,
   Loader2,
   Pencil,
@@ -74,6 +75,7 @@ interface SensorData {
   tipo: string
   nombre: string
   invernaderoId: string
+  zonaRiegoId: string
   idDispositivo?: number
   estado: string
   modelo?: string
@@ -92,6 +94,7 @@ interface SensorData {
   unidad?: string
   umbralMin?: number
   umbralMax?: number
+  ultimoReporte?: string
   history?: { timestamp: string; valor: number }[]
 }
 
@@ -120,12 +123,45 @@ const SENSOR_ICONS: Record<string, React.ElementType> = {
   conductividad: Activity,
 }
 
+function formatSensorDateTime(value?: string) {
+  if (!value) return "Sin lecturas"
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return "Sin lecturas"
+  return date.toLocaleString("es-DO", {
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  })
+}
+
+function formatLatestReading(sensor: SensorData) {
+  if (sensor.ultimaLectura == null) return "Sin lecturas"
+  const unit = sensor.unidad || sensor.unidadMedida || ""
+  return `${sensor.ultimaLectura.toFixed(1)}${unit ? ` ${unit}` : ""}`
+}
+
 interface SensorsViewProps {
   selectedGreenhouse: string
   userRole: UserRole
 }
 
+interface ZonaOption {
+  id: string
+  nombre: string
+}
+
 export function SensorsView({ selectedGreenhouse, userRole }: SensorsViewProps) {
+  const [mounted, setMounted] = useState(false)
+  const currentDateLabel = mounted
+    ? new Date().toLocaleDateString("es-DO", {
+        weekday: "long",
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+      })
+    : ""
+
   const [formData, setFormData] = useState({
     tipo: "",
     idModelo: "",
@@ -141,14 +177,19 @@ export function SensorsView({ selectedGreenhouse, userRole }: SensorsViewProps) 
     observaciones: "",
     idInvernadero: selectedGreenhouse,
     idDispositivo: "",
+    idZona: "",
   })
 
   const { data: sensors, isLoading, mutate } = useSWR<SensorData[]>(
     selectedGreenhouse ? `/api/sensors?greenhouse=${selectedGreenhouse}` : null,
     fetcher,
-    { refreshInterval: 30000 }
+    { refreshInterval: 3000 }
   )
   const { data: greenhouses } = useSWR<Invernadero[]>("/api/greenhouses", fetcher)
+  const { data: zones } = useSWR<ZonaOption[]>(
+    formData.idInvernadero ? `/api/zones?greenhouse=${formData.idInvernadero}` : null,
+    fetcher
+  )
   const { data: devices, isLoading: devicesLoading } = useSWR<Dispositivo[]>("/api/devices", fetcher)
   const { data: marcas, mutate: mutateMarcas } = useSWR<Marca[]>("/api/marcas", fetcher)
   const { data: tiposSensor, mutate: mutateTiposSensor } = useSWR<TipoSensor[]>("/api/tipos-sensor", fetcher)
@@ -178,6 +219,11 @@ export function SensorsView({ selectedGreenhouse, userRole }: SensorsViewProps) 
   const ghList = greenhouses || []
   const sensorList = sensors || []
   const deviceList = devices || []
+  const zoneList = zones || []
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
 
   useEffect(() => {
     if (ghList.length > 0 && !formData.idInvernadero) {
@@ -209,6 +255,7 @@ export function SensorsView({ selectedGreenhouse, userRole }: SensorsViewProps) 
       observaciones: "",
       idInvernadero: selectedGreenhouse,
       idDispositivo: "",
+      idZona: "",
     })
     setIdMarca("")
     setIdModelo("")
@@ -233,6 +280,7 @@ export function SensorsView({ selectedGreenhouse, userRole }: SensorsViewProps) 
       observaciones: "",
       idInvernadero: defaultGh,
       idDispositivo: "",
+      idZona: "",
     })
     setIdMarca("")
     setIdModelo("")
@@ -257,6 +305,7 @@ export function SensorsView({ selectedGreenhouse, userRole }: SensorsViewProps) 
       observaciones: sensor.observaciones || "",
       idInvernadero: sensor.invernaderoId,
       idDispositivo: sensor.idDispositivo?.toString() || "",
+      idZona: sensor.zonaRiegoId || "",
     })
     setIdMarca(sensor.idMarca || "")
     setIdModelo(sensor.idModelo || "")
@@ -304,6 +353,7 @@ export function SensorsView({ selectedGreenhouse, userRole }: SensorsViewProps) 
         observaciones: formData.observaciones || undefined,
         idInvernadero: formData.idInvernadero,
         idDispositivo: formData.idDispositivo ? Number(formData.idDispositivo) : undefined,
+        idZona: formData.idZona ? Number(formData.idZona) : null,
       }
 
       if (editMode && editingSensor) {
@@ -351,6 +401,10 @@ export function SensorsView({ selectedGreenhouse, userRole }: SensorsViewProps) 
             {isAdmin ? "Gestione los sensores IoT" : "Visualice los sensores"} ({sensorList.length} sensores)
           </p>
         </div>
+        <div className="mr-3 flex items-center gap-2 rounded-md border px-3 py-2 text-xs text-muted-foreground">
+          <Calendar className="h-3.5 w-3.5" />
+          <span className="capitalize">{currentDateLabel || "--"}</span>
+        </div>
         {isAdmin && (
           <>
             <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) resetForm() }}>
@@ -389,6 +443,20 @@ export function SensorsView({ selectedGreenhouse, userRole }: SensorsViewProps) 
                     <SelectContent>
                       {ghList.map((inv) => (
                         <SelectItem key={inv.id} value={inv.id}>{inv.nombre}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Label>Zona de Riego</Label>
+                  <Select value={formData.idZona || "none"} onValueChange={(v) => setFormData({ ...formData, idZona: v === "none" ? "" : v })}>
+                    <SelectTrigger><SelectValue placeholder={formData.idInvernadero ? "Seleccionar zona" : "Seleccione invernadero"} /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Sin asignar</SelectItem>
+                      {zoneList.map((zone) => (
+                        <SelectItem key={zone.id} value={zone.id}>
+                          {zone.nombre}
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -688,6 +756,14 @@ export function SensorsView({ selectedGreenhouse, userRole }: SensorsViewProps) 
                   {sensor.modelo && <div className="flex justify-between"><span className="text-muted-foreground">Modelo:</span><span>{sensor.modelo}</span></div>}
                   {sensor.ubicacionFisica && <div className="flex justify-between"><span className="text-muted-foreground">Ubicación:</span><span>{sensor.ubicacionFisica}</span></div>}
                   {sensor.unidadMedida && <div className="flex justify-between"><span className="text-muted-foreground">Unidad:</span><span>{sensor.unidadMedida}</span></div>}
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Ultima lectura:</span>
+                    <span className="font-medium">{formatLatestReading(sensor)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Ultimo reporte:</span>
+                    <span>{formatSensorDateTime(sensor.ultimoReporte)}</span>
+                  </div>
                   {sensor.rangoMin !== undefined && sensor.rangoMax !== undefined && (
                     <div className="flex justify-between"><span className="text-muted-foreground">Rango:</span><span>{sensor.rangoMin} - {sensor.rangoMax}</span></div>
                   )}

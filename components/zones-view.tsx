@@ -464,7 +464,7 @@ export function ZonesView({ selectedGreenhouse, userRole }: ZonesViewProps) {
   const { data: zones, isLoading, mutate } = useSWR<ZoneData[]>(
     `/api/zones?greenhouse=${selectedGreenhouse}`,
     fetcher,
-    { refreshInterval: 15000 }
+    { refreshInterval: 3000 }
   )
   const { data: greenhouses } = useSWR<Invernadero[]>("/api/greenhouses", fetcher)
   const { data: selectedGreenhouseCrops } = useSWR<Cultivo[]>(

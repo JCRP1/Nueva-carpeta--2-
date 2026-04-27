@@ -3,6 +3,38 @@ import { requireAuth } from "@/lib/auth"
 import { query, execute } from "@/lib/db"
 import { registrarBitacora } from "@/lib/bitacora"
 
+type AlertRow = Record<string, unknown>
+
+function buildVirtualAlertType(tipo: string, valor: number, min: number | null, max: number | null) {
+  if (min != null && valor < min) return `${tipo}_baja`
+  if (max != null && valor > max) return `${tipo}_alta`
+  return null
+}
+
+function buildVirtualAlertLevel(valor: number, min: number | null, max: number | null): "critica" | "advertencia" {
+  if (min != null && valor < min) {
+    const gap = min - valor
+    const ratio = min !== 0 ? gap / Math.abs(min) : gap
+    return ratio > 0.15 ? "critica" : "advertencia"
+  }
+  if (max != null && valor > max) {
+    const gap = valor - max
+    const ratio = max !== 0 ? gap / Math.abs(max) : gap
+    return ratio > 0.15 ? "critica" : "advertencia"
+  }
+  return "advertencia"
+}
+
+function buildVirtualAlertMessage(tipo: string, valor: number, min: number | null, max: number | null) {
+  if (min != null && valor < min) {
+    return `${tipo} bajo: ${valor} (min ${min})`
+  }
+  if (max != null && valor > max) {
+    return `${tipo} alto: ${valor} (max ${max})`
+  }
+  return `${tipo}: valor ${valor}`
+}
+
 export async function GET(req: Request) {
   try {
     const session = await requireAuth()
@@ -35,7 +67,7 @@ export async function GET(req: Request) {
 
     sqlText += " ORDER BY a.fecha_hora DESC"
 
-    const rows = (await query(sqlText, params)) as Record<string, unknown>[]
+    const rows = (await query(sqlText, params)) as AlertRow[]
 
     const alerts = rows.map((a) => ({
       id: String(a.id),
@@ -47,7 +79,66 @@ export async function GET(req: Request) {
       resuelta: (a.estado as string)?.toLowerCase() === "resuelta",
     }))
 
-    return NextResponse.json(alerts)
+    let readingsSql = `
+      SELECT
+        l.id_sensor AS sensorId,
+        s.id_invernadero AS invernaderoId,
+        s.tipo,
+        s.rango_min AS umbralMin,
+        s.rango_max AS umbralMax,
+        l.valor,
+        l.fecha_hora AS timestamp
+      FROM LecturasSensores l
+      INNER JOIN Sensores s ON s.id_sensor = l.id_sensor
+      INNER JOIN Invernaderos i ON i.id_invernadero = s.id_invernadero
+      INNER JOIN (
+        SELECT id_sensor, MAX(fecha_hora) AS fecha_hora
+        FROM LecturasSensores
+        GROUP BY id_sensor
+      ) latest ON latest.id_sensor = l.id_sensor AND latest.fecha_hora = l.fecha_hora
+      WHERE i.id_empresa = @empresaId
+    `
+
+    if (sensorId) {
+      readingsSql += " AND l.id_sensor = @sensorId"
+    }
+
+    readingsSql += " ORDER BY l.fecha_hora DESC"
+
+    const latestReadings = (await query(readingsSql, params)) as AlertRow[]
+    const activeAlertKeys = new Set(
+      alerts
+        .filter((alert) => !alert.resuelta)
+        .map((alert) => `${alert.sensorId}|${alert.mensaje}`)
+    )
+
+    const virtualAlerts = latestReadings
+      .map((row) => {
+        const valor = Number(row.valor)
+        const tipo = String(row.tipo || "sensor")
+        const umbralMin = row.umbralMin != null ? Number(row.umbralMin) : null
+        const umbralMax = row.umbralMax != null ? Number(row.umbralMax) : null
+        const tipoAlerta = buildVirtualAlertType(tipo, valor, umbralMin, umbralMax)
+
+        if (!tipoAlerta) return null
+
+        const mensaje = buildVirtualAlertMessage(tipo, valor, umbralMin, umbralMax)
+        const dedupeKey = `${String(row.sensorId || "")}|${mensaje}`
+        if (activeAlertKeys.has(dedupeKey)) return null
+
+        return {
+          id: `live-${String(row.sensorId)}-${tipoAlerta}`,
+          tipo: buildVirtualAlertLevel(valor, umbralMin, umbralMax),
+          mensaje,
+          sensorId: String(row.sensorId || ""),
+          invernaderoId: String(row.invernaderoId || ""),
+          timestamp: row.timestamp,
+          resuelta: false,
+        }
+      })
+      .filter(Boolean)
+
+    return NextResponse.json([...virtualAlerts, ...alerts])
   } catch {
     return NextResponse.json({ error: "No autorizado" }, { status: 401 })
   }

@@ -127,6 +127,7 @@ export function UsersView() {
   const [creating, setCreating] = useState(false)
   type Persona = {
     id: string
+    id_persona?: string | number
     nombre: string
   }
 
@@ -192,7 +193,6 @@ export function UsersView() {
       })
       mutate()
       setCreateOpen(false)
-      setSelectedPersona("")
       setNewEmail("")
       setNewPassword("")
       setNewRole("agricultor")

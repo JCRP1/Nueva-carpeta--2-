@@ -76,14 +76,6 @@ export function CropsView({ userRole, selectedGreenhouse }: CropsViewProps) {
   const [editingCrop, setEditingCrop] = useState<Cultivo | null>(null)
   const [saving, setSaving] = useState(false)
 
-  console.log("[CropsView] selectedGreenhouse:", selectedGreenhouse)
-  console.log("[CropsView] crops data:", crops)
-  console.log("[CropsView] crops length:", crops?.length)
-  console.log("[CropsView] first crop raw:", crops?.[0])
-  console.log("[CropsView] greenhouses:", greenhouses)
-  console.log("[CropsView] error:", error)
-  console.log("[CropsView] isLoading:", isLoading)
-
   const [formData, setFormData] = useState({
     nombre: "",
     variedad: "",
@@ -97,6 +89,8 @@ export function CropsView({ userRole, selectedGreenhouse }: CropsViewProps) {
       notas: "",
     } as CultivoDetalle,
   })
+
+  const cropTableColumnCount = isReadOnly ? 6 : 7
 
   const filteredCrops = (crops || []).filter((crop) =>
     crop.nombre.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -195,6 +189,13 @@ export function CropsView({ userRole, selectedGreenhouse }: CropsViewProps) {
   function formatDate(dateStr: string | null | undefined): string {
     if (!dateStr) return "-"
     try {
+      const dateOnly = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})/)
+      if (dateOnly) {
+        const [, year, month, day] = dateOnly
+        const date = new Date(Number(year), Number(month) - 1, Number(day))
+        return date.toLocaleDateString("es-DO", { year: "numeric", month: "short", day: "numeric" })
+      }
+
       const date = new Date(dateStr)
       if (isNaN(date.getTime())) return "-"
       return date.toLocaleDateString("es-DO", { year: "numeric", month: "short", day: "numeric" })
@@ -411,6 +412,7 @@ export function CropsView({ userRole, selectedGreenhouse }: CropsViewProps) {
                 <TableHead>Variedad</TableHead>
                 <TableHead>Invernadero</TableHead>
                 <TableHead>Fecha Siembra</TableHead>
+                <TableHead>Fecha Cosecha</TableHead>
                 <TableHead>Estado</TableHead>
                 {!isReadOnly && <TableHead className="text-right">Acciones</TableHead>}
               </TableRow>
@@ -418,7 +420,7 @@ export function CropsView({ userRole, selectedGreenhouse }: CropsViewProps) {
             <TableBody>
               {filteredCrops.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={cropTableColumnCount} className="text-center py-8 text-muted-foreground">
                     No se encontraron cultivos
                   </TableCell>
                 </TableRow>
@@ -437,6 +439,12 @@ export function CropsView({ userRole, selectedGreenhouse }: CropsViewProps) {
                       <div className="flex items-center gap-2">
                         <Calendar className="h-4 w-4 text-muted-foreground" />
                         {formatDate(crop.fechaSiembra)}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <Calendar className="h-4 w-4 text-muted-foreground" />
+                        {formatDate(crop.detalle?.fechaCosechaEstimada)}
                       </div>
                     </TableCell>
                     <TableCell>

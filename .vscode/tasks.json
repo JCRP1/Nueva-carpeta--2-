@@ -1,0 +1,51 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "PlatformIO: Build ESP32",
+      "type": "shell",
+      "command": "C:\\Users\\puell\\.platformio\\penv\\Scripts\\pio.exe",
+      "args": [
+        "run",
+        "-e",
+        "esp32dev"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}/firmware/esp32-greensense"
+      },
+      "group": "build",
+      "problemMatcher": []
+    },
+    {
+      "label": "PlatformIO: Upload ESP32",
+      "type": "shell",
+      "command": "C:\\Users\\puell\\.platformio\\penv\\Scripts\\pio.exe",
+      "args": [
+        "run",
+        "-e",
+        "esp32dev",
+        "-t",
+        "upload"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}/firmware/esp32-greensense"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "PlatformIO: Monitor ESP32",
+      "type": "shell",
+      "command": "C:\\Users\\puell\\.platformio\\penv\\Scripts\\pio.exe",
+      "args": [
+        "device",
+        "monitor",
+        "-b",
+        "115200"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}/firmware/esp32-greensense"
+      },
+      "problemMatcher": []
+    }
+  ]
+}

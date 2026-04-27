@@ -16,7 +16,7 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 // Auth
 export const api = {
   login: (email: string, password: string) =>
-    request<{ user: Record<string, unknown> }>("/auth/login", {
+    request<{ user: Record<string, unknown>; message?: string }>("/auth/login", {
       method: "POST",
       body: JSON.stringify({ email, password }),
     }),
@@ -230,6 +230,13 @@ deleteUser: (id: string) =>
       method: "DELETE",
       body: JSON.stringify({ id }),
     }),
+
+  discoverDevices: (options?: { ips?: string }) => {
+    const params = new URLSearchParams()
+    if (options?.ips?.trim()) params.set("ips", options.ips.trim())
+    const query = params.toString()
+    return request<Record<string, unknown>>(`/devices/discover${query ? `?${query}` : ""}`)
+  },
 
   createMetodoRiego: (data: Record<string, unknown>) =>
     request<Record<string, unknown>>("/metodos-riego", {

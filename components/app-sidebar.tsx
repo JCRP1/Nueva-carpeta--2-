@@ -111,7 +111,7 @@ export function AppSidebar({ activeView, onViewChange, onLogout, currentUser, em
   const [savingProfile, setSavingProfile] = useState(false)
   const [lastSeenAlertsAt, setLastSeenAlertsAt] = useState<string | null>(null)
   const { data: alerts } = useSWR<AlertNotification[]>("/api/alerts", fetcher, {
-    refreshInterval: 15000,
+    refreshInterval: 3000,
   })
 
   const isAdmin = currentUser.rol === "administrador"

@@ -104,9 +104,9 @@ export async function GET(req: Request) {
         c.nombre,
         c.variedad,
         c.id_invernadero AS invernaderoId,
-        c.fecha_siembra AS fechaSiembra,
+        CONVERT(char(10), c.fecha_siembra, 23) AS fechaSiembra,
         d.id_detalle AS detalleId,
-        d.fecha_cosecha_estimada AS fechaCosechaEstimada,
+        CONVERT(char(10), d.fecha_cosecha_estimada, 23) AS fechaCosechaEstimada,
         d.tiempo_germinacion_dias AS tiempoGerminacionDias,
         d.tiempo_crecimiento_dias AS tiempoCrecimientoDias,
         d.tiempo_cosecha_dias AS tiempoCosechaDias,
@@ -144,7 +144,7 @@ export async function GET(req: Request) {
           nombre: String(row.nombre || ""),
           variedad: String(row.variedad || ""),
           invernaderoId: String(row.invernaderoId),
-          fechaSiembra: row.fechaSiembra ? String(row.fechaSiembra).split("T")[0] : "",
+          fechaSiembra: row.fechaSiembra ? String(row.fechaSiembra) : "",
           detalle: undefined as Record<string, unknown> | undefined,
         })
       }
@@ -152,7 +152,7 @@ export async function GET(req: Request) {
       if (row.detalleId) {
         (cropsMap.get(rowId) as Record<string, unknown>).detalle = {
           id: String(row.detalleId),
-          fechaCosechaEstimada: row.fechaCosechaEstimada ? String(row.fechaCosechaEstimada).split("T")[0] : "",
+          fechaCosechaEstimada: row.fechaCosechaEstimada ? String(row.fechaCosechaEstimada) : "",
           tiempoGerminacionDias: row.tiempoGerminacionDias,
           tiempoCrecimientoDias: row.tiempoCrecimientoDias,
           tiempoCosechaDias: row.tiempoCosechaDias,

@@ -1,1 +1,15 @@
-{}
+{
+  "platformio-ide.activateProjectOnTextEditorChange": true,
+  "platformio-ide.customPATH": "C:\\Users\\puell\\.platformio\\penv\\Scripts;C:\\Users\\puell\\.platformio\\python3;C:\\Users\\puell\\.platformio\\penv\\Scripts\\python.exe",
+  "C_Cpp.default.configurationProvider": "platformio.platformio-ide",
+  "C_Cpp.default.compileCommands": "${workspaceFolder}/firmware/esp32-greensense/.pio/build/esp32dev/compile_commands.json",
+  "terminal.integrated.env.windows": {
+    "PLATFORMIO_CORE_DIR": "C:\\Users\\puell\\.platformio",
+    "PATH": "C:\\Users\\puell\\.platformio\\penv\\Scripts;${env:PATH}"
+  },
+  "files.associations": {
+    "Arduino.h": "cpp",
+    "HTTPClient.h": "cpp",
+    "WiFi.h": "cpp"
+  }
+}
