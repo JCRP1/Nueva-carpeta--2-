@@ -171,8 +171,14 @@ export function SettingsView() {
         ...prev,
         mqttEnabled: serverSettings.mqttBroker ? true : prev.mqttEnabled,
         brokerUrl: (serverSettings.mqttBroker as string) || prev.brokerUrl,
+        autoIrrigation:
+          serverSettings.autoIrrigation != null
+            ? String(serverSettings.autoIrrigation).toLowerCase() === "true"
+            : prev.autoIrrigation,
         sensorInterval:
           (serverSettings.lecturaIntervalo as number) || prev.sensorInterval,
+        connectionTimeout:
+          (serverSettings.connectionTimeout as number) || prev.connectionTimeout,
         emailAlerts: (serverSettings.notifEmail as boolean) ?? prev.emailAlerts,
         smsAlerts: (serverSettings.notifSms as boolean) ?? prev.smsAlerts,
       }));
@@ -213,6 +219,8 @@ export function SettingsView() {
         mqttPort: 1883,
         mqttTopic: settings.topicBase,
         lecturaIntervalo: settings.sensorInterval,
+        connectionTimeout: settings.connectionTimeout,
+        autoIrrigation: settings.autoIrrigation,
         notifEmail: settings.emailAlerts,
         notifSms: settings.smsAlerts,
         alertaCritica: settings.criticalOnly,
@@ -245,6 +253,8 @@ export function SettingsView() {
         mqttBroker: settings.brokerUrl,
         mqttTopic: settings.topicBase,
         lecturaIntervalo: settings.sensorInterval,
+        connectionTimeout: settings.connectionTimeout,
+        autoIrrigation: settings.autoIrrigation,
         notifEmail: settings.emailAlerts,
         notifSms: settings.smsAlerts,
         alertaCritica: settings.criticalOnly,

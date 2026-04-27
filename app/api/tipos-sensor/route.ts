@@ -4,10 +4,9 @@ import { query } from "@/lib/db"
 
 export const dynamic = "force-dynamic"
 
-const BYPASS_AUTH = true
-
 export async function GET() {
   try {
+    await requireAuth()
     const rows = (await query(`
       SELECT 
         TipoSensorID AS id,
@@ -29,9 +28,7 @@ export async function GET() {
 
 export async function POST(req: Request) {
   try {
-    if (!BYPASS_AUTH) {
-      await requireAuth()
-    }
+    await requireAuth()
     const body = await req.json()
 
     const { nombre, unidad, rangoMin, rangoMax, descripcion } = body

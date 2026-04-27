@@ -5,13 +5,9 @@ import { getSensorZoneColumn } from "@/lib/sensor-zone-column"
 
 export const dynamic = "force-dynamic"
 
-const BYPASS_AUTH = true
-
 export async function GET(req: Request) {
   try {
-    if (!BYPASS_AUTH) {
-      await requireAuth()
-    }
+    const session = await requireAuth()
     const { searchParams } = new URL(req.url)
     const gh = searchParams.get("greenhouse")
     const sensorZoneColumn = await getSensorZoneColumn()
@@ -47,7 +43,10 @@ export async function GET(req: Request) {
       sqlText += " WHERE s.id_invernadero = @gh"
       params.gh = Number(gh)
     } else {
-      sqlText += " WHERE 1=0"
+      sqlText += ` WHERE s.id_invernadero IN (
+        SELECT id_invernadero FROM Invernaderos WHERE id_empresa = @empresaId
+      )`
+      params.empresaId = session.empresaId
     }
 
     const sensors = (await query(sqlText, params)) as Record<string, unknown>[]
@@ -118,12 +117,7 @@ return NextResponse.json({ error: "No autorizado", details: errorMessage }, { st
 
 export async function POST(req: Request) {
   try {
-    let session: { empresaId: number }
-    if (BYPASS_AUTH) {
-      session = { empresaId: 1 }
-    } else {
-      session = await requireAuth()
-    }
+    const session = await requireAuth()
     const body = await req.json()
 
     const {
@@ -228,14 +222,7 @@ export async function POST(req: Request) {
 
 export async function PUT(req: Request) {
   try {
-    // When auth is bypassed, use a default session
-    let session: { empresaId: number }
-    if (BYPASS_AUTH) {
-      console.log("[SENSORS API] Auth bypassed for PUT")
-      session = { empresaId: 1 } // Default for debugging
-    } else {
-      session = await requireAuth()
-    }
+    const session = await requireAuth()
     const body = await req.json()
 
     const {
@@ -352,10 +339,8 @@ const mergedRangoMin = rangoMin !== undefined ? rangoMin : umbralMin
 
     if (ultimoCalibrado !== undefined && ultimoCalibrado !== existing.ultimoCalibrado) {
       let userId: number | null = null
-      if (!BYPASS_AUTH) {
-        const authUser = await requireAuth()
-        userId = (authUser as { userId?: number }).userId || null
-      }
+      const authUser = await requireAuth()
+      userId = (authUser as { userId?: number }).userId || null
 
       await query(
         `INSERT INTO Bitacora 

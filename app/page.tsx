@@ -203,7 +203,7 @@ function renderView() {
       case "invernaderos":
         return <GreenhousesView userRole={currentUser!.rol} />
       case "reportes":
-        return <ReportsView userRole={currentUser!.rol} />
+        return <ReportsView userRole={currentUser!.rol} selectedGreenhouse={selectedGreenhouse} />
       case "personal":
         if (!isAdmin) {
           return (

@@ -5,13 +5,9 @@ import { createIrrigationMethod, listIrrigationMethods } from "@/lib/irrigation-
 
 export const dynamic = "force-dynamic"
 
-const BYPASS_AUTH = true
-
 export async function GET(req: Request) {
   try {
-    if (!BYPASS_AUTH) {
-      await requireAuth()
-    }
+    await requireAuth()
 
     const rows = await listIrrigationMethods()
     return NextResponse.json(rows)

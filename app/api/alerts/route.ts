@@ -35,6 +35,47 @@ function buildVirtualAlertMessage(tipo: string, valor: number, min: number | nul
   return `${tipo}: valor ${valor}`
 }
 
+function isIpv4(value: unknown) {
+  if (typeof value !== "string") return false
+  const parts = value.trim().split(".")
+  if (parts.length !== 4) return false
+  return parts.every((part) => {
+    if (!/^\d{1,3}$/.test(part)) return false
+    const octet = Number(part)
+    return octet >= 0 && octet <= 255
+  })
+}
+
+async function probeEsp32Status(ipLocal: string) {
+  const probePaths = ["/status", "/health", "/"]
+  const timeoutMs = 1200
+
+  for (const path of probePaths) {
+    try {
+      const response = await fetch(`http://${ipLocal}${path}`, {
+        method: "GET",
+        cache: "no-store",
+        signal: AbortSignal.timeout(timeoutMs),
+        headers: {
+          Accept: "application/json, text/plain;q=0.9, text/html;q=0.8",
+        },
+      })
+
+      if (!response.ok) continue
+
+      const text = await response.text()
+      const normalized = text.toLowerCase()
+      if (path === "/" || normalized.includes("esp32") || normalized.includes("greensense") || normalized.includes("ok")) {
+        return true
+      }
+    } catch {
+      continue
+    }
+  }
+
+  return false
+}
+
 export async function GET(req: Request) {
   try {
     const session = await requireAuth()
@@ -138,7 +179,49 @@ export async function GET(req: Request) {
       })
       .filter(Boolean)
 
-    return NextResponse.json([...virtualAlerts, ...alerts])
+    let deviceAlerts: Array<Record<string, unknown>> = []
+    if (!sensorId) {
+      const devices = (await query(
+        `SELECT
+           d.id_dispositivo AS id,
+           d.nombre,
+           d.tipo,
+           d.ip_local AS ipLocal,
+           d.id_invernadero AS invernaderoId,
+           i.nombre AS invernaderoNombre
+         FROM DispositivosIoT d
+         INNER JOIN Invernaderos i ON i.id_invernadero = d.id_invernadero
+         WHERE i.id_empresa = @empresaId
+           AND LOWER(ISNULL(d.estado, 'Activo')) IN ('activo', 'active')
+         ORDER BY d.nombre ASC`,
+        { empresaId: session.empresaId }
+      )) as AlertRow[]
+
+      const networkResults = await Promise.all(
+        devices.map(async (device) => {
+          const ipLocal = String(device.ipLocal || "").trim()
+          const online = isIpv4(ipLocal) ? await probeEsp32Status(ipLocal) : false
+          return { device, ipLocal, online }
+        })
+      )
+
+      deviceAlerts = networkResults.filter((result) => !result.online).map(({ device, ipLocal }) => {
+        return {
+          id: `device-offline-${String(device.id)}`,
+          tipo: "critica",
+          mensaje: isIpv4(ipLocal)
+            ? `Dispositivo sin conexion por red: ${device.nombre} no responde en ${ipLocal}.`
+            : `Dispositivo sin conexion por red: ${device.nombre} no tiene IP local valida registrada.`,
+          sensorId: "",
+          dispositivoId: String(device.id),
+          invernaderoId: String(device.invernaderoId || ""),
+          timestamp: new Date().toISOString(),
+          resuelta: false,
+        }
+      })
+    }
+
+    return NextResponse.json([...deviceAlerts, ...virtualAlerts, ...alerts])
   } catch {
     return NextResponse.json({ error: "No autorizado" }, { status: 401 })
   }
@@ -213,6 +296,16 @@ export async function PATCH(req: Request) {
     if (!id) {
       return NextResponse.json({ error: "ID requerido" }, { status: 400 })
     }
+
+    if (typeof id === "string" && (id.startsWith("live-") || id.startsWith("device-offline-"))) {
+      return NextResponse.json({
+        ok: true,
+        id,
+        virtual: true,
+        message: "La alerta se cerrara automaticamente cuando la condicion vuelva a la normalidad.",
+      })
+    }
+
     await execute(
       `UPDATE Alertas SET estado = 'Resuelta', atendida_por = @userId, fecha_atencion = GETDATE()
        WHERE id_alerta = @id`,

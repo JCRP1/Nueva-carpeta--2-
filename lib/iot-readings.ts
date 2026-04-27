@@ -2,6 +2,7 @@ import { execute, query } from "@/lib/db"
 import { registrarBitacora } from "@/lib/bitacora"
 import { buildVirtualDeviceCodeExpression, hasPhysicalDeviceCodeColumn } from "@/lib/device-code"
 import { getSensorAlertSettings } from "@/lib/alert-config"
+import { getSensorZoneColumn } from "@/lib/sensor-zone-column"
 
 function buildAlertType(tipo: string, value: number, min: number | null, max: number | null) {
   if (min != null && value < min) return `${tipo}_baja`
@@ -51,6 +52,178 @@ async function resolveRecoveredAlerts(sensorId: number, userId: number | null = 
   )
 }
 
+function parseBooleanSetting(value: unknown, fallback: boolean) {
+  if (value == null) return fallback
+  const normalized = String(value).trim().toLowerCase()
+  if (["true", "1", "si", "sí", "yes", "on"].includes(normalized)) return true
+  if (["false", "0", "no", "off"].includes(normalized)) return false
+  return fallback
+}
+
+async function isAutomaticIrrigationEnabled(empresaId: number | null) {
+  if (!empresaId) return true
+
+  const rows = (await query(
+    `SELECT parametro, valor
+     FROM ConfiguracionesSistema
+     WHERE id_empresa = @empresaId
+       AND parametro IN ('autoIrrigation', 'riegoAutomatico')`,
+    { empresaId }
+  )) as Record<string, unknown>[]
+
+  const setting = rows.find((row) => row.parametro === "autoIrrigation") || rows[0]
+  return parseBooleanSetting(setting?.valor, true)
+}
+
+async function getSensorControlContext(sensorId: number) {
+  const sensorZoneColumn = await getSensorZoneColumn()
+  if (!sensorZoneColumn) return null
+
+  const rows = (await query(
+    `SELECT TOP 1
+       s.${sensorZoneColumn} AS zonaId,
+       s.id_dispositivo AS idDispositivo,
+       z.estado AS estadoRiego,
+       z.umbral_humedad AS umbralHumedad,
+       z.caudal_litros_min AS caudalLitrosMin,
+       z.umbral_tds AS umbralTds,
+       z.umbral_ec AS umbralEc,
+       z.umbral_ph AS umbralPh,
+       i.id_empresa AS empresaId
+     FROM Sensores s
+     INNER JOIN ZonasRiego z ON z.id_zona = s.${sensorZoneColumn}
+     INNER JOIN Invernaderos i ON i.id_invernadero = z.id_invernadero
+     WHERE s.id_sensor = @sensorId`,
+    { sensorId }
+  )) as Record<string, unknown>[]
+
+  return rows[0] || null
+}
+
+async function enqueueDeviceCommand(
+  deviceId: number | null,
+  command: string,
+  payload: Record<string, unknown>
+) {
+  if (!deviceId) return null
+
+  const rows = (await query(
+    `INSERT INTO ComandosIoT (id_dispositivo, comando, parametros, fecha_envio, estado)
+     VALUES (@deviceId, @command, @payload, GETDATE(), 'Pendiente');
+     SELECT SCOPE_IDENTITY() AS idComando;`,
+    {
+      deviceId,
+      command,
+      payload: JSON.stringify(payload),
+    }
+  )) as Record<string, unknown>[]
+
+  return rows[0]?.idComando ?? null
+}
+
+async function evaluateAutomationRules(args: {
+  sensorId: number
+  sensorTipo: string
+  rawValue: number
+  deviceId: number | null
+  empresaId: number | null
+  fechaHora: Date
+}) {
+  const context = await getSensorControlContext(args.sensorId)
+  if (!context?.zonaId) return null
+
+  const zonaId = Number(context.zonaId)
+  const zoneDeviceId = context.idDispositivo != null ? Number(context.idDispositivo) : args.deviceId
+  const automaticEnabled = await isAutomaticIrrigationEnabled(
+    context.empresaId != null ? Number(context.empresaId) : args.empresaId
+  )
+  if (!automaticEnabled) return { action: "automation_disabled", zonaId }
+
+  const estadoRiego = String(context.estadoRiego || "").toLowerCase()
+  const isActive = estadoRiego === "activo" || estadoRiego === "activa"
+  const now = args.fechaHora.toISOString()
+
+  if (args.sensorTipo === "humedad_suelo") {
+    const threshold = context.umbralHumedad != null ? Number(context.umbralHumedad) : null
+    if (threshold == null) return null
+
+    if (args.rawValue < threshold && !isActive) {
+      const caudal = context.caudalLitrosMin != null ? Number(context.caudalLitrosMin) : 0
+      const idComando = await enqueueDeviceCommand(zoneDeviceId, "START_IRRIGATION", {
+        zonaId,
+        sensorId: args.sensorId,
+        valor: args.rawValue,
+        umbral: threshold,
+        caudalLitrosMin: caudal,
+        solicitadoEn: now,
+        motivo: "humedad_suelo_baja",
+      })
+
+      await execute("UPDATE ZonasRiego SET estado = 'activo' WHERE id_zona = @zonaId", { zonaId })
+      await execute(
+        `INSERT INTO Riegos (id_zona, tipo, duracion_min, volumen_litros, fecha_inicio)
+         VALUES (@zonaId, 'automatico', 0, 0, GETDATE())`,
+        { zonaId }
+      )
+
+      return { action: "start_irrigation", zonaId, idComando }
+    }
+
+    if (args.rawValue >= threshold + 5 && isActive) {
+      const idComando = await enqueueDeviceCommand(zoneDeviceId, "STOP_IRRIGATION", {
+        zonaId,
+        sensorId: args.sensorId,
+        valor: args.rawValue,
+        umbral: threshold,
+        solicitadoEn: now,
+        motivo: "humedad_suelo_recuperada",
+      })
+
+      await execute("UPDATE ZonasRiego SET estado = 'inactivo' WHERE id_zona = @zonaId", { zonaId })
+      await execute(
+        `UPDATE Riegos
+         SET fecha_fin = GETDATE(),
+             duracion_min = DATEDIFF(MINUTE, fecha_inicio, GETDATE()),
+             volumen_litros = CASE
+               WHEN ISNULL(volumen_litros, 0) > 0 THEN volumen_litros
+               ELSE DATEDIFF(MINUTE, fecha_inicio, GETDATE()) * (
+                 SELECT ISNULL(caudal_litros_min, 0)
+                 FROM ZonasRiego
+                 WHERE id_zona = @zonaId
+               )
+             END
+         WHERE id_riego = (
+           SELECT TOP 1 id_riego
+           FROM Riegos
+           WHERE id_zona = @zonaId AND fecha_fin IS NULL
+           ORDER BY fecha_inicio DESC
+         )`,
+        { zonaId }
+      )
+
+      return { action: "stop_irrigation", zonaId, idComando }
+    }
+  }
+
+  if (args.sensorTipo === "tds" || args.sensorTipo === "ec" || args.sensorTipo === "ph") {
+    const idComando = await enqueueDeviceCommand(zoneDeviceId, "CHECK_FERTIGATION", {
+      zonaId,
+      sensorId: args.sensorId,
+      tipo: args.sensorTipo,
+      valor: args.rawValue,
+      umbralTds: context.umbralTds,
+      umbralEc: context.umbralEc,
+      umbralPh: context.umbralPh,
+      solicitadoEn: now,
+      motivo: "nutrientes_fuera_de_rango",
+    })
+
+    return { action: "check_fertigation", zonaId, idComando }
+  }
+
+  return null
+}
+
 export interface IotReadingPayload {
   sensorId?: number | string | null
   deviceId?: number | string | null
@@ -60,6 +233,7 @@ export interface IotReadingPayload {
   valor: number | string
   unidad?: string | null
   timestamp?: string | null
+  ipLocal?: string | null
 }
 
 export function getIotReadingErrorResponse(error: unknown) {
@@ -99,6 +273,7 @@ export async function processIotReading(body: IotReadingPayload, source: "http" 
   const tipo = typeof body.tipo === "string" ? body.tipo : null
   const unidadRaw = typeof body.unidad === "string" ? body.unidad : null
   const timestampRaw = typeof body.timestamp === "string" ? body.timestamp : null
+  const ipLocal = typeof body.ipLocal === "string" ? body.ipLocal.trim() : null
 
   if (!Number.isFinite(rawValue)) {
     throw new Error("INVALID_READING_VALUE")
@@ -203,11 +378,13 @@ export async function processIotReading(body: IotReadingPayload, source: "http" 
   if (deviceId) {
     await execute(
       `UPDATE DispositivosIoT
-       SET ultimo_reporte = @fechaHora
+       SET ultimo_reporte = @fechaHora,
+           ip_local = COALESCE(@ipLocal, ip_local)
       WHERE id_dispositivo = @deviceId`,
       {
         fechaHora,
         deviceId,
+        ipLocal: ipLocal || null,
       }
     )
   }
@@ -279,6 +456,18 @@ export async function processIotReading(body: IotReadingPayload, source: "http" 
     await resolveRecoveredAlerts(sensorId)
   }
 
+  const automation =
+    tipoAlerta || sensorTipo === "humedad_suelo"
+      ? await evaluateAutomationRules({
+          sensorId,
+          sensorTipo,
+          rawValue,
+          deviceId,
+          empresaId,
+          fechaHora,
+        })
+      : null
+
   await registrarBitacora({
     descripcion: `Lectura IoT recibida para sensor ${sensorId}`,
     modulo: "iot",
@@ -292,11 +481,13 @@ export async function processIotReading(body: IotReadingPayload, source: "http" 
       sensorId,
       deviceId,
       codigoDispositivo: rawDeviceCode || null,
+      ipLocal,
       tipo: sensorTipo,
       valor: rawValue,
       unidad,
       timestamp: fechaHora.toISOString(),
       alertCreated,
+      automation,
       source,
     },
   })
@@ -306,9 +497,11 @@ export async function processIotReading(body: IotReadingPayload, source: "http" 
     sensorId,
     deviceId,
     codigoDispositivo: rawDeviceCode || null,
+    ipLocal,
     valor: rawValue,
     unidad,
     alertCreated,
+    automation,
   }
 }
 

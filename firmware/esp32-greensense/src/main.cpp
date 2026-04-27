@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <HTTPClient.h>
+#include <WebServer.h>
 #include <WiFi.h>
 
 // WiFi
@@ -17,6 +18,7 @@ const char *unidadSensor = "%";
 
 // Sensor
 const int soilMoisturePin = 34;
+WebServer server(80);
 
 // Calibracion real ajustada a tu sensor.
 int valorSeco = 100;
@@ -28,6 +30,37 @@ const unsigned long envioIntervaloMs = 15000;
 unsigned long ultimaLecturaMs = 0;
 unsigned long ultimoEnvioMs = 0;
 int ultimaHumedad = 0;
+
+String statusJson() {
+  String body = "{";
+  body += "\"ok\":true,";
+  body += "\"device\":\"esp32\",";
+  body += "\"system\":\"greensense\",";
+  body += "\"codigoDispositivo\":\"" + String(codigoDispositivo) + "\",";
+  body += "\"ipLocal\":\"" + WiFi.localIP().toString() + "\",";
+  body += "\"rssi\":" + String(WiFi.RSSI()) + ",";
+  body += "\"uptimeMs\":" + String(millis()) + ",";
+  body += "\"ultimaHumedad\":" + String(ultimaHumedad);
+  body += "}";
+  return body;
+}
+
+void configurarServidorRed() {
+  server.on("/", HTTP_GET, []() {
+    server.send(200, "application/json", statusJson());
+  });
+
+  server.on("/status", HTTP_GET, []() {
+    server.send(200, "application/json", statusJson());
+  });
+
+  server.on("/health", HTTP_GET, []() {
+    server.send(200, "text/plain", "ok greensense esp32");
+  });
+
+  server.begin();
+  Serial.println("Servidor de estado iniciado en puerto 80.");
+}
 
 int leerPromedio() {
   int suma = 0;
@@ -84,6 +117,7 @@ bool enviarLectura(int humedad) {
 
   String body = "{";
   body += "\"codigoDispositivo\":\"" + String(codigoDispositivo) + "\",";
+  body += "\"ipLocal\":\"" + WiFi.localIP().toString() + "\",";
   body += "\"tipo\":\"" + String(tipoSensor) + "\",";
   body += "\"valor\":" + String(humedad) + ",";
   body += "\"unidad\":\"" + String(unidadSensor) + "\"";
@@ -111,10 +145,13 @@ void setup() {
   analogSetAttenuation(ADC_11db);
 
   conectarWiFi();
+  configurarServidorRed();
 }
 
 void loop() {
   unsigned long ahora = millis();
+
+  server.handleClient();
 
   if (ahora - ultimaLecturaMs >= lecturaIntervaloMs || ultimaLecturaMs == 0) {
     ultimaLecturaMs = ahora;

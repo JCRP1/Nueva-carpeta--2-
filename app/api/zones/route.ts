@@ -7,13 +7,9 @@ import { getSensorZoneColumn } from "@/lib/sensor-zone-column"
 
 export const dynamic = "force-dynamic"
 
-const BYPASS_AUTH = true
-
 export async function GET(req: Request) {
   try {
-    if (!BYPASS_AUTH) {
-      await requireAuth()
-    }
+    const session = await requireAuth()
     const { searchParams } = new URL(req.url)
     const gh = searchParams.get("greenhouse")
 
@@ -39,8 +35,17 @@ export async function GET(req: Request) {
     `
     const params: Record<string, unknown> = {}
     if (gh) {
-      sqlText += " WHERE z.id_invernadero = @gh"
+      sqlText += ` WHERE z.id_invernadero = @gh
+        AND z.id_invernadero IN (
+          SELECT id_invernadero FROM Invernaderos WHERE id_empresa = @empresaId
+        )`
       params.gh = Number(gh)
+      params.empresaId = session.empresaId
+    } else {
+      sqlText += ` WHERE z.id_invernadero IN (
+        SELECT id_invernadero FROM Invernaderos WHERE id_empresa = @empresaId
+      )`
+      params.empresaId = session.empresaId
     }
 
     const rows = (await query(sqlText, params)) as Record<string, unknown>[]
@@ -269,6 +274,27 @@ export async function PATCH(req: Request) {
         `INSERT INTO Riegos (id_zona, id_usuario, tipo, duracion_min, fecha_inicio)
          VALUES (@zoneId, @userId, @tipo, 0, GETDATE())`,
         { zoneId: Number(id), userId: session.userId, tipo: updates.modoRiego || "automatico" }
+      )
+    } else if (updates.estadoRiego === "inactivo") {
+      await execute(
+        `UPDATE Riegos
+         SET fecha_fin = GETDATE(),
+             duracion_min = DATEDIFF(MINUTE, fecha_inicio, GETDATE()),
+             volumen_litros = CASE
+               WHEN ISNULL(volumen_litros, 0) > 0 THEN volumen_litros
+               ELSE DATEDIFF(MINUTE, fecha_inicio, GETDATE()) * (
+                 SELECT ISNULL(caudal_litros_min, 0)
+                 FROM ZonasRiego
+                 WHERE id_zona = @zoneId
+               )
+             END
+         WHERE id_riego = (
+           SELECT TOP 1 id_riego
+           FROM Riegos
+           WHERE id_zona = @zoneId AND fecha_fin IS NULL
+           ORDER BY fecha_inicio DESC
+         )`,
+        { zoneId: Number(id) }
       )
     }
 
