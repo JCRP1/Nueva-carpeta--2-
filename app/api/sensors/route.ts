@@ -1,16 +1,16 @@
 import { NextResponse } from "next/server"
 import { requireAuth } from "@/lib/auth"
 import { query } from "@/lib/db"
+import { getSensorZoneColumn } from "@/lib/sensor-zone-column"
 
 export const dynamic = "force-dynamic"
 
-const BYPASS_AUTH = true
-
 export async function GET(req: Request) {
   try {
-    await requireAuth()
+    const session = await requireAuth()
     const { searchParams } = new URL(req.url)
     const gh = searchParams.get("greenhouse")
+    const sensorZoneColumn = await getSensorZoneColumn()
 
     let sqlText = `
       SELECT
@@ -34,6 +34,7 @@ export async function GET(req: Request) {
         s.unidad_medida AS unidad,
         s.rango_min AS umbralMin,
         s.rango_max AS umbralMax
+        ${sensorZoneColumn ? `, s.${sensorZoneColumn} AS zonaRiegoId` : ""}
       FROM Sensores s
       LEFT JOIN Marcas ma ON ma.id_marca = s.id_marca
     `
@@ -42,7 +43,10 @@ export async function GET(req: Request) {
       sqlText += " WHERE s.id_invernadero = @gh"
       params.gh = Number(gh)
     } else {
-      sqlText += " WHERE 1=0"
+      sqlText += ` WHERE s.id_invernadero IN (
+        SELECT id_invernadero FROM Invernaderos WHERE id_empresa = @empresaId
+      )`
+      params.empresaId = session.empresaId
     }
 
     const sensors = (await query(sqlText, params)) as Record<string, unknown>[]
@@ -72,7 +76,7 @@ export async function GET(req: Request) {
           tipo: s.tipo,
           nombre: s.nombre,
           invernaderoId: String(s.invernaderoId),
-          zonaRiegoId: "",
+          zonaRiegoId: s.zonaRiegoId != null ? String(s.zonaRiegoId) : "",
           estado: s.estado || "activo",
           idMarca: s.idMarca != null ? String(s.idMarca) : undefined,
           idModelo: s.idModelo != null ? String(s.idModelo) : undefined,
@@ -86,13 +90,11 @@ export async function GET(req: Request) {
           ultimoCalibrado: (s.ultimoCalibrado as string) || undefined,
           observaciones: (s.observaciones as string) || undefined,
           idDispositivo: s.idDispositivo != null ? Number(s.idDispositivo) : undefined,
-          ultimaLectura: latest ? Number(latest.valor) : 0,
+          ultimaLectura: latest ? Number(latest.valor) : undefined,
           unidad: (latest?.unidad as string) || (s.unidad as string) || "",
           umbralMin: Number(s.umbralMin) || 0,
           umbralMax: Number(s.umbralMax) || 100,
-          ultimoReporte: latest
-            ? (latest.fecha_hora as string)
-            : new Date().toISOString(),
+          ultimoReporte: latest ? latest.fecha_hora : undefined,
           history: historyRows.reverse().map((h) => ({
             timestamp: h.timestamp,
             valor: Number(h.valor),
@@ -115,12 +117,7 @@ return NextResponse.json({ error: "No autorizado", details: errorMessage }, { st
 
 export async function POST(req: Request) {
   try {
-    let session: { empresaId: number }
-    if (BYPASS_AUTH) {
-      session = { empresaId: 1 }
-    } else {
-      session = await requireAuth()
-    }
+    const session = await requireAuth()
     const body = await req.json()
 
     const {
@@ -138,16 +135,58 @@ export async function POST(req: Request) {
       observaciones,
       idInvernadero,
       idDispositivo,
+      idZona,
+      zonaRiegoId,
     } = body
 
     if (!tipo || !idInvernadero) {
       return NextResponse.json({ error: "Tipo e invernadero requeridos" }, { status: 400 })
     }
 
+    const sensorZoneColumn = await getSensorZoneColumn()
+    const resolvedZoneId = idZona ?? zonaRiegoId
+    const insertColumns = [
+      "tipo",
+      "id_invernadero",
+      "id_marca",
+      "id_modelo",
+      "estado",
+      "rango_min",
+      "rango_max",
+      "unidad_medida",
+      "precision",
+      "fecha_instalacion",
+      "ubicacion_fisica",
+      "ultimo_calibrado",
+      "observaciones",
+      "id_dispositivo",
+    ]
+    const insertValues = [
+      "@tipo",
+      "@idInvernadero",
+      "@idMarca",
+      "@idModelo",
+      "@estado",
+      "@rangoMin",
+      "@rangoMax",
+      "@unidadMedida",
+      "@precision",
+      "@fechaInstalacion",
+      "@ubicacionFisica",
+      "@ultimoCalibrado",
+      "@observaciones",
+      "@idDispositivo",
+    ]
+
+    if (sensorZoneColumn) {
+      insertColumns.push(sensorZoneColumn)
+      insertValues.push("@idZona")
+    }
+
     const result = (await query(
       `INSERT INTO Sensores 
-       (tipo, id_invernadero, id_marca, id_modelo, estado, rango_min, rango_max, unidad_medida, precision, fecha_instalacion, ubicacion_fisica, ultimo_calibrado, observaciones, id_dispositivo)
-       VALUES (@tipo, @idInvernadero, @idMarca, @idModelo, @estado, @rangoMin, @rangoMax, @unidadMedida, @precision, @fechaInstalacion, @ubicacionFisica, @ultimoCalibrado, @observaciones, @idDispositivo);
+       (${insertColumns.join(", ")})
+       VALUES (${insertValues.join(", ")});
        SELECT SCOPE_IDENTITY() AS id;`,
       {
         tipo,
@@ -164,6 +203,7 @@ export async function POST(req: Request) {
         ultimoCalibrado: ultimoCalibrado || null,
         observaciones: observaciones || null,
         idDispositivo: idDispositivo ? Number(idDispositivo) : null,
+        idZona: resolvedZoneId ? Number(resolvedZoneId) : null,
       }
     )) as Record<string, unknown>[]
 
@@ -182,14 +222,7 @@ export async function POST(req: Request) {
 
 export async function PUT(req: Request) {
   try {
-    // When auth is bypassed, use a default session
-    let session: { empresaId: number }
-    if (BYPASS_AUTH) {
-      console.log("[SENSORS API] Auth bypassed for PUT")
-      session = { empresaId: 1 } // Default for debugging
-    } else {
-      session = await requireAuth()
-    }
+    const session = await requireAuth()
     const body = await req.json()
 
     const {
@@ -210,17 +243,21 @@ export async function PUT(req: Request) {
       idDispositivo,
       umbralMin,
       umbralMax,
+      idZona,
+      zonaRiegoId,
     } = body
 
     if (!id) {
       return NextResponse.json({ error: "ID requerido" }, { status: 400 })
     }
 
+    const sensorZoneColumn = await getSensorZoneColumn()
     const existingRows = (await query(
       `SELECT
         s.id_sensor AS id,
         s.id_invernadero AS idInvernadero,
         s.id_dispositivo AS idDispositivo,
+        ${sensorZoneColumn ? `s.${sensorZoneColumn} AS idZona,` : ""}
         s.tipo,
         s.id_marca AS idMarca,
         s.id_modelo AS idModelo,
@@ -246,26 +283,35 @@ export async function PUT(req: Request) {
 
 const mergedRangoMin = rangoMin !== undefined ? rangoMin : umbralMin
     const mergedRangoMax = rangoMax !== undefined ? rangoMax : umbralMax
+    const mergedZonaId = idZona !== undefined ? idZona : zonaRiegoId
 
     const newUltimoCalibrado = ultimoCalibrado !== undefined ? ultimoCalibrado : existing.ultimoCalibrado
+
+    const updateSetClauses = [
+      "id_invernadero = @idInvernadero",
+      "id_dispositivo = @idDispositivo",
+      "tipo = @tipo",
+      "id_marca = @idMarca",
+      "id_modelo = @idModelo",
+      "estado = @estado",
+      "rango_min = @rangoMin",
+      "rango_max = @rangoMax",
+      "unidad_medida = @unidadMedida",
+      "precision = @precision",
+      "fecha_instalacion = @fechaInstalacion",
+      "ubicacion_fisica = @ubicacionFisica",
+      "ultimo_calibrado = @ultimoCalibrado",
+      "observaciones = @observaciones",
+    ]
+
+    if (sensorZoneColumn) {
+      updateSetClauses.push(`${sensorZoneColumn} = @idZona`)
+    }
 
     await query(
       `UPDATE Sensores
        SET
-        id_invernadero = @idInvernadero,
-        id_dispositivo = @idDispositivo,
-        tipo = @tipo,
-        id_marca = @idMarca,
-        id_modelo = @idModelo,
-        estado = @estado,
-        rango_min = @rangoMin,
-        rango_max = @rangoMax,
-        unidad_medida = @unidadMedida,
-        precision = @precision,
-        fecha_instalacion = @fechaInstalacion,
-        ubicacion_fisica = @ubicacionFisica,
-        ultimo_calibrado = @ultimoCalibrado,
-        observaciones = @observaciones
+        ${updateSetClauses.join(",\n        ")}
        WHERE id_sensor = @id`,
       {
         id: Number(id),
@@ -285,15 +331,16 @@ const mergedRangoMin = rangoMin !== undefined ? rangoMin : umbralMin
         ubicacionFisica: ubicacionFisica !== undefined ? ubicacionFisica : existing.ubicacionFisica,
         ultimoCalibrado: newUltimoCalibrado,
         observaciones: observaciones !== undefined ? observaciones : existing.observaciones,
+        idZona: mergedZonaId !== undefined
+          ? (mergedZonaId ? Number(mergedZonaId) : null)
+          : (existing.idZona != null ? Number(existing.idZona) : null),
       }
     )
 
     if (ultimoCalibrado !== undefined && ultimoCalibrado !== existing.ultimoCalibrado) {
       let userId: number | null = null
-      if (!BYPASS_AUTH) {
-        const authUser = await requireAuth()
-        userId = (authUser as { userId?: number }).userId || null
-      }
+      const authUser = await requireAuth()
+      userId = (authUser as { userId?: number }).userId || null
 
       await query(
         `INSERT INTO Bitacora 

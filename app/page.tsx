@@ -68,6 +68,7 @@ export default function Page() {
   const [currentTime, setCurrentTime] = useState(new Date())
   const [mqttConnected, setMqttConnected] = useState(true)
   const [checkingSession, setCheckingSession] = useState(true)
+  const [mounted, setMounted] = useState(false)
 
   // Fetch greenhouses from API (only when logged in)
   const { data: greenhouses } = useSWR<Invernadero[]>(
@@ -101,6 +102,10 @@ export default function Page() {
         // No session
       })
       .finally(() => setCheckingSession(false))
+  }, [])
+
+  useEffect(() => {
+    setMounted(true)
   }, [])
 
   // Live clock
@@ -198,7 +203,7 @@ function renderView() {
       case "invernaderos":
         return <GreenhousesView userRole={currentUser!.rol} />
       case "reportes":
-        return <ReportsView userRole={currentUser!.rol} />
+        return <ReportsView userRole={currentUser!.rol} selectedGreenhouse={selectedGreenhouse} />
       case "personal":
         if (!isAdmin) {
           return (
@@ -336,13 +341,15 @@ function renderView() {
             <div className="hidden items-center gap-1.5 text-xs text-muted-foreground lg:flex">
               <Clock className="h-3.5 w-3.5" />
               <span>
-                {currentTime.toLocaleString("es-DO", {
-                  month: "short",
-                  day: "numeric",
-                  hour: "2-digit",
-                  minute: "2-digit",
-                  second: "2-digit",
-                })}
+                {mounted
+                  ? currentTime.toLocaleString("es-DO", {
+                      month: "short",
+                      day: "numeric",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                      second: "2-digit",
+                    })
+                  : "--"}
               </span>
             </div>
           </div>

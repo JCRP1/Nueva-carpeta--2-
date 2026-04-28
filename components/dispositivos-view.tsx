@@ -32,7 +32,7 @@ import {
 } from "@/components/ui/table"
 import { toast } from "sonner"
 import { api, fetcher } from "@/lib/api-client"
-import { Loader2, Plus, Pencil, Trash2, Cpu, Wifi } from "lucide-react"
+import { Loader2, Plus, Pencil, Trash2, Cpu, Wifi, Search } from "lucide-react"
 import type { Invernadero } from "@/lib/greensense-data"
 
 interface DispositivoData {
@@ -46,6 +46,18 @@ interface DispositivoData {
   firmwareVersion?: string
   ipLocal?: string
   ultimoReporte?: string
+}
+
+interface DiscoveredDevice {
+  ip: string
+  port: number
+  url: string
+  deviceName: string | null
+  deviceCode: string | null
+  firmwareVersion: string | null
+  chipModel: string | null
+  confidence: "high" | "medium"
+  subnet?: string
 }
 
 const DEVICE_TYPES = [
@@ -103,6 +115,12 @@ export function DispositivosView() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [deletingDevice, setDeletingDevice] = useState<DispositivoData | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const [discoverDialogOpen, setDiscoverDialogOpen] = useState(false)
+  const [discovering, setDiscovering] = useState(false)
+  const [discoveredDevices, setDiscoveredDevices] = useState<DiscoveredDevice[]>([])
+  const [scannedNetworks, setScannedNetworks] = useState<string[]>([])
+  const [scannedTargets, setScannedTargets] = useState(0)
+  const [targetIps, setTargetIps] = useState("")
 
   const [formData, setFormData] = useState({
     nombre: "",
@@ -236,6 +254,52 @@ export function DispositivosView() {
     setDeleteDialogOpen(true)
   }, [])
 
+  const handleDiscover = useCallback(async () => {
+    setDiscovering(true)
+    setDiscoverDialogOpen(true)
+    try {
+      const result = await api.discoverDevices({ ips: targetIps }) as {
+        networks?: string[]
+        scannedTargets?: number
+        manualScan?: boolean
+        targetIps?: string[]
+        discovered?: DiscoveredDevice[]
+      }
+
+      const discovered = result.discovered || []
+      setScannedNetworks(result.networks || [])
+      setScannedTargets(result.scannedTargets || 0)
+      setDiscoveredDevices(discovered)
+
+      if (discovered.length === 0) {
+        toast.info("Escaneo completado", { description: "No se detectaron ESP32 accesibles en la red local." })
+        return
+      }
+
+      toast.success("ESP32 detectados", { description: `${discovered.length} dispositivo(s) encontrado(s).` })
+    } catch (err) {
+      toast.error("Error al buscar ESP32", { description: err instanceof Error ? err.message : "Error" })
+    } finally {
+      setDiscovering(false)
+    }
+  }, [targetIps])
+
+  const useDiscoveredDevice = useCallback((device: DiscoveredDevice) => {
+    setFormData((current) => ({
+      ...current,
+      nombre: current.nombre || device.deviceName || `ESP32 ${device.ip}`,
+      tipo: "modulo",
+      codigoDispositivo: device.deviceCode || current.codigoDispositivo,
+      firmwareVersion: device.firmwareVersion || current.firmwareVersion,
+      ipLocal: device.ip,
+      estado: "Activo",
+    }))
+    setIpError(null)
+    setFirmwareError(null)
+    setDiscoverDialogOpen(false)
+    setDialogOpen(true)
+  }, [])
+
   if (isLoading && !devices) {
     return (
       <div className="flex items-center justify-center py-20">
@@ -253,9 +317,15 @@ export function DispositivosView() {
             Gestion de dispositivos conectados ({deviceList.length} dispositivos)
           </p>
         </div>
-        <Button size="sm" onClick={openCreateDialog}>
-          <Plus className="mr-2 h-4 w-4" />Nuevo Dispositivo
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={handleDiscover} disabled={discovering}>
+            {discovering ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4" />}
+            Buscar ESP32
+          </Button>
+          <Button size="sm" onClick={openCreateDialog}>
+            <Plus className="mr-2 h-4 w-4" />Nuevo Dispositivo
+          </Button>
+        </div>
       </div>
 
       <Card>
@@ -434,6 +504,101 @@ export function DispositivosView() {
           <DialogFooter>
             <Button variant="destructive" onClick={handleDelete} disabled={deleting}>
               {deleting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Eliminando...</> : "Eliminar"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={discoverDialogOpen} onOpenChange={setDiscoverDialogOpen}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle className="text-foreground">Buscar ESP32 por Wi-Fi</DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-col gap-4 py-2">
+            <div className="grid gap-2">
+              <Label>IPs reales del ESP32</Label>
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <Input
+                  className="font-mono text-xs"
+                  placeholder="Ej: 192.168.1.45, 192.168.1.46"
+                  value={targetIps}
+                  onChange={(event) => setTargetIps(event.target.value)}
+                />
+                <Button onClick={handleDiscover} disabled={discovering}>
+                  {discovering ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4" />}
+                  Buscar IPs
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Si deja este campo vacio, se escanea la red automaticamente. Si escribe IPs, se prueban solo esas direcciones.
+              </p>
+            </div>
+
+            <div className="rounded-lg border border-border bg-muted/30 p-3 text-sm text-muted-foreground">
+              {discovering
+                ? targetIps.trim()
+                  ? "Probando las IPs indicadas en busca de ESP32 accesibles por HTTP..."
+                  : "Escaneando la red local en busca de modulos ESP32 accesibles por HTTP..."
+                : scannedNetworks.length > 0
+                  ? `Subredes revisadas: ${scannedNetworks.join(", ")}${scannedTargets ? ` - objetivos: ${scannedTargets}` : ""}`
+                  : "Ejecute una busqueda para detectar modulos ESP32 dentro de la misma red."}
+            </div>
+
+            {discovering ? (
+              <div className="flex items-center justify-center py-10">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              </div>
+            ) : discoveredDevices.length === 0 ? (
+              <div className="flex flex-col items-center justify-center gap-3 py-10 text-center">
+                <Wifi className="h-8 w-8 text-muted-foreground" />
+                <p className="text-sm text-muted-foreground">No se detectaron ESP32 accesibles en la red actual.</p>
+                <p className="max-w-md text-xs text-muted-foreground">
+                  Verifique que el ESP32 este encendido, conectado al mismo Wi-Fi y responda por HTTP con texto que incluya ESP32, Espressif o GreenSense.
+                </p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto rounded-md border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>IP</TableHead>
+                      <TableHead>Puerto</TableHead>
+                      <TableHead>Codigo</TableHead>
+                      <TableHead>Nombre</TableHead>
+                      <TableHead>Firmware</TableHead>
+                      <TableHead>Confianza</TableHead>
+                      <TableHead className="text-right">Usar</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {discoveredDevices.map((device) => (
+                      <TableRow key={`${device.ip}:${device.port}`}>
+                        <TableCell className="font-mono text-xs">{device.ip}</TableCell>
+                        <TableCell>{device.port}</TableCell>
+                        <TableCell className="font-mono text-xs">{device.deviceCode || "-"}</TableCell>
+                        <TableCell>{device.deviceName || device.chipModel || "ESP32 detectado"}</TableCell>
+                        <TableCell>{device.firmwareVersion || "-"}</TableCell>
+                        <TableCell>
+                          <Badge className={device.confidence === "high" ? "bg-emerald-500/20 text-emerald-400 border-0" : "bg-amber-500/20 text-amber-400 border-0"}>
+                            {device.confidence === "high" ? "Alta" : "Media"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Button size="sm" variant="outline" onClick={() => useDiscoveredDevice(device)}>
+                            Usar
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDiscoverDialogOpen(false)}>Cerrar</Button>
+            <Button onClick={handleDiscover} disabled={discovering}>
+              {discovering ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Buscando...</> : "Buscar de nuevo"}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -110,7 +110,7 @@ interface AlertsViewProps {
 }
 
 export function AlertsView({ userRole }: AlertsViewProps) {
-  const { data: alerts, isLoading, mutate } = useSWR<AlertData[]>("/api/alerts", fetcher)
+  const { data: alerts, isLoading, mutate } = useSWR<AlertData[]>("/api/alerts", fetcher, { refreshInterval: 3000 })
   const { data: greenhouses } = useSWR<Invernadero[]>("/api/greenhouses", fetcher)
 
   const [filterTypes, setFilterTypes] = useState<Record<string, boolean>>({ critica: true, advertencia: true, info: true })

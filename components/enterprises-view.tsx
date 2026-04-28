@@ -63,7 +63,8 @@ export function EnterprisesView() {
         rnc: formatRNC(empresa.rnc || ""),
         direccion: empresa.direccion || "",
         telefono: empresa.telefono || "",
-        correo: empresa.correo || ""
+        correo: empresa.correo || "",
+        estado: empresa.estado || "Activa",
       }
       setFormData(data)
       setOriginalData({...data, rnc: formatRNC(data.rnc)})
@@ -109,7 +110,8 @@ export function EnterprisesView() {
           rnc: formData.rnc.trim(),
           direccion: formData.direccion.trim(),
           telefono: formData.telefono.trim(),
-          correo: formData.correo.trim()
+          correo: formData.correo.trim(),
+          estado: originalData.estado,
         })
         setHasChanges(false)
       }

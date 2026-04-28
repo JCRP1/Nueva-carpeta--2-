@@ -4,13 +4,9 @@ import { query } from "@/lib/db"
 
 export const dynamic = "force-dynamic"
 
-const BYPASS_AUTH = true
-
 export async function GET(req: Request) {
   try {
-    if (!BYPASS_AUTH) {
-      await requireAuth()
-    }
+    await requireAuth()
     const { searchParams } = new URL(req.url)
     const marcaId = searchParams.get("marca")
 

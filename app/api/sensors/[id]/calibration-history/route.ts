@@ -4,8 +4,6 @@ import { query } from "@/lib/db"
 
 export const dynamic = "force-dynamic"
 
-const BYPASS_AUTH = true
-
 interface BitacoraCalibracion {
   id_bitacora: number
   descripcion: string

@@ -4,17 +4,13 @@ import { query } from "@/lib/db"
 
 export const dynamic = "force-dynamic"
 
-const BYPASS_AUTH = true  // Temp fix for auth issue
-
 /* =========================
    LISTAR
 ========================= */
 
 export async function GET() {
   try {
-    if (!BYPASS_AUTH) {
-      await requireAuth()
-    }
+    await requireAuth()
 
     const rows = (await query(`
       SELECT 

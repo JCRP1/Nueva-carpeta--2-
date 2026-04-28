@@ -42,66 +42,19 @@ import type { UserRole } from "@/lib/greensense-data"
 import { fetcher } from "@/lib/api-client"
 import { toast } from "sonner"
 
-interface SensorWithHistory {
-  id: string
-  tipo: string
-  nombre: string
-  history?: { timestamp: string; valor: number }[]
-}
-
-interface DashboardData {
+interface ReportsData {
   consumoAgua: Array<{ dia: string; litros: number }>
-  recentEvents: Array<{
-    id: string
-    tipo: string
-    duracion: number
-    volumen: number
-    estado: string
-  }>
+  resumenRiego: Array<{ semana: string; riegoAuto: number; riegoManual: number; aguaTotal: number }>
+  eficiencia: Array<{ mes: string; eficiencia: number }>
+  nutrientes: Array<{ dia: string; aplicaciones: number; cantidad: number }>
+  sensorHistory: Array<{ tipo: string; timestamp: string; valor: number }>
+  sensores: Array<{ tipo: string; promedio: number; minimo: number; maximo: number }>
+  productividad: {
+    cultivosActivos: number
+    cosechasEstimadas: number
+    rendimientoRegistrado: number
+  }
 }
-
-const defaultWeeklyWater = [
-  { dia: "Lun", litros: 850 },
-  { dia: "Mar", litros: 920 },
-  { dia: "Mie", litros: 780 },
-  { dia: "Jue", litros: 1100 },
-  { dia: "Vie", litros: 950 },
-  { dia: "Sab", litros: 620 },
-  { dia: "Dom", litros: 480 },
-]
-
-const monthlyWater = [
-  { dia: "Sem 1", litros: 4200 },
-  { dia: "Sem 2", litros: 4800 },
-  { dia: "Sem 3", litros: 3900 },
-  { dia: "Sem 4", litros: 4500 },
-]
-
-const weeklyRiegoData = [
-  { semana: "Sem 1", riegoAuto: 28, riegoManual: 5, aguaTotal: 4200, alertas: 8 },
-  { semana: "Sem 2", riegoAuto: 32, riegoManual: 3, aguaTotal: 4800, alertas: 5 },
-  { semana: "Sem 3", riegoAuto: 25, riegoManual: 7, aguaTotal: 3900, alertas: 12 },
-  { semana: "Sem 4", riegoAuto: 30, riegoManual: 4, aguaTotal: 4500, alertas: 6 },
-]
-
-const monthlyEfficiency = [
-  { mes: "Sep", eficiencia: 78 },
-  { mes: "Oct", eficiencia: 82 },
-  { mes: "Nov", eficiencia: 85 },
-  { mes: "Dic", eficiencia: 80 },
-  { mes: "Ene", eficiencia: 88 },
-  { mes: "Feb", eficiencia: 91 },
-]
-
-const nutrientUsage = [
-  { dia: "Lun", nitrogeno: 45, fosforo: 28, potasio: 35 },
-  { dia: "Mar", nitrogeno: 52, fosforo: 32, potasio: 40 },
-  { dia: "Mie", nitrogeno: 38, fosforo: 25, potasio: 30 },
-  { dia: "Jue", nitrogeno: 60, fosforo: 35, potasio: 45 },
-  { dia: "Vie", nitrogeno: 48, fosforo: 30, potasio: 38 },
-  { dia: "Sab", nitrogeno: 30, fosforo: 20, potasio: 25 },
-  { dia: "Dom", nitrogeno: 22, fosforo: 15, potasio: 18 },
-]
 
 const tooltipStyle = {
   background: "hsl(150, 14%, 9%)",
@@ -134,39 +87,43 @@ function downloadCSV(filename: string, headers: string[], rows: string[][]) {
 
 interface ReportsViewProps {
   userRole: UserRole
+  selectedGreenhouse: string
 }
 
-export function ReportsView({ userRole }: ReportsViewProps) {
+export function ReportsView({ userRole, selectedGreenhouse }: ReportsViewProps) {
   const isAdmin = userRole === "administrador"
   const [period, setPeriod] = useState("semana")
   const [exporting, setExporting] = useState(false)
   const [activeTab, setActiveTab] = useState("consumo")
 
-  // Fetch real data from API
-  const { data: dashData } = useSWR<DashboardData>("/api/dashboard?greenhouse=inv1", fetcher)
-  const { data: sensorsData } = useSWR<SensorWithHistory[]>("/api/sensors", fetcher)
+  const { data: reportData } = useSWR<ReportsData>(
+    selectedGreenhouse ? `/api/reports?greenhouse=${selectedGreenhouse}` : null,
+    fetcher,
+    { refreshInterval: 10000 }
+  )
 
-  const weeklyWater = dashData?.consumoAgua || defaultWeeklyWater
+  const weeklyWater = reportData?.consumoAgua || []
   const dailyWater = weeklyWater.slice(0, 1).map((d) => ({ ...d, dia: "Hoy" }))
-  const events = dashData?.recentEvents || []
-  const humedadSueloHistory = (sensorsData || []).find((s) => s.tipo === "humedad_suelo")?.history || []
-  const tdsHistory = (sensorsData || []).find((s) => s.tipo === "tds")?.history || []
+  const monthlyWater = reportData?.resumenRiego?.map((d) => ({ dia: d.semana, litros: d.aguaTotal })) || []
+  const weeklyRiegoData = reportData?.resumenRiego || []
+  const monthlyEfficiency = reportData?.eficiencia || []
+  const nutrientUsage = reportData?.nutrientes || []
+  const humedadSueloHistory = (reportData?.sensorHistory || []).filter((s) => s.tipo === "humedad_suelo")
+  const tdsHistory = (reportData?.sensorHistory || []).filter((s) => s.tipo === "tds")
+  const temperaturaStats = reportData?.sensores?.find((s) => s.tipo === "temperatura")
+  const currentEfficiency = reportData?.eficiencia?.[reportData.eficiencia.length - 1]?.eficiencia || 0
 
-  const completedEvents = useMemo(
-    () => events.filter((e) => e.estado === "completado"),
-    [events]
-  )
   const totalWater = useMemo(
-    () => completedEvents.reduce((acc, e) => acc + e.volumen, 0),
-    [completedEvents]
+    () => weeklyWater.reduce((acc, e) => acc + e.litros, 0),
+    [weeklyWater]
   )
-  const totalDuration = useMemo(
-    () => completedEvents.reduce((acc, e) => acc + e.duracion, 0),
-    [completedEvents]
+  const totalEvents = useMemo(
+    () => weeklyRiegoData.reduce((acc, e) => acc + e.riegoAuto + e.riegoManual, 0),
+    [weeklyRiegoData]
   )
   const autoEvents = useMemo(
-    () => completedEvents.filter((e) => e.tipo === "automatico"),
-    [completedEvents]
+    () => weeklyRiegoData.reduce((acc, e) => acc + e.riegoAuto, 0),
+    [weeklyRiegoData]
   )
 
   const waterData = useMemo(() => {
@@ -175,7 +132,7 @@ export function ReportsView({ userRole }: ReportsViewProps) {
       case "mes": return monthlyWater
       default: return weeklyWater
     }
-  }, [period, weeklyWater, dailyWater])
+  }, [period, weeklyWater, dailyWater, monthlyWater])
 
   const periodLabel = useMemo(() => {
     switch (period) {
@@ -208,8 +165,8 @@ export function ReportsView({ userRole }: ReportsViewProps) {
         case "nutrientes": {
           downloadCSV(
             `greensense-nutrientes-${period}.csv`,
-            ["Dia", "Nitrogeno (g)", "Fosforo (g)", "Potasio (g)"],
-            nutrientUsage.map((d) => [d.dia, String(d.nitrogeno), String(d.fosforo), String(d.potasio)])
+            ["Dia", "Aplicaciones", "Cantidad registrada"],
+            nutrientUsage.map((d) => [d.dia, String(d.aplicaciones), String(d.cantidad)])
           )
           break
         }
@@ -227,7 +184,7 @@ export function ReportsView({ userRole }: ReportsViewProps) {
         description: `Archivo CSV generado para ${activeTab} (${periodLabel})`,
       })
     }, 600)
-  }, [activeTab, period, waterData, periodLabel])
+  }, [activeTab, period, waterData, humedadSueloHistory, nutrientUsage, monthlyEfficiency, periodLabel])
 
   function handlePeriodChange(value: string) {
     setPeriod(value)
@@ -285,9 +242,9 @@ export function ReportsView({ userRole }: ReportsViewProps) {
               <span className="text-xs">Agua Consumida</span>
             </div>
             <p className="text-2xl font-bold text-foreground">{totalWater}L</p>
-            <p className="text-xs text-emerald-400 mt-1">
+            <p className="text-xs text-muted-foreground mt-1">
               <TrendingDown className="mr-1 inline h-3 w-3" />
-              -12% vs {periodLabel === "hoy" ? "ayer" : "anterior"}
+              Datos reales del periodo
             </p>
           </CardContent>
         </Card>
@@ -298,10 +255,10 @@ export function ReportsView({ userRole }: ReportsViewProps) {
               <span className="text-xs">Eventos de Riego</span>
             </div>
             <p className="text-2xl font-bold text-foreground">
-              {completedEvents.length}
+              {totalEvents}
             </p>
             <p className="text-xs text-muted-foreground mt-1">
-              {autoEvents.length} automaticos, {completedEvents.length - autoEvents.length} manuales
+              {autoEvents} automaticos, {totalEvents - autoEvents} manuales
             </p>
           </CardContent>
         </Card>
@@ -311,9 +268,9 @@ export function ReportsView({ userRole }: ReportsViewProps) {
               <Thermometer className="h-4 w-4 text-orange-400" />
               <span className="text-xs">Temp. Promedio</span>
             </div>
-            <p className="text-2xl font-bold text-foreground">27.8C</p>
+            <p className="text-2xl font-bold text-foreground">{temperaturaStats ? `${temperaturaStats.promedio.toFixed(1)}C` : "0C"}</p>
             <p className="text-xs text-muted-foreground mt-1">
-              Min: 22.1C / Max: 33.4C
+              Min: {temperaturaStats?.minimo.toFixed(1) || "0"}C / Max: {temperaturaStats?.maximo.toFixed(1) || "0"}C
             </p>
           </CardContent>
         </Card>
@@ -323,10 +280,10 @@ export function ReportsView({ userRole }: ReportsViewProps) {
               <Leaf className="h-4 w-4 text-emerald-400" />
               <span className="text-xs">Eficiencia</span>
             </div>
-            <p className="text-2xl font-bold text-foreground">91%</p>
-            <p className="text-xs text-emerald-400 mt-1">
+            <p className="text-2xl font-bold text-foreground">{currentEfficiency}%</p>
+            <p className="text-xs text-muted-foreground mt-1">
               <TrendingUp className="mr-1 inline h-3 w-3" />
-              +3% vs mes anterior
+              Calculada por eventos automaticos
             </p>
           </CardContent>
         </Card>
@@ -404,8 +361,8 @@ export function ReportsView({ userRole }: ReportsViewProps) {
                       onClick={() => {
                         downloadCSV(
                           "resumen-riego-semanal.csv",
-                          ["Semana", "Automatico", "Manual", "Agua Total (L)", "Alertas"],
-                          weeklyRiegoData.map((d) => [d.semana, String(d.riegoAuto), String(d.riegoManual), String(d.aguaTotal), String(d.alertas)])
+                          ["Semana", "Automatico", "Manual", "Agua Total (L)"],
+                          weeklyRiegoData.map((d) => [d.semana, String(d.riegoAuto), String(d.riegoManual), String(d.aguaTotal)])
                         )
                         toast.success("CSV descargado", { description: "resumen-riego-semanal.csv" })
                       }}
@@ -491,7 +448,7 @@ export function ReportsView({ userRole }: ReportsViewProps) {
             <CardHeader className="pb-2">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-sm font-medium text-foreground">
-                  Uso de Nutrientes por Dia (g/zona)
+                  Uso de Nutrientes por Dia
                 </CardTitle>
                 {isAdmin && (
                   <Button
@@ -500,8 +457,8 @@ export function ReportsView({ userRole }: ReportsViewProps) {
                     onClick={() => {
                       downloadCSV(
                         "nutrientes-semanal.csv",
-                        ["Dia", "Nitrogeno (g)", "Fosforo (g)", "Potasio (g)"],
-                        nutrientUsage.map((d) => [d.dia, String(d.nitrogeno), String(d.fosforo), String(d.potasio)])
+            ["Dia", "Aplicaciones", "Cantidad registrada"],
+            nutrientUsage.map((d) => [d.dia, String(d.aplicaciones), String(d.cantidad)])
                       )
                       toast.success("CSV descargado", { description: "nutrientes-semanal.csv" })
                     }}
@@ -519,9 +476,8 @@ export function ReportsView({ userRole }: ReportsViewProps) {
                   <YAxis tick={axisTickStyle} stroke={gridStroke} />
                   <Tooltip contentStyle={tooltipStyle} />
                   <Legend wrapperStyle={{ fontSize: 11, color: "hsl(150, 5%, 55%)" }} />
-                  <Bar dataKey="nitrogeno" name="Nitrogeno (N)" fill="hsl(152, 60%, 42%)" radius={[2, 2, 0, 0]} />
-                  <Bar dataKey="fosforo" name="Fosforo (P)" fill="hsl(200, 65%, 46%)" radius={[2, 2, 0, 0]} />
-                  <Bar dataKey="potasio" name="Potasio (K)" fill="hsl(43, 74%, 56%)" radius={[2, 2, 0, 0]} />
+                  <Bar dataKey="aplicaciones" name="Aplicaciones" fill="hsl(152, 60%, 42%)" radius={[2, 2, 0, 0]} />
+                  <Bar dataKey="cantidad" name="Cantidad registrada" fill="hsl(200, 65%, 46%)" radius={[2, 2, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </CardContent>

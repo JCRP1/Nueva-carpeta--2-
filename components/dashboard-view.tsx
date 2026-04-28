@@ -117,7 +117,7 @@ function formatTime(ts: string) {
   return new Date(ts).toLocaleTimeString("es-DO", { hour: "2-digit", minute: "2-digit" })
 }
 
-function SensorCard({ sensor }: { sensor: SensorData }) {
+function SensorCard({ sensor, mounted }: { sensor: SensorData; mounted: boolean }) {
   const Icon = getSensorIcon(sensor.tipo)
   const color = getSensorColor(sensor.tipo)
   const bg = getSensorBg(sensor.tipo)
@@ -157,7 +157,7 @@ function SensorCard({ sensor }: { sensor: SensorData }) {
                 <Minus className="mr-1 h-3 w-3" />Normal
               </Badge>
             )}
-            <span className="text-[10px] text-muted-foreground">{formatTime(sensor.ultimaActualizacion)}</span>
+            <span className="text-[10px] text-muted-foreground">{mounted ? formatTime(sensor.ultimaActualizacion) : "--:--"}</span>
           </div>
         </div>
         <div className="mt-3">
@@ -191,24 +191,29 @@ interface DashboardViewProps {
 }
 
 export function DashboardView({ selectedGreenhouse, userRole }: DashboardViewProps) {
+  const [mounted, setMounted] = useState(false)
   // Fetch dashboard overview
   const { data: dashboard, isLoading: loadingDash, mutate: mutateDash } = useSWR<DashboardData>(
     `/api/dashboard?greenhouse=${selectedGreenhouse}`,
     fetcher,
-    { refreshInterval: 15000 }
+    { refreshInterval: 3000 }
   )
 
   // Fetch sensors with history for charts
   const { data: sensorsWithHistory, isLoading: loadingSensors, mutate: mutateSensors } = useSWR<SensorData[]>(
     `/api/sensors?greenhouse=${selectedGreenhouse}`,
     fetcher,
-    { refreshInterval: 15000 }
+    { refreshInterval: 3000 }
   )
 
   // Fetch users for status chart
   const { data: users } = useSWR<Array<{ id: number; nombre: string; activo: boolean }>>("/api/users", fetcher)
 
   const [refreshing, setRefreshing] = useState(false)
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
 
   const sensors = dashboard?.sensors || []
   const activeSensors = sensors.filter((s) => s.estado === "activo").length
@@ -362,7 +367,7 @@ export function DashboardView({ selectedGreenhouse, userRole }: DashboardViewPro
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {sensors.length > 0 ? (
             sensors.map((sensor) => (
-              <SensorCard key={sensor.id} sensor={sensor} />
+              <SensorCard key={sensor.id} sensor={sensor} mounted={mounted} />
             ))
           ) : (
             <Card className="col-span-full">
@@ -526,7 +531,7 @@ export function DashboardView({ selectedGreenhouse, userRole }: DashboardViewPro
                   <div>
                     <p className="text-sm font-medium text-foreground">{evento.zonaNombre}</p>
                     <p className="text-xs text-muted-foreground">
-                      {formatTime(evento.inicio)} {evento.fin && ` - ${formatTime(evento.fin)}`}
+                      {mounted ? formatTime(evento.inicio) : "--:--"} {evento.fin && ` - ${mounted ? formatTime(evento.fin) : "--:--"}`}
                     </p>
                   </div>
                 </div>
