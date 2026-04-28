@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useMemo, useRef, useEffect } from "react"
 import useSWR from "swr"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -49,6 +49,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
+import { getAllCultivos } from "@/lib/cultivos-rd-data"
 
 interface CropsViewProps {
   userRole: UserRole
@@ -76,14 +77,6 @@ export function CropsView({ userRole, selectedGreenhouse }: CropsViewProps) {
   const [editingCrop, setEditingCrop] = useState<Cultivo | null>(null)
   const [saving, setSaving] = useState(false)
 
-  console.log("[CropsView] selectedGreenhouse:", selectedGreenhouse)
-  console.log("[CropsView] crops data:", crops)
-  console.log("[CropsView] crops length:", crops?.length)
-  console.log("[CropsView] first crop raw:", crops?.[0])
-  console.log("[CropsView] greenhouses:", greenhouses)
-  console.log("[CropsView] error:", error)
-  console.log("[CropsView] isLoading:", isLoading)
-
   const [formData, setFormData] = useState({
     nombre: "",
     variedad: "",
@@ -97,6 +90,29 @@ export function CropsView({ userRole, selectedGreenhouse }: CropsViewProps) {
       notas: "",
     } as CultivoDetalle,
   })
+  const [searchCultivo, setSearchCultivo] = useState("")
+  const [showSuggestions, setShowSuggestions] = useState(false)
+  const searchRef = useRef<HTMLDivElement>(null)
+
+  const cultivosSugeridos = useMemo(() => {
+    const allCultivos = getAllCultivos()
+    if (!searchCultivo || searchCultivo.trim().length < 1) return []
+    const searchLower = searchCultivo.toLowerCase().trim()
+    return allCultivos.filter(c =>
+      c.nombre.toLowerCase().includes(searchLower) ||
+      c.variedad.toLowerCase().includes(searchLower)
+    )
+  }, [searchCultivo])
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (searchRef.current && !searchRef.current.contains(event.target as Node)) {
+        setShowSuggestions(false)
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside)
+    return () => document.removeEventListener("mousedown", handleClickOutside)
+  }, [])
 
   const filteredCrops = (crops || []).filter((crop) =>
     crop.nombre.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -118,6 +134,8 @@ export function CropsView({ userRole, selectedGreenhouse }: CropsViewProps) {
         notas: "",
       },
     })
+    setSearchCultivo("")
+    setShowSuggestions(false)
     setDialogOpen(true)
   }
 
@@ -136,7 +154,27 @@ export function CropsView({ userRole, selectedGreenhouse }: CropsViewProps) {
         notas: crop.detalle?.notas || "",
       },
     })
+    setSearchCultivo(crop.nombre)
+    setShowSuggestions(false)
     setDialogOpen(true)
+  }
+
+  function selectCultivo(cultivo: { nombre: string, variedad: string, duracion: number, germinacion: number, crecimiento: number, cosecha: number }) {
+    setFormData({
+      nombre: cultivo.nombre,
+      variedad: cultivo.variedad,
+      invernaderoId: formData.invernaderoId,
+      fecha_siembra: formData.fecha_siembra,
+      detalle: {
+        fecha_cosecha_estimada: "",
+        tiempo_germinacion_dias: cultivo.germinacion.toString(),
+        tiempo_crecimiento_dias: cultivo.crecimiento.toString(),
+        tiempo_cosecha_dias: cultivo.cosecha.toString(),
+        notas: `Duración total: ${cultivo.duracion} días`,
+      }
+    })
+    setSearchCultivo(cultivo.nombre)
+    setShowSuggestions(false)
   }
 
   async function handleSave() {
@@ -234,33 +272,55 @@ export function CropsView({ userRole, selectedGreenhouse }: CropsViewProps) {
                 Nuevo Cultivo
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-2xl">
-              <DialogHeader>
-                <DialogTitle>
-                  {editingCrop ? "Editar Cultivo" : "Nuevo Cultivo"}
-                </DialogTitle>
-              </DialogHeader>
-              <div className="grid gap-4 py-4 max-h-[60vh] overflow-y-auto">
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="grid gap-2">
-                    <Label htmlFor="nombre">Nombre *</Label>
-                    <Input
-                      id="nombre"
-                      value={formData.nombre}
-                      onChange={(e) => setFormData({ ...formData, nombre: e.target.value })}
-                      placeholder="Tomate"
-                    />
-                  </div>
-                  <div className="grid gap-2">
-                    <Label htmlFor="variedad">Variedad</Label>
-                    <Input
-                      id="variedad"
-                      value={formData.variedad}
-                      onChange={(e) => setFormData({ ...formData, variedad: e.target.value })}
-                      placeholder="Cherry, Roma, etc."
-                    />
-                  </div>
-                </div>
+             <DialogContent className="max-w-2xl">
+               <DialogHeader>
+                 <DialogTitle>
+                   {editingCrop ? "Editar Cultivo" : "Nuevo Cultivo"}
+                 </DialogTitle>
+               </DialogHeader>
+               <div className="grid gap-4 py-4 max-h-[60vh] overflow-y-auto">
+                 <div className="grid grid-cols-2 gap-4">
+                   <div className="grid gap-2 relative" ref={searchRef}>
+                     <Label htmlFor="nombre">Nombre *</Label>
+                     <Input
+                       id="nombre"
+                       value={searchCultivo}
+                       onChange={(e) => {
+                         setSearchCultivo(e.target.value)
+                         setFormData({ ...formData, nombre: e.target.value })
+                         setShowSuggestions(e.target.value.length > 0)
+                       }}
+                       placeholder="Escriba para buscar un cultivo..."
+                     />
+                     {cultivosSugeridos.length > 0 && showSuggestions && (
+                       <div className="absolute z-50 w-full mt-1 bg-popover border rounded-md shadow-lg max-h-48 overflow-y-auto top-full">
+                         {cultivosSugeridos.map((cultivo, index) => (
+                           <div
+                             key={`${cultivo.nombre}-${index}`}
+                             className="px-3 py-2 cursor-pointer hover:bg-accent"
+                             onMouseDown={(e) => {
+                               e.preventDefault()
+                               selectCultivo(cultivo)
+                             }}
+                           >
+                             <div className="font-medium text-sm">{cultivo.nombre}</div>
+                             <div className="text-xs text-muted-foreground">{cultivo.variedad}</div>
+                           </div>
+                         ))}
+                       </div>
+                     )}
+                   </div>
+                   <div className="grid gap-2">
+                     <Label htmlFor="variedad">Variedad</Label>
+                     <Input
+                       id="variedad"
+                       value={formData.variedad}
+                       onChange={(e) => setFormData({ ...formData, variedad: e.target.value })}
+                       placeholder="Se completa automáticamente"
+                       disabled
+                     />
+                   </div>
+                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="grid gap-2">
                     <Label htmlFor="invernadero">Invernadero *</Label>
@@ -295,7 +355,7 @@ export function CropsView({ userRole, selectedGreenhouse }: CropsViewProps) {
                     <Sprout className="h-4 w-4" />
                     Detalles del Cultivo
                   </h3>
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-3 gap-4">
                     <div className="grid gap-2">
                       <Label htmlFor="fecha_cosecha">Fecha Cosecha Estimada</Label>
                       <Input
@@ -308,20 +368,6 @@ export function CropsView({ userRole, selectedGreenhouse }: CropsViewProps) {
                         })}
                       />
                     </div>
-                    <div className="grid gap-2">
-                      <Label htmlFor="notas">Notas</Label>
-                      <Input
-                        id="notas"
-                        value={formData.detalle.notas}
-                        onChange={(e) => setFormData({
-                          ...formData,
-                          detalle: { ...formData.detalle, notas: e.target.value }
-                        })}
-                        placeholder="Notas adicionales..."
-                      />
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-3 gap-4 mt-4">
                     <div className="grid gap-2">
                       <Label htmlFor="germinacion">Germinacion (dias)</Label>
                       <Input
@@ -350,7 +396,9 @@ export function CropsView({ userRole, selectedGreenhouse }: CropsViewProps) {
                         placeholder="60"
                       />
                     </div>
-                    <div className="grid gap-2">
+                  </div>
+                  <div className="grid grid-cols-3 gap-4 mt-4">
+                    <div className="grid gap-2 col-span-1">
                       <Label htmlFor="cosecha">Cosecha (dias)</Label>
                       <Input
                         id="cosecha"
@@ -365,6 +413,22 @@ export function CropsView({ userRole, selectedGreenhouse }: CropsViewProps) {
                       />
                     </div>
                   </div>
+                </div>
+
+                {/* Notas field moved to bottom, full width */}
+                <div className="grid gap-2 mt-4">
+                  <Label htmlFor="notas">Notas</Label>
+                  <textarea
+                    id="notas"
+                    value={formData.detalle.notas}
+                    onChange={(e) => setFormData({
+                      ...formData,
+                      detalle: { ...formData.detalle, notas: e.target.value }
+                    })}
+                    placeholder="Notas adicionales..."
+                    className="flex min-h-[100px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                    rows={4}
+                  />
                 </div>
               </div>
               <DialogFooter>
