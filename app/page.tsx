@@ -276,19 +276,19 @@ function renderView() {
         empresaNombre={currentEmpresa?.nombre}
         empresaRNC={currentEmpresa?.rnc}
       />
-      <SidebarInset>
-        <header className="flex h-14 items-center gap-2 border-b px-4">
-          <SidebarTrigger className="-ml-1" />
-          <Separator orientation="vertical" className="mr-2 h-4" />
-          <Breadcrumb>
-            <BreadcrumbList>
-              <BreadcrumbItem>
-                <BreadcrumbPage className="text-foreground font-medium">
-                  {viewLabels[activeView] || "Dashboard"}
-                </BreadcrumbPage>
-              </BreadcrumbItem>
-            </BreadcrumbList>
-          </Breadcrumb>
+       <SidebarInset>
+          <header className="flex h-12 items-center gap-4 border-b px-4">
+            <SidebarTrigger className="mr-1" />
+            <Separator orientation="vertical" className="h-6" />
+           <Breadcrumb>
+             <BreadcrumbList>
+               <BreadcrumbItem>
+                 <BreadcrumbPage className="text-foreground font-medium">
+                   {viewLabels[activeView] || "Dashboard"}
+                 </BreadcrumbPage>
+               </BreadcrumbItem>
+             </BreadcrumbList>
+           </Breadcrumb>
 
           {isReadOnly && (
             <Badge variant="outline" className="ml-2 text-amber-400 border-amber-400/30 text-[10px]">

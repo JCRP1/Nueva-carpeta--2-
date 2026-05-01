@@ -122,12 +122,18 @@ export function CropsView({ userRole, selectedGreenhouse }: CropsViewProps) {
   )
 
   function openNewDialog() {
+    const today = new Date()
+    const yyyy = today.getFullYear()
+    const mm = String(today.getMonth() + 1).padStart(2, '0')
+    const dd = String(today.getDate()).padStart(2, '0')
+    const todayStr = `${yyyy}-${mm}-${dd}`
+
     setEditingCrop(null)
     setFormData({
       nombre: "",
       variedad: "",
       invernaderoId: selectedGreenhouse,
-      fecha_siembra: "",
+      fecha_siembra: todayStr,
       detalle: {
         fecha_cosecha_estimada: "",
         tiempo_germinacion_dias: "",
@@ -161,14 +167,26 @@ export function CropsView({ userRole, selectedGreenhouse }: CropsViewProps) {
     setDialogOpen(true)
   }
 
+  function calcularFechaCosechaEstimada(fechaSiembra: string, diasCosecha: number): string {
+    if (!fechaSiembra || !diasCosecha) return ""
+    const fecha = new Date(fechaSiembra)
+    fecha.setDate(fecha.getDate() + diasCosecha)
+    const yyyy = fecha.getFullYear()
+    const mm = String(fecha.getMonth() + 1).padStart(2, '0')
+    const dd = String(fecha.getDate()).padStart(2, '0')
+    return `${yyyy}-${mm}-${dd}`
+  }
+
   function selectCultivo(cultivo: { nombre: string, variedad: string, duracion: number, germinacion: number, crecimiento: number, cosecha: number }) {
+    const fechaCosechaEstimada = calcularFechaCosechaEstimada(formData.fecha_siembra, cultivo.cosecha)
+
     setFormData({
       nombre: cultivo.nombre,
       variedad: cultivo.variedad,
       invernaderoId: formData.invernaderoId,
       fecha_siembra: formData.fecha_siembra,
       detalle: {
-        fecha_cosecha_estimada: "",
+        fecha_cosecha_estimada: fechaCosechaEstimada,
         tiempo_germinacion_dias: cultivo.germinacion.toString(),
         tiempo_crecimiento_dias: cultivo.crecimiento.toString(),
         tiempo_cosecha_dias: cultivo.cosecha.toString(),

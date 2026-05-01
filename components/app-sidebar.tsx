@@ -19,6 +19,8 @@ import {
   Cpu,
   Shield,
   Building2,
+  Sun,
+  Moon,
 } from "lucide-react"
 import {
   Sidebar,
@@ -40,6 +42,9 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
 } from "@/components/ui/dropdown-menu"
 import {
   Dialog,
@@ -55,6 +60,7 @@ import { empresa } from "@/lib/greensense-data"
 import type { User as UserType } from "@/lib/greensense-data"
 import { fetcher } from "@/lib/api-client"
 import { toast } from "sonner"
+import { useTheme } from "next-themes"
 
 interface AlertNotification {
   id: string
@@ -105,6 +111,7 @@ function formatRNC(value: string): string {
 }
 
 export function AppSidebar({ activeView, onViewChange, onLogout, currentUser, empresaNombre, empresaRNC }: AppSidebarProps) {
+  const { theme, setTheme } = useTheme()
   const [profileOpen, setProfileOpen] = useState(false)
   const [profileName, setProfileName] = useState(currentUser.nombre)
   const [profileEmail, setProfileEmail] = useState(currentUser.email)
@@ -170,20 +177,18 @@ export function AppSidebar({ activeView, onViewChange, onLogout, currentUser, em
 
   return (
     <>
-      <Sidebar>
-        <SidebarHeader className="p-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-sidebar-primary">
-              <Leaf className="h-5 w-5 text-sidebar-primary-foreground" />
-            </div>
-            <div className="flex flex-col">
+       <Sidebar>
+         <SidebarHeader className="h-12 flex flex-row items-center pl-1 pr-4 border-b border-border p-0">
+           <div className="flex items-center gap-2">
+             <div className="flex h-8 w-8 ml-3 items-center justify-center rounded-lg bg-sidebar-primary">
+               <Leaf className="h-4 w-4 text-sidebar-primary-foreground" />
+             </div>
+             <div className="flex flex-col">
               <span className="text-sm font-semibold text-sidebar-foreground">{empresaNombre || "GreenSense"}</span>
               <span className="text-xs text-sidebar-foreground/60">{empresaRNC ? formatRNC(empresaRNC) : "IoT Fertirriego"}</span>
             </div>
           </div>
         </SidebarHeader>
-
-        <SidebarSeparator />
 
         <SidebarContent>
           <SidebarGroup>
@@ -236,7 +241,7 @@ export function AppSidebar({ activeView, onViewChange, onLogout, currentUser, em
           )}
         </SidebarContent>
 
-        <SidebarSeparator />
+         <SidebarSeparator className="mx-0" />
 
         <SidebarFooter className="p-3">
           <DropdownMenu>
@@ -259,6 +264,41 @@ export function AppSidebar({ activeView, onViewChange, onLogout, currentUser, em
                 <User className="mr-2 h-4 w-4" />
                 Mi Perfil
               </DropdownMenuItem>
+              <DropdownMenuSub>
+                <DropdownMenuSubTrigger>
+                  {theme === "dark" ? (
+                    <Moon className="mr-2 h-4 w-4" />
+                  ) : theme === "semi" ? (
+                    <div className="mr-2 h-4 w-4 flex overflow-hidden rounded-sm">
+                      <div className="w-1/2 bg-sidebar-primary" />
+                      <div className="w-1/2 bg-background border border-border" />
+                    </div>
+                  ) : (
+                    <Sun className="mr-2 h-4 w-4" />
+                  )}
+                  Tema
+                </DropdownMenuSubTrigger>
+                <DropdownMenuSubContent>
+                  <DropdownMenuItem onClick={() => setTheme("light")}>
+                    <Sun className="mr-2 h-4 w-4" />
+                    Modo Claro
+                    {theme === "light" && <span className="ml-auto text-xs">✓</span>}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setTheme("dark")}>
+                    <Moon className="mr-2 h-4 w-4" />
+                    Modo Oscuro
+                    {theme === "dark" && <span className="ml-auto text-xs">✓</span>}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setTheme("semi")}>
+                    <div className="mr-2 h-4 w-4 flex overflow-hidden rounded-sm">
+                      <div className="w-1/2 bg-sidebar-primary" />
+                      <div className="w-1/2 bg-background border border-border" />
+                    </div>
+                    Modo Semi
+                    {theme === "semi" && <span className="ml-auto text-xs">✓</span>}
+                  </DropdownMenuItem>
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
               {isAdmin && (
                 <DropdownMenuItem onClick={() => onViewChange("configuracion")}>
                   <Settings className="mr-2 h-4 w-4" />
