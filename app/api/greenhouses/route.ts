@@ -144,3 +144,57 @@ export async function PUT(req: Request) {
     )
   }
 }
+
+/* =========================
+   ELIMINAR
+========================= */
+
+export async function DELETE(req: Request) {
+  try {
+    const session = await requireAuth()
+    const body = await req.json()
+
+    const { id } = body
+
+    if (!id) {
+      return NextResponse.json(
+        { error: "ID requerido" },
+        { status: 400 }
+      )
+    }
+
+    const previousRows = await query<Record<string, unknown>[]>(
+      `SELECT nombre
+       FROM Invernaderos
+       WHERE id_invernadero = @id AND id_empresa = @empresaId`,
+      { id, empresaId: session.empresaId }
+    )
+
+    await query(
+      `DELETE FROM Invernaderos
+       WHERE id_invernadero = @id
+       AND id_empresa = @empresaId`,
+      { id, empresaId: session.empresaId }
+    )
+
+    await registrarBitacora({
+      session,
+      req,
+      descripcion: `Se elimino el invernadero ${previousRows[0]?.nombre || id}`,
+      modulo: "invernaderos",
+      entidad: "Invernaderos",
+      entidadId: id,
+      accion: "DELETE",
+      valorAnterior: previousRows[0] || null,
+    })
+
+    return NextResponse.json({ ok: true })
+
+  } catch (err) {
+    console.error(err)
+    return NextResponse.json(
+      { error: "No se pudo eliminar" },
+      { status: 500 }
+    )
+  }
+}

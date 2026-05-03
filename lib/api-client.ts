@@ -56,7 +56,7 @@ export const api = {
 
   updateGreenhouses: (id: string, data: Record<string, unknown>) =>
     request<Record<string, unknown>>("/greenhouses", {
-      method: "PATCH",
+      method: "PUT",
       body: JSON.stringify({ id, ...data }),
     }),
 
