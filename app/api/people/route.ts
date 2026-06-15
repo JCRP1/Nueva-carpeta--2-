@@ -3,20 +3,61 @@ import { requireAdmin } from "@/lib/auth"
 import { query, execute } from "@/lib/db"
 import { registrarBitacora } from "@/lib/bitacora"
 
+async function hasPersonasEmpresaColumn(): Promise<boolean> {
+  const rows = await query<Array<{ total: number }>>(
+    `SELECT COUNT(1) AS total
+     FROM sys.columns
+     WHERE object_id = OBJECT_ID('Personas')
+       AND name = 'id_empresa'`
+  )
+  return Number(rows[0]?.total || 0) > 0
+}
+
+async function hasPersonasInvernaderoColumn(): Promise<boolean> {
+  const rows = await query<Array<{ total: number }>>(
+    `SELECT COUNT(1) AS total
+     FROM sys.columns
+     WHERE object_id = OBJECT_ID('Personas')
+       AND name = 'id_invernadero'`
+  )
+  return Number(rows[0]?.total || 0) > 0
+}
+
+async function buildPersonasCompanyFilter(alias = "p") {
+  const hasEmpresaColumn = await hasPersonasEmpresaColumn()
+  const hasInvernaderoColumn = await hasPersonasInvernaderoColumn()
+
+  if (hasEmpresaColumn) {
+    return `${alias}.id_empresa = @empresaId`
+  }
+
+  if (hasInvernaderoColumn) {
+    return `${alias}.id_invernadero IN (
+      SELECT id_invernadero FROM Invernaderos WHERE id_empresa = @empresaId
+    )`
+  }
+
+  return "1 = 0"
+}
+
 export async function GET() {
   try {
-    await requireAdmin()
+    const session = await requireAdmin()
+    const companyFilter = await buildPersonasCompanyFilter()
 
     const result = await query(
       `SELECT 
-        id_persona,
-        nombre,
-        telefono,
-        puesto,
-        cedula,
-        registrado,
-        email
-       FROM Personas`
+        p.id_persona,
+        p.nombre,
+        p.telefono,
+        p.puesto,
+        p.cedula,
+        p.registrado,
+        p.email
+       FROM Personas p
+       WHERE ${companyFilter}
+       ORDER BY p.nombre`,
+      { empresaId: session.empresaId }
     )
 
     const personas = result.map((p: any) => ({
@@ -45,16 +86,22 @@ export async function POST(request: Request) {
   try {
     const session = await requireAdmin()
     const data = await request.json()
+    const hasEmpresaColumn = await hasPersonasEmpresaColumn()
 
     if (!data.nombre) {
       throw new Error("El nombre es obligatorio")
     }
 
     const result = await execute(
-      `INSERT INTO Personas (nombre, telefono, puesto, cedula, registrado, email)
-       OUTPUT INSERTED.*
-       VALUES (@nombre, @telefono, @puesto, @cedula, GETDATE(), @email)`,
+      hasEmpresaColumn
+        ? `INSERT INTO Personas (id_empresa, nombre, telefono, puesto, cedula, registrado, email)
+           OUTPUT INSERTED.*
+           VALUES (@empresaId, @nombre, @telefono, @puesto, @cedula, GETDATE(), @email)`
+        : `INSERT INTO Personas (nombre, telefono, puesto, cedula, registrado, email)
+           OUTPUT INSERTED.*
+           VALUES (@nombre, @telefono, @puesto, @cedula, GETDATE(), @email)`,
       {
+        empresaId: session.empresaId,
         nombre: data.nombre,
         telefono: data.telefono || null,
         puesto: data.cargo || data.puesto || null,
@@ -112,13 +159,18 @@ export async function PATCH(request: Request) {
   try {
     const session = await requireAdmin()
     const { id, ...data } = await request.json()
+    const companyFilter = await buildPersonasCompanyFilter()
 
     const previousRows = await query<Record<string, unknown>[]>(
       `SELECT nombre, telefono, puesto, cedula, email
-       FROM Personas
-       WHERE id_persona = @id`,
-      { id: Number(id) }
+       FROM Personas p
+       WHERE p.id_persona = @id AND ${companyFilter}`,
+      { id: Number(id), empresaId: session.empresaId }
     )
+
+    if (previousRows.length === 0) {
+      return NextResponse.json({ error: "Persona no encontrada para la empresa actual" }, { status: 404 })
+    }
 
     await execute(
       `UPDATE Personas 
@@ -127,9 +179,12 @@ export async function PATCH(request: Request) {
            puesto = @puesto,
            cedula = @cedula,
            email = @email
-       WHERE id_persona = @id`,
+       WHERE id_persona = @id AND id_persona IN (
+         SELECT p.id_persona FROM Personas p WHERE ${companyFilter}
+       )`,
       {
         id: Number(id),
+        empresaId: session.empresaId,
         nombre: data.nombre,
         telefono: data.telefono || null,
         puesto: data.cargo || data.puesto || null,
@@ -169,19 +224,27 @@ export async function DELETE(request: Request) {
   try {
     const session = await requireAdmin()
     const { id } = await request.json()
+    const companyFilter = await buildPersonasCompanyFilter()
 
     const previousRows = await query<Record<string, unknown>[]>(
       `SELECT nombre, telefono, puesto, cedula, email
-       FROM Personas
-       WHERE id_persona = @id`,
-      { id: Number(id) }
+       FROM Personas p
+       WHERE p.id_persona = @id AND ${companyFilter}`,
+      { id: Number(id), empresaId: session.empresaId }
     )
+
+    if (previousRows.length === 0) {
+      return NextResponse.json({ error: "Persona no encontrada para la empresa actual" }, { status: 404 })
+    }
 
     await execute(
       `DELETE FROM Personas 
-       WHERE id_persona = @id`,
+       WHERE id_persona = @id AND id_persona IN (
+         SELECT p.id_persona FROM Personas p WHERE ${companyFilter}
+       )`,
       {
         id: Number(id),
+        empresaId: session.empresaId,
       }
     )
 

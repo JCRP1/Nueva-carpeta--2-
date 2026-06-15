@@ -16,13 +16,13 @@ export async function GET(req: Request) {
       "deviceId + tipo": "Compatibilidad temporal con integraciones antiguas",
     },
     requiredFields: ["valor"],
-    optionalFields: ["sensorId", "codigoDispositivo", "deviceId", "tipo", "unidad", "timestamp"],
+    optionalFields: ["sensorId", "codigoDispositivo", "deviceId", "tipo", "unidad"],
+    timestamp: "El servidor asigna la fecha y hora actual al registrar la lectura",
     example: {
       codigoDispositivo: "ESP32-INV-A-01",
       tipo: "temperatura",
       valor: 27.4,
       unidad: "C",
-      timestamp: "2026-04-05T14:30:00Z",
     },
   })
 }

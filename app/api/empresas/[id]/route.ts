@@ -1,17 +1,22 @@
 import { NextResponse } from "next/server"
 import { query } from "@/lib/db"
-import { requireAdmin } from "@/lib/auth"
+import { requireAdmin, requireAuth } from "@/lib/auth"
 
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const session = await requireAuth()
     const { id } = await params
     const empresaId = parseInt(id)
 
     if (isNaN(empresaId)) {
       return NextResponse.json({ error: "ID inválido" }, { status: 400 })
+    }
+
+    if (empresaId !== Number(session.empresaId)) {
+      return NextResponse.json({ error: "Empresa no pertenece a la sesion actual" }, { status: 403 })
     }
 
     const empresas = await query(`
@@ -44,13 +49,17 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await requireAdmin()
+    const session = await requireAdmin()
     const { id } = await params
     const empresaId = parseInt(id)
     const data = await request.json()
 
     if (isNaN(empresaId)) {
       return NextResponse.json({ error: "ID inválido" }, { status: 400 })
+    }
+
+    if (empresaId !== Number(session.empresaId)) {
+      return NextResponse.json({ error: "Empresa no pertenece a la sesion actual" }, { status: 403 })
     }
 
     if (!data.nombre) {
@@ -103,12 +112,16 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await requireAdmin()
+    const session = await requireAdmin()
     const { id } = await params
     const empresaId = parseInt(id)
 
     if (isNaN(empresaId)) {
       return NextResponse.json({ error: "ID inválido" }, { status: 400 })
+    }
+
+    if (empresaId !== Number(session.empresaId)) {
+      return NextResponse.json({ error: "Empresa no pertenece a la sesion actual" }, { status: 403 })
     }
 
     await query("DELETE FROM Empresas WHERE id_empresa = @id", { id: empresaId })

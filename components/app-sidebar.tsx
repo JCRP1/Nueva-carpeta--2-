@@ -21,6 +21,14 @@ import {
   Building2,
   Sun,
   Moon,
+  Wheat,
+  Banknote,
+  CalendarDays,
+  ClipboardList,
+  Package,
+  ReceiptText,
+  Sprout,
+  TrendingUp,
 } from "lucide-react"
 import {
   Sidebar,
@@ -78,15 +86,30 @@ interface AppSidebarProps {
 }
 
 const roleAccess: Record<string, string[]> = {
-  administrador: ["dashboard", "zonas", "cultivos", "sensores", "alertas", "invernaderos", "reportes", "personal", "usuarios", "roles", "empresas", "dispositivos", "configuracion"],
-  tecnico: ["dashboard", "zonas", "cultivos", "alertas", "invernaderos", "reportes"],
-  agricultor: ["dashboard", "zonas", "cultivos", "alertas", "invernaderos", "reportes"],
+  administrador: ["dashboard", "zonas", "cultivos", "cosechas", "ventas", "costos", "rentabilidad", "plan-agronomico", "aplicaciones", "calendario", "inventario", "sensores", "alertas", "invernaderos", "reportes", "personal", "usuarios", "roles", "empresas", "dispositivos", "configuracion"],
+  tecnico: ["dashboard", "zonas", "cultivos", "cosechas", "plan-agronomico", "aplicaciones", "calendario", "inventario", "alertas", "invernaderos", "reportes"],
+  agricultor: ["dashboard", "zonas", "cultivos", "cosechas", "costos", "rentabilidad", "plan-agronomico", "aplicaciones", "calendario", "inventario", "alertas", "invernaderos", "reportes"],
+}
+
+function resolveAccessRole(rol: string) {
+  const normalized = rol.trim().toLowerCase()
+  if (normalized === "administrador" || normalized === "tecnico" || normalized === "agricultor") {
+    return normalized
+  }
+  return "agricultor"
 }
 
 const allNavItems = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
   { id: "zonas", label: "Zonas de Riego", icon: Droplets },
   { id: "cultivos", label: "Cultivos", icon: Leaf },
+  { id: "cosechas", label: "Cosechas", icon: Wheat },
+  { id: "costos", label: "Costos", icon: ReceiptText },
+  { id: "rentabilidad", label: "Rentabilidad", icon: TrendingUp },
+  { id: "plan-agronomico", label: "Plan Agronomico", icon: Sprout },
+  { id: "aplicaciones", label: "Aplicaciones", icon: ClipboardList },
+  { id: "calendario", label: "Calendario", icon: CalendarDays },
+  { id: "inventario", label: "Inventario", icon: Package },
   { id: "sensores", label: "Sensores", icon: Activity },
   { id: "alertas", label: "Alertas", icon: Bell, badge: true },
   { id: "invernaderos", label: "Invernaderos", icon: Warehouse },
@@ -94,6 +117,7 @@ const allNavItems = [
 ]
 
 const adminItems = [
+  { id: "ventas", label: "Ventas", icon: Banknote },
   { id: "personal", label: "Personal", icon: HardHat },
   { id: "usuarios", label: "Usuarios", icon: Users },
   { id: "roles", label: "Roles", icon: Shield },
@@ -121,7 +145,8 @@ export function AppSidebar({ activeView, onViewChange, onLogout, currentUser, em
     refreshInterval: 3000,
   })
 
-  const isAdmin = currentUser.rol === "administrador"
+  const accessRole = resolveAccessRole(currentUser.rol)
+  const isAdmin = accessRole === "administrador"
   const alertsStorageKey = `greensense:alerts:last-seen:${currentUser.id}`
 
   useEffect(() => {
@@ -196,7 +221,7 @@ export function AppSidebar({ activeView, onViewChange, onLogout, currentUser, em
             <SidebarGroupContent>
               <SidebarMenu>
                 {allNavItems
-                  .filter((item) => roleAccess[currentUser.rol]?.includes(item.id))
+                  .filter((item) => roleAccess[accessRole]?.includes(item.id))
                   .map((item) => (
                     <SidebarMenuItem key={item.id}>
                       <SidebarMenuButton

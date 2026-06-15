@@ -37,9 +37,24 @@ async function resolveDefaultEmpresaId(): Promise<number> {
   return 1
 }
 
+async function getSessionDurationSeconds(empresaId: number): Promise<number> {
+  const rows = await query<Array<{ valor: string }>>(
+    `SELECT TOP 1 valor
+     FROM ConfiguracionesSistema
+     WHERE id_empresa = @empresaId
+       AND parametro = 'sesionTimeout'`,
+    { empresaId }
+  )
+
+  const minutes = Number(rows[0]?.valor)
+  if (!Number.isFinite(minutes) || minutes <= 0) return 60 * 60 * 24
+  return Math.max(60, Math.round(minutes * 60))
+}
+
 export async function createSession(user: DbUser) {
   const empresaId =
     user.id_empresa != null ? Number(user.id_empresa) : await resolveDefaultEmpresaId()
+  const durationSeconds = await getSessionDurationSeconds(empresaId)
 
   const token = await new SignJWT({
     userId: user.id_usuario,
@@ -50,7 +65,7 @@ export async function createSession(user: DbUser) {
   })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
-    .setExpirationTime("24h")
+    .setExpirationTime(`${durationSeconds}s`)
     .sign(JWT_SECRET)
 
   const cookieStore = await cookies()
@@ -58,7 +73,7 @@ export async function createSession(user: DbUser) {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
-    maxAge: 60 * 60 * 24,
+    maxAge: durationSeconds,
     path: "/",
   })
 
@@ -106,9 +121,12 @@ export async function requireAdmin(): Promise<SessionPayload> {
   return session
 }
 
-export async function getUserByEmail(email: string): Promise<DbUser | undefined> {
+export async function getUserByEmail(email: string, empresaId?: number | null): Promise<DbUser | undefined> {
   const rows = await query<DbUser[]>(
     `DECLARE @passwordColumn SYSNAME;
+     DECLARE @empresaColumn SYSNAME;
+     DECLARE @empresaSelect NVARCHAR(MAX);
+     DECLARE @empresaFilter NVARCHAR(MAX) = N'';
      DECLARE @sql NVARCHAR(MAX);
 
      SELECT TOP 1 @passwordColumn = name
@@ -121,23 +139,39 @@ export async function getUserByEmail(email: string): Promise<DbUser | undefined>
        THROW 50001, 'No se encontro la columna de contrasena en Usuarios.', 1;
      END
 
+     SELECT TOP 1 @empresaColumn = name
+     FROM sys.columns
+     WHERE object_id = OBJECT_ID('Usuarios')
+       AND name = 'id_empresa';
+
+     SET @empresaSelect = CASE
+       WHEN @empresaColumn IS NOT NULL THEN N'COALESCE(u.id_empresa, CAST((SELECT TOP 1 id_empresa FROM Empresas ORDER BY id_empresa) AS INT))'
+       ELSE N'CAST((SELECT TOP 1 id_empresa FROM Empresas ORDER BY id_empresa) AS INT)'
+     END;
+
+     IF @empresaId IS NOT NULL AND @empresaColumn IS NOT NULL
+     BEGIN
+       SET @empresaFilter = N' AND COALESCE(u.id_empresa, CAST((SELECT TOP 1 id_empresa FROM Empresas ORDER BY id_empresa) AS INT)) = @empresaId';
+     END
+
      SET @sql = N'
        SELECT
          u.id_usuario,
-         CAST((SELECT TOP 1 id_empresa FROM Empresas ORDER BY id_empresa) AS INT) AS id_empresa,
+         ' + @empresaSelect + N' AS id_empresa,
          u.nombre,
          u.correo,
          CAST(u.' + QUOTENAME(@passwordColumn) + N' AS NVARCHAR(255)) AS passwordHash,
          u.rol,
          u.fecha_registro
        FROM Usuarios u
-       WHERE u.correo = @email';
+       WHERE u.correo = @email' + @empresaFilter;
 
      EXEC sp_executesql
        @sql,
-       N'@email NVARCHAR(255)',
-       @email = @email;`,
-    { email }
+       N'@email NVARCHAR(255), @empresaId INT',
+       @email = @email,
+       @empresaId = @empresaId;`,
+    { email, empresaId: empresaId ?? null }
   )
   return rows[0]
 }

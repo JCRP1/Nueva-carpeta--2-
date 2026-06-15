@@ -20,7 +20,8 @@ export async function GET(req: Request) {
       "deviceId + tipo": "Compatibilidad temporal con integraciones antiguas",
     },
     requiredFields: ["valor"],
-    optionalFields: ["sensorId", "codigoDispositivo", "deviceId", "tipo", "unidad", "timestamp"],
+    optionalFields: ["sensorId", "codigoDispositivo", "deviceId", "tipo", "unidad"],
+    timestamp: "El servidor asigna la fecha y hora actual al registrar la lectura",
   })
 }
 

@@ -79,13 +79,20 @@ interface UserData {
   ultimoAcceso: string
 }
 
-function normalizeRole(rol: string): UserRole {
+interface RoleData {
+  RolID: number
+  Nombre: string
+  Descripcion?: string
+  Activo?: number
+}
+
+function normalizeRole(rol: string): string {
   const normalized = rol.trim().toLowerCase()
   if (normalized === "admin") return "administrador"
   if (normalized === "administrador" || normalized === "tecnico" || normalized === "agricultor") {
     return normalized
   }
-  return "agricultor"
+  return normalized
 }
 
 function getRoleIcon(rol: string) {
@@ -95,6 +102,7 @@ function getRoleIcon(rol: string) {
     case "administrador": return Shield
     case "tecnico": return Wrench
     case "agricultor": return Sprout
+    default: return Shield
   }
 }
 
@@ -105,7 +113,17 @@ function getRoleColor(rol: string) {
     case "administrador": return "bg-primary/20 text-primary border-0"
     case "tecnico": return "bg-blue-500/20 text-blue-400 border-0"
     case "agricultor": return "bg-amber-500/20 text-amber-400 border-0"
+    default: return "bg-muted text-muted-foreground border-0"
   }
+}
+
+function formatRoleLabel(rol: string) {
+  const safeRole = normalizeRole(rol)
+  return safeRole
+    .split(/[\s_-]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ")
 }
 
 function formatDate(ts: string) {
@@ -115,6 +133,7 @@ function formatDate(ts: string) {
 
 export function UsersView() {
   const { data: users, isLoading, mutate } = useSWR<UserData[]>("/api/users", fetcher)
+  const { data: roles = [] } = useSWR<RoleData[]>("/api/roles", fetcher)
   const [search, setSearch] = useState("")
   const [roleFilter, setRoleFilter] = useState<string>("all")
   
@@ -122,7 +141,7 @@ export function UsersView() {
   // Create user
   const [createOpen, setCreateOpen] = useState(false)
   const [newEmail, setNewEmail] = useState("")
-  const [newRole, setNewRole] = useState<UserRole>("agricultor")
+  const [newRole, setNewRole] = useState<string>("agricultor")
   const [newPassword, setNewPassword] = useState("")
   const [creating, setCreating] = useState(false)
   type Persona = {
@@ -139,7 +158,7 @@ export function UsersView() {
   const [editUser, setEditUser] = useState<UserData | null>(null)
   const [editName, setEditName] = useState("")
   const [editEmail, setEditEmail] = useState("")
-  const [editRole, setEditRole] = useState<UserRole>("agricultor")
+  const [editRole, setEditRole] = useState<string>("agricultor")
   const [saving, setSaving] = useState(false)
 
   // Confirm dialogs
@@ -161,6 +180,23 @@ export function UsersView() {
       }
     })
     .filter((p) => p.id && p.nombre)
+
+  const roleOptions = roles
+    .filter((role) => role.Activo === undefined || Number(role.Activo) === 1)
+    .map((role) => ({
+      id: String(role.RolID),
+      value: normalizeRole(role.Nombre),
+      label: role.Nombre,
+    }))
+    .filter((role) => role.value)
+
+  const fallbackRoles = [
+    { id: "fallback-administrador", value: "administrador", label: "Administrador" },
+    { id: "fallback-tecnico", value: "tecnico", label: "Tecnico" },
+    { id: "fallback-agricultor", value: "agricultor", label: "Agricultor" },
+  ]
+
+  const selectRoles = roleOptions.length > 0 ? roleOptions : fallbackRoles
 
   const userList = users || []
   const filtered = userList.filter((u) => {
@@ -307,12 +343,14 @@ export function UsersView() {
                 </div>
                 <div className="flex flex-col gap-2">
                   <Label>Rol</Label>
-                  <Select value={newRole} onValueChange={(v) => setNewRole(v as UserRole)}>
+                  <Select value={newRole} onValueChange={setNewRole}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="administrador">Administrador</SelectItem>
-                      <SelectItem value="tecnico">Tecnico</SelectItem>
-                      <SelectItem value="agricultor">Agricultor</SelectItem>
+                      {selectRoles.map((role) => (
+                        <SelectItem key={role.id} value={role.value}>
+                          {role.label}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
@@ -341,9 +379,11 @@ export function UsersView() {
           <SelectTrigger className="w-40"><SelectValue placeholder="Filtrar por rol" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Todos los Roles</SelectItem>
-            <SelectItem value="administrador">Administrador</SelectItem>
-            <SelectItem value="tecnico">Tecnico</SelectItem>
-            <SelectItem value="agricultor">Agricultor</SelectItem>
+            {selectRoles.map((role) => (
+              <SelectItem key={role.id} value={role.value}>
+                {role.label}
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
       </div>
@@ -381,7 +421,7 @@ export function UsersView() {
                     <TableCell>
                       <Badge className={getRoleColor(safeRole)}>
                          {React.createElement(getRoleIcon(safeRole), { className: "mr-1 h-4 w-4 inline" })}
-                         {safeRole.charAt(0).toUpperCase() + safeRole.slice(1)}
+                         {formatRoleLabel(user.rol)}
                       </Badge>
                     </TableCell>
                     <TableCell>
@@ -486,12 +526,14 @@ export function UsersView() {
             </div>
             <div className="flex flex-col gap-2">
               <Label>Rol</Label>
-              <Select value={editRole} onValueChange={(v) => setEditRole(v as UserRole)}>
+              <Select value={editRole} onValueChange={setEditRole}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="administrador">Administrador</SelectItem>
-                  <SelectItem value="tecnico">Tecnico</SelectItem>
-                  <SelectItem value="agricultor">Agricultor</SelectItem>
+                  {selectRoles.map((role) => (
+                    <SelectItem key={role.id} value={role.value}>
+                      {role.label}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>

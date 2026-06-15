@@ -5,6 +5,30 @@ import { registrarBitacora } from "@/lib/bitacora"
 
 type AlertRow = Record<string, unknown>
 
+function parseBool(value: unknown, fallback = false) {
+  if (typeof value === "boolean") return value
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase()
+    if (["true", "1", "si", "sí", "yes", "on"].includes(normalized)) return true
+    if (["false", "0", "no", "off"].includes(normalized)) return false
+  }
+  return fallback
+}
+
+async function getAlertDisplaySettings(empresaId: number) {
+  const rows = await query<Array<{ parametro: string; valor: string }>>(
+    `SELECT parametro, valor
+     FROM ConfiguracionesSistema
+     WHERE id_empresa = @empresaId
+       AND parametro IN ('alertaCritica')`,
+    { empresaId }
+  )
+  const byKey = new Map(rows.map((row) => [row.parametro, row.valor]))
+  return {
+    criticalOnly: parseBool(byKey.get("alertaCritica"), false),
+  }
+}
+
 function buildVirtualAlertType(tipo: string, valor: number, min: number | null, max: number | null) {
   if (min != null && valor < min) return `${tipo}_baja`
   if (max != null && valor > max) return `${tipo}_alta`
@@ -81,6 +105,7 @@ export async function GET(req: Request) {
     const session = await requireAuth()
     const { searchParams } = new URL(req.url)
     const sensorId = searchParams.get("sensor")
+    const displaySettings = await getAlertDisplaySettings(session.empresaId)
 
     let sqlText = `
       SELECT
@@ -167,9 +192,12 @@ export async function GET(req: Request) {
         const dedupeKey = `${String(row.sensorId || "")}|${mensaje}`
         if (activeAlertKeys.has(dedupeKey)) return null
 
+        const nivel = buildVirtualAlertLevel(valor, umbralMin, umbralMax)
+        if (displaySettings.criticalOnly && nivel !== "critica") return null
+
         return {
           id: `live-${String(row.sensorId)}-${tipoAlerta}`,
-          tipo: buildVirtualAlertLevel(valor, umbralMin, umbralMax),
+          tipo: nivel,
           mensaje,
           sensorId: String(row.sensorId || ""),
           invernaderoId: String(row.invernaderoId || ""),
@@ -181,6 +209,42 @@ export async function GET(req: Request) {
 
     let deviceAlerts: Array<Record<string, unknown>> = []
     if (!sensorId) {
+      const harvestReadyRows = (await query(
+        `SELECT
+           z.id_zona AS id,
+           z.nombre,
+           z.tipo_cultivo AS cultivoActual,
+           z.fecha_cosecha_estimada AS fechaCosechaEstimada,
+           z.id_invernadero AS invernaderoId,
+           i.nombre AS invernaderoNombre
+         FROM dbo.ZonasRiego z
+         INNER JOIN dbo.Invernaderos i ON i.id_invernadero = z.id_invernadero
+         WHERE i.id_empresa = @empresaId
+           AND z.fecha_cosecha_estimada IS NOT NULL
+           AND CONVERT(date, z.fecha_cosecha_estimada) <= CONVERT(date, GETDATE())
+           AND NOT EXISTS (
+             SELECT 1
+             FROM dbo.Cosechas c
+             WHERE COL_LENGTH('dbo.Cosechas', 'id_zona') IS NOT NULL
+               AND c.id_zona = z.id_zona
+               AND CONVERT(date, c.fecha_cosecha) >= CONVERT(date, DATEADD(day, -7, GETDATE()))
+           )
+         ORDER BY z.fecha_cosecha_estimada ASC`,
+        { empresaId: session.empresaId }
+      )) as AlertRow[]
+
+      harvestReadyRows.forEach((zone) => {
+        virtualAlerts.push({
+          id: `harvest-ready-${String(zone.id)}`,
+          tipo: "advertencia",
+          mensaje: `Cosecha lista: ${String(zone.nombre || "zona")} - ${String(zone.cultivoActual || "cultivo")}`,
+          sensorId: "",
+          invernaderoId: String(zone.invernaderoId || ""),
+          timestamp: zone.fechaCosechaEstimada || new Date().toISOString(),
+          resuelta: false,
+        })
+      })
+
       const devices = (await query(
         `SELECT
            d.id_dispositivo AS id,
@@ -221,7 +285,11 @@ export async function GET(req: Request) {
       })
     }
 
-    return NextResponse.json([...deviceAlerts, ...virtualAlerts, ...alerts])
+    const storedAlerts = displaySettings.criticalOnly
+      ? alerts.filter((alert) => alert.tipo === "critica" || alert.resuelta)
+      : alerts
+
+    return NextResponse.json([...deviceAlerts, ...virtualAlerts, ...storedAlerts])
   } catch {
     return NextResponse.json({ error: "No autorizado" }, { status: 401 })
   }

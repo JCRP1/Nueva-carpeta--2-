@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
 import {
   Dialog,
   DialogContent,
@@ -31,8 +32,6 @@ import {
   Loader2,
   Pencil,
   Trash2,
-  Calendar,
-  Sprout,
 } from "lucide-react"
 import {
   DropdownMenu,
@@ -58,17 +57,42 @@ interface CropsViewProps {
 
 interface CultivoDetalle {
   id?: string
-  fecha_cosecha_estimada?: string
-  tiempo_germinacion_dias?: string
-  tiempo_crecimiento_dias?: string
-  tiempo_cosecha_dias?: string
-  notas?: string
+  umbral_humedad?: string
+  umbral_temperatura?: string
+  umbral_ph?: string
+  umbral_ec?: string
+  umbral_tds?: string
+}
+
+type CultivoRD = ReturnType<typeof getAllCultivos>[number]
+
+function getCultivoRDThresholds(cultivo?: CultivoRD): CultivoDetalle {
+  const thresholds = cultivo?.etapas.crecimiento || cultivo?.etapas.germinacion || cultivo?.etapas.cosecha
+
+  return {
+    umbral_humedad: thresholds?.umbral_humedad?.toString() || "40",
+    umbral_temperatura: "27",
+    umbral_ph: thresholds?.umbral_ph?.toString() || "6",
+    umbral_ec: thresholds?.umbral_ec?.toString() || "1.5",
+    umbral_tds: thresholds?.umbral_tds?.toString() || "800",
+  }
+}
+
+function findCultivoRD(nombre: string, variedad?: string) {
+  const normalizedName = nombre.trim().toLowerCase()
+  const normalizedVariety = variedad?.trim().toLowerCase()
+  const allCultivos = getAllCultivos()
+
+  return allCultivos.find((cultivo) =>
+    cultivo.nombre.toLowerCase() === normalizedName &&
+    (!normalizedVariety || cultivo.variedad.toLowerCase() === normalizedVariety)
+  ) || allCultivos.find((cultivo) => cultivo.nombre.toLowerCase() === normalizedName)
 }
 
 export function CropsView({ userRole, selectedGreenhouse }: CropsViewProps) {
   const isReadOnly = userRole === "agricultor"
   const { data: crops, mutate: mutateCrops, isLoading, error } = useSWR<Cultivo[]>(
-    selectedGreenhouse ? `/api/crops?greenhouse=${selectedGreenhouse}` : null,
+    "/api/crops",
     fetcher
   )
   const { data: greenhouses } = useSWR<Invernadero[]>("/api/greenhouses", fetcher)
@@ -81,14 +105,22 @@ export function CropsView({ userRole, selectedGreenhouse }: CropsViewProps) {
     nombre: "",
     variedad: "",
     invernaderoId: "",
-    fecha_siembra: "",
     detalle: {
-      fecha_cosecha_estimada: "",
-      tiempo_germinacion_dias: "",
-      tiempo_crecimiento_dias: "",
-      tiempo_cosecha_dias: "",
-      notas: "",
+      umbral_humedad: "40",
+      umbral_temperatura: "27",
+      umbral_ph: "6",
+      umbral_ec: "1.5",
+      umbral_tds: "800",
     } as CultivoDetalle,
+    agua_litros_por_mata_dia: "",
+    rendimiento_por_mata: "",
+    unidad_rendimiento: "lb",
+    fertilizantes: "",
+    abonos: "",
+    plagas_comunes: "",
+    tratamiento_recomendado: "",
+    mejores_meses: "",
+    recomendacion_siembra: "",
   })
   const [searchCultivo, setSearchCultivo] = useState("")
   const [showSuggestions, setShowSuggestions] = useState(false)
@@ -114,7 +146,7 @@ export function CropsView({ userRole, selectedGreenhouse }: CropsViewProps) {
     return () => document.removeEventListener("mousedown", handleClickOutside)
   }, [])
 
-  const cropTableColumnCount = isReadOnly ? 6 : 7
+  const cropTableColumnCount = isReadOnly ? 4 : 5
 
   const filteredCrops = (crops || []).filter((crop) =>
     crop.nombre.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -122,25 +154,27 @@ export function CropsView({ userRole, selectedGreenhouse }: CropsViewProps) {
   )
 
   function openNewDialog() {
-    const today = new Date()
-    const yyyy = today.getFullYear()
-    const mm = String(today.getMonth() + 1).padStart(2, '0')
-    const dd = String(today.getDate()).padStart(2, '0')
-    const todayStr = `${yyyy}-${mm}-${dd}`
-
     setEditingCrop(null)
     setFormData({
       nombre: "",
       variedad: "",
       invernaderoId: selectedGreenhouse,
-      fecha_siembra: todayStr,
       detalle: {
-        fecha_cosecha_estimada: "",
-        tiempo_germinacion_dias: "",
-        tiempo_crecimiento_dias: "",
-        tiempo_cosecha_dias: "",
-        notas: "",
+        umbral_humedad: "40",
+        umbral_temperatura: "27",
+        umbral_ph: "6",
+        umbral_ec: "1.5",
+        umbral_tds: "800",
       },
+      agua_litros_por_mata_dia: "",
+      rendimiento_por_mata: "",
+      unidad_rendimiento: "lb",
+      fertilizantes: "",
+      abonos: "",
+      plagas_comunes: "",
+      tratamiento_recomendado: "",
+      mejores_meses: "",
+      recomendacion_siembra: "",
     })
     setSearchCultivo("")
     setShowSuggestions(false)
@@ -148,50 +182,50 @@ export function CropsView({ userRole, selectedGreenhouse }: CropsViewProps) {
   }
 
   function openEditDialog(crop: Cultivo) {
+    const cultivoRDThresholds = getCultivoRDThresholds(findCultivoRD(crop.nombre, crop.variedad))
+
     setEditingCrop(crop)
     setFormData({
       nombre: crop.nombre,
       variedad: crop.variedad || "",
       invernaderoId: crop.invernaderoId,
-      fecha_siembra: crop.fechaSiembra || "",
       detalle: {
-        fecha_cosecha_estimada: crop.detalle?.fechaCosechaEstimada || "",
-        tiempo_germinacion_dias: crop.detalle?.tiempoGerminacionDias?.toString() || "",
-        tiempo_crecimiento_dias: crop.detalle?.tiempoCrecimientoDias?.toString() || "",
-        tiempo_cosecha_dias: crop.detalle?.tiempoCosechaDias?.toString() || "",
-        notas: crop.detalle?.notas || "",
+        umbral_humedad: crop.umbralHumedad?.toString() || crop.detalle?.umbralHumedad?.toString() || cultivoRDThresholds.umbral_humedad,
+        umbral_temperatura: crop.umbralTemperatura?.toString() || cultivoRDThresholds.umbral_temperatura,
+        umbral_ph: crop.umbralPh?.toString() || crop.detalle?.umbralPh?.toString() || cultivoRDThresholds.umbral_ph,
+        umbral_ec: crop.umbralEc?.toString() || crop.detalle?.umbralEc?.toString() || cultivoRDThresholds.umbral_ec,
+        umbral_tds: crop.umbralTds?.toString() || crop.detalle?.umbralTds?.toString() || cultivoRDThresholds.umbral_tds,
       },
+      agua_litros_por_mata_dia: crop.aguaLitrosPorMataDia?.toString() || "",
+      rendimiento_por_mata: crop.rendimientoPorMata?.toString() || "",
+      unidad_rendimiento: crop.unidadRendimiento || "lb",
+      fertilizantes: crop.fertilizantes || "",
+      abonos: crop.abonos || "",
+      plagas_comunes: crop.plagasComunes || "",
+      tratamiento_recomendado: crop.tratamientoRecomendado || "",
+      mejores_meses: crop.mejoresMeses || "",
+      recomendacion_siembra: crop.recomendacionSiembra || "",
     })
     setSearchCultivo(crop.nombre)
     setShowSuggestions(false)
     setDialogOpen(true)
   }
 
-  function calcularFechaCosechaEstimada(fechaSiembra: string, diasCosecha: number): string {
-    if (!fechaSiembra || !diasCosecha) return ""
-    const fecha = new Date(fechaSiembra)
-    fecha.setDate(fecha.getDate() + diasCosecha)
-    const yyyy = fecha.getFullYear()
-    const mm = String(fecha.getMonth() + 1).padStart(2, '0')
-    const dd = String(fecha.getDate()).padStart(2, '0')
-    return `${yyyy}-${mm}-${dd}`
-  }
-
-  function selectCultivo(cultivo: { nombre: string, variedad: string, duracion: number, germinacion: number, crecimiento: number, cosecha: number }) {
-    const fechaCosechaEstimada = calcularFechaCosechaEstimada(formData.fecha_siembra, cultivo.cosecha)
-
+  function selectCultivo(cultivo: CultivoRD) {
     setFormData({
       nombre: cultivo.nombre,
       variedad: cultivo.variedad,
       invernaderoId: formData.invernaderoId,
-      fecha_siembra: formData.fecha_siembra,
-      detalle: {
-        fecha_cosecha_estimada: fechaCosechaEstimada,
-        tiempo_germinacion_dias: cultivo.germinacion.toString(),
-        tiempo_crecimiento_dias: cultivo.crecimiento.toString(),
-        tiempo_cosecha_dias: cultivo.cosecha.toString(),
-        notas: `Duración total: ${cultivo.duracion} días`,
-      }
+      detalle: getCultivoRDThresholds(cultivo),
+      agua_litros_por_mata_dia: formData.agua_litros_por_mata_dia,
+      rendimiento_por_mata: formData.rendimiento_por_mata,
+      unidad_rendimiento: formData.unidad_rendimiento,
+      fertilizantes: formData.fertilizantes,
+      abonos: formData.abonos,
+      plagas_comunes: formData.plagas_comunes,
+      tratamiento_recomendado: formData.tratamiento_recomendado,
+      mejores_meses: formData.mejores_meses,
+      recomendacion_siembra: formData.recomendacion_siembra,
     })
     setSearchCultivo(cultivo.nombre)
     setShowSuggestions(false)
@@ -209,12 +243,20 @@ export function CropsView({ userRole, selectedGreenhouse }: CropsViewProps) {
         nombre: formData.nombre,
         variedad: formData.variedad,
         invernaderoId: formData.invernaderoId,
-        fecha_siembra: formData.fecha_siembra || null,
-        fecha_cosecha_estimada: formData.detalle.fecha_cosecha_estimada || null,
-        tiempo_germinacion_dias: formData.detalle.tiempo_germinacion_dias ? parseInt(formData.detalle.tiempo_germinacion_dias) : null,
-        tiempo_crecimiento_dias: formData.detalle.tiempo_crecimiento_dias ? parseInt(formData.detalle.tiempo_crecimiento_dias) : null,
-        tiempo_cosecha_dias: formData.detalle.tiempo_cosecha_dias ? parseInt(formData.detalle.tiempo_cosecha_dias) : null,
-        notas: formData.detalle.notas,
+        umbral_humedad: formData.detalle.umbral_humedad ? Number(formData.detalle.umbral_humedad) : null,
+        umbral_temperatura: formData.detalle.umbral_temperatura ? Number(formData.detalle.umbral_temperatura) : null,
+        umbral_ph: formData.detalle.umbral_ph ? Number(formData.detalle.umbral_ph) : null,
+        umbral_ec: formData.detalle.umbral_ec ? Number(formData.detalle.umbral_ec) : null,
+        umbral_tds: formData.detalle.umbral_tds ? Number(formData.detalle.umbral_tds) : null,
+        agua_litros_por_mata_dia: formData.agua_litros_por_mata_dia ? Number(formData.agua_litros_por_mata_dia) : null,
+        rendimiento_por_mata: formData.rendimiento_por_mata ? Number(formData.rendimiento_por_mata) : null,
+        unidad_rendimiento: formData.unidad_rendimiento,
+        fertilizantes: formData.fertilizantes,
+        abonos: formData.abonos,
+        plagas_comunes: formData.plagas_comunes,
+        tratamiento_recomendado: formData.tratamiento_recomendado,
+        mejores_meses: formData.mejores_meses,
+        recomendacion_siembra: formData.recomendacion_siembra,
       }
 
       if (editingCrop) {
@@ -250,32 +292,6 @@ export function CropsView({ userRole, selectedGreenhouse }: CropsViewProps) {
     return inv?.nombre || `Invernadero ${id}`
   }
 
-  function formatDate(dateStr: string | null | undefined): string {
-    if (!dateStr) return "-"
-    try {
-      const dateOnly = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})/)
-      if (dateOnly) {
-        const [, year, month, day] = dateOnly
-        const date = new Date(Number(year), Number(month) - 1, Number(day))
-        return date.toLocaleDateString("es-DO", { year: "numeric", month: "short", day: "numeric" })
-      }
-
-      const date = new Date(dateStr)
-      if (isNaN(date.getTime())) return "-"
-      return date.toLocaleDateString("es-DO", { year: "numeric", month: "short", day: "numeric" })
-    } catch {
-      return "-"
-    }
-  }
-
-  if (!selectedGreenhouse) {
-    return (
-      <div className="flex items-center justify-center py-20">
-        <p className="text-muted-foreground">Seleccione un invernadero para ver sus cultivos</p>
-      </div>
-    )
-  }
-
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-20">
@@ -289,7 +305,7 @@ export function CropsView({ userRole, selectedGreenhouse }: CropsViewProps) {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Cultivos</h1>
-          <p className="text-sm text-muted-foreground">Gestione los cultivos del invernadero</p>
+          <p className="text-sm text-muted-foreground">Gestione todos los cultivos registrados</p>
         </div>
         {!isReadOnly && (
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
@@ -313,9 +329,15 @@ export function CropsView({ userRole, selectedGreenhouse }: CropsViewProps) {
                        id="nombre"
                        value={searchCultivo}
                        onChange={(e) => {
-                         setSearchCultivo(e.target.value)
-                         setFormData({ ...formData, nombre: e.target.value })
-                         setShowSuggestions(e.target.value.length > 0)
+                         const nombre = e.target.value
+                         const cultivoRD = findCultivoRD(nombre, formData.variedad)
+                         setSearchCultivo(nombre)
+                         setFormData({
+                           ...formData,
+                           nombre,
+                           detalle: cultivoRD ? getCultivoRDThresholds(cultivoRD) : formData.detalle,
+                         })
+                         setShowSuggestions(nombre.length > 0)
                        }}
                        placeholder="Escriba para buscar un cultivo..."
                      />
@@ -342,13 +364,20 @@ export function CropsView({ userRole, selectedGreenhouse }: CropsViewProps) {
                      <Input
                        id="variedad"
                        value={formData.variedad}
-                       onChange={(e) => setFormData({ ...formData, variedad: e.target.value })}
-                       placeholder="Se completa automáticamente"
-                       disabled
+                       onChange={(e) => {
+                         const variedad = e.target.value
+                         const cultivoRD = findCultivoRD(formData.nombre, variedad)
+                         setFormData({
+                           ...formData,
+                           variedad,
+                           detalle: cultivoRD ? getCultivoRDThresholds(cultivoRD) : formData.detalle,
+                         })
+                       }}
+                       placeholder="Se completa automaticamente o escriba una variedad"
                      />
                    </div>
                  </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4">
                   <div className="grid gap-2">
                     <Label htmlFor="invernadero">Invernadero *</Label>
                     <select
@@ -366,96 +395,143 @@ export function CropsView({ userRole, selectedGreenhouse }: CropsViewProps) {
                       ))}
                     </select>
                   </div>
-                  <div className="grid gap-2">
-                    <Label htmlFor="fecha_siembra">Fecha de Siembra</Label>
-                    <Input
-                      id="fecha_siembra"
-                      type="date"
-                      value={formData.fecha_siembra}
-                      onChange={(e) => setFormData({ ...formData, fecha_siembra: e.target.value })}
-                    />
-                  </div>
                 </div>
                 
                 <div className="border-t pt-4 mt-2">
-                  <h3 className="text-sm font-medium mb-3 flex items-center gap-2">
-                    <Sprout className="h-4 w-4" />
-                    Detalles del Cultivo
-                  </h3>
-                  <div className="grid grid-cols-3 gap-4">
-                    <div className="grid gap-2">
-                      <Label htmlFor="fecha_cosecha">Fecha Cosecha Estimada</Label>
-                      <Input
-                        id="fecha_cosecha"
-                        type="date"
-                        value={formData.detalle.fecha_cosecha_estimada}
-                        onChange={(e) => setFormData({
-                          ...formData,
-                          detalle: { ...formData.detalle, fecha_cosecha_estimada: e.target.value }
-                        })}
-                      />
+                  <h3 className="mb-3 text-sm font-medium">Parametros del Cultivo</h3>
+                    <div className="grid grid-cols-5 gap-4">
+                      <div className="grid gap-2">
+                        <Label htmlFor="umbral_humedad">Humedad (%)</Label>
+                        <Input
+                          id="umbral_humedad"
+                          type="number"
+                          min="0"
+                          max="100"
+                          step="1"
+                          value={formData.detalle.umbral_humedad}
+                          onChange={(e) => setFormData({
+                            ...formData,
+                            detalle: { ...formData.detalle, umbral_humedad: e.target.value }
+                          })}
+                        />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label htmlFor="umbral_temperatura">Temp. (C)</Label>
+                        <Input
+                          id="umbral_temperatura"
+                          type="number"
+                          min="0"
+                          step="0.1"
+                          value={formData.detalle.umbral_temperatura}
+                          onChange={(e) => setFormData({
+                            ...formData,
+                            detalle: { ...formData.detalle, umbral_temperatura: e.target.value }
+                          })}
+                        />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label htmlFor="umbral_ph">pH</Label>
+                        <Input
+                          id="umbral_ph"
+                          type="number"
+                          min="0"
+                          max="14"
+                          step="0.1"
+                          value={formData.detalle.umbral_ph}
+                          onChange={(e) => setFormData({
+                            ...formData,
+                            detalle: { ...formData.detalle, umbral_ph: e.target.value }
+                          })}
+                        />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label htmlFor="umbral_ec">EC</Label>
+                        <Input
+                          id="umbral_ec"
+                          type="number"
+                          min="0"
+                          step="0.1"
+                          value={formData.detalle.umbral_ec}
+                          onChange={(e) => setFormData({
+                            ...formData,
+                            detalle: { ...formData.detalle, umbral_ec: e.target.value }
+                          })}
+                        />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label htmlFor="umbral_tds">TDS</Label>
+                        <Input
+                          id="umbral_tds"
+                          type="number"
+                          min="0"
+                          step="10"
+                          value={formData.detalle.umbral_tds}
+                          onChange={(e) => setFormData({
+                            ...formData,
+                            detalle: { ...formData.detalle, umbral_tds: e.target.value }
+                          })}
+                        />
+                      </div>
                     </div>
-                    <div className="grid gap-2">
-                      <Label htmlFor="germinacion">Germinacion (dias)</Label>
-                      <Input
-                        id="germinacion"
-                        type="number"
-                        min="0"
-                        value={formData.detalle.tiempo_germinacion_dias}
-                        onChange={(e) => setFormData({
-                          ...formData,
-                          detalle: { ...formData.detalle, tiempo_germinacion_dias: e.target.value }
-                        })}
-                        placeholder="7"
-                      />
+                    <div className="mt-4 grid grid-cols-3 gap-4">
+                      <div className="grid gap-2">
+                        <Label htmlFor="agua_litros_por_mata_dia">Agua por mata/dia (L)</Label>
+                        <Input
+                          id="agua_litros_por_mata_dia"
+                          type="number"
+                          min="0"
+                          step="0.1"
+                          value={formData.agua_litros_por_mata_dia}
+                          onChange={(e) => setFormData({ ...formData, agua_litros_por_mata_dia: e.target.value })}
+                        />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label htmlFor="rendimiento_por_mata">Produccion por mata</Label>
+                        <Input
+                          id="rendimiento_por_mata"
+                          type="number"
+                          min="0"
+                          step="0.1"
+                          value={formData.rendimiento_por_mata}
+                          onChange={(e) => setFormData({ ...formData, rendimiento_por_mata: e.target.value })}
+                        />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label htmlFor="unidad_rendimiento">Unidad</Label>
+                        <Input
+                          id="unidad_rendimiento"
+                          value={formData.unidad_rendimiento}
+                          onChange={(e) => setFormData({ ...formData, unidad_rendimiento: e.target.value })}
+                          placeholder="lb, kg, unidad"
+                        />
+                      </div>
                     </div>
-                    <div className="grid gap-2">
-                      <Label htmlFor="crecimiento">Crecimiento (dias)</Label>
-                      <Input
-                        id="crecimiento"
-                        type="number"
-                        min="0"
-                        value={formData.detalle.tiempo_crecimiento_dias}
-                        onChange={(e) => setFormData({
-                          ...formData,
-                          detalle: { ...formData.detalle, tiempo_crecimiento_dias: e.target.value }
-                        })}
-                        placeholder="60"
-                      />
+                    <div className="mt-4 grid grid-cols-2 gap-4">
+                      <div className="grid gap-2">
+                        <Label htmlFor="fertilizantes">Fertilizantes</Label>
+                        <Textarea id="fertilizantes" value={formData.fertilizantes} onChange={(e) => setFormData({ ...formData, fertilizantes: e.target.value })} />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label htmlFor="abonos">Abonos</Label>
+                        <Textarea id="abonos" value={formData.abonos} onChange={(e) => setFormData({ ...formData, abonos: e.target.value })} />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label htmlFor="plagas_comunes">Plagas o enfermedades</Label>
+                        <Textarea id="plagas_comunes" value={formData.plagas_comunes} onChange={(e) => setFormData({ ...formData, plagas_comunes: e.target.value })} />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label htmlFor="tratamiento_recomendado">Tratamiento recomendado</Label>
+                        <Textarea id="tratamiento_recomendado" value={formData.tratamiento_recomendado} onChange={(e) => setFormData({ ...formData, tratamiento_recomendado: e.target.value })} />
+                      </div>
                     </div>
-                  </div>
-                  <div className="grid grid-cols-3 gap-4 mt-4">
-                    <div className="grid gap-2 col-span-1">
-                      <Label htmlFor="cosecha">Cosecha (dias)</Label>
-                      <Input
-                        id="cosecha"
-                        type="number"
-                        min="0"
-                        value={formData.detalle.tiempo_cosecha_dias}
-                        onChange={(e) => setFormData({
-                          ...formData,
-                          detalle: { ...formData.detalle, tiempo_cosecha_dias: e.target.value }
-                        })}
-                        placeholder="90"
-                      />
+                    <div className="mt-4 grid gap-2">
+                      <Label htmlFor="mejores_meses">Mejores meses para sembrar</Label>
+                      <Input id="mejores_meses" value={formData.mejores_meses} onChange={(e) => setFormData({ ...formData, mejores_meses: e.target.value })} placeholder="Ej: enero, febrero, noviembre" />
                     </div>
-                  </div>
-                </div>
-
-                {/* Notas field moved to bottom, full width */}
-                <div className="grid gap-2 mt-4">
-                  <Label htmlFor="notas">Notas</Label>
-                  <textarea
-                    id="notas"
-                    value={formData.detalle.notas}
-                    onChange={(e) => setFormData({
-                      ...formData,
-                      detalle: { ...formData.detalle, notas: e.target.value }
-                    })}
-                    placeholder="Notas adicionales..."
-                    className="flex min-h-[100px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                    rows={4}
-                  />
+                    <div className="mt-4 grid gap-2">
+                      <Label htmlFor="recomendacion_siembra">Recomendacion de siembra</Label>
+                      <Textarea id="recomendacion_siembra" value={formData.recomendacion_siembra} onChange={(e) => setFormData({ ...formData, recomendacion_siembra: e.target.value })} />
+                    </div>
                 </div>
               </div>
               <DialogFooter>
@@ -501,9 +577,7 @@ export function CropsView({ userRole, selectedGreenhouse }: CropsViewProps) {
                 <TableHead>Nombre</TableHead>
                 <TableHead>Variedad</TableHead>
                 <TableHead>Invernadero</TableHead>
-                <TableHead>Fecha Siembra</TableHead>
-                <TableHead>Fecha Cosecha</TableHead>
-                <TableHead>Estado</TableHead>
+                <TableHead>Umbrales</TableHead>
                 {!isReadOnly && <TableHead className="text-right">Acciones</TableHead>}
               </TableRow>
             </TableHeader>
@@ -526,68 +600,48 @@ export function CropsView({ userRole, selectedGreenhouse }: CropsViewProps) {
                     <TableCell>{crop.variedad || "-"}</TableCell>
                     <TableCell>{getGreenhouseName(crop.invernaderoId)}</TableCell>
                     <TableCell>
-                      <div className="flex items-center gap-2">
-                        <Calendar className="h-4 w-4 text-muted-foreground" />
-                        {formatDate(crop.fechaSiembra)}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <Calendar className="h-4 w-4 text-muted-foreground" />
-                        {formatDate(crop.detalle?.fechaCosechaEstimada)}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      {crop.detalle ? (
-                        <TooltipProvider>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Badge className="bg-blue-500 cursor-help">
-                                {crop.detalle.fechaCosechaEstimada ? "Con Detalle" : "Sin Cosecha"}
-                              </Badge>
-                            </TooltipTrigger>
-                            <TooltipContent side="left" className="w-72 p-0">
-                              <Card className="border-0 shadow-none">
-                                <CardContent className="p-3 space-y-2">
-                                  <p className="font-semibold text-sm">Detalles del Cultivo</p>
-                                  {crop.detalle.fechaCosechaEstimada && (
-                                    <div className="flex justify-between text-xs">
-                                      <span className="text-muted-foreground">Fecha Cosecha:</span>
-                                      <span>{formatDate(crop.detalle.fechaCosechaEstimada)}</span>
-                                    </div>
-                                  )}
-                                  {crop.detalle.tiempoGerminacionDias && (
-                                    <div className="flex justify-between text-xs">
-                                      <span className="text-muted-foreground">Germinacion:</span>
-                                      <span>{crop.detalle.tiempoGerminacionDias} dias</span>
-                                    </div>
-                                  )}
-                                  {crop.detalle.tiempoCrecimientoDias && (
-                                    <div className="flex justify-between text-xs">
-                                      <span className="text-muted-foreground">Crecimiento:</span>
-                                      <span>{crop.detalle.tiempoCrecimientoDias} dias</span>
-                                    </div>
-                                  )}
-                                  {crop.detalle.tiempoCosechaDias && (
-                                    <div className="flex justify-between text-xs">
-                                      <span className="text-muted-foreground">Tiempo Cosecha:</span>
-                                      <span>{crop.detalle.tiempoCosechaDias} dias</span>
-                                    </div>
-                                  )}
-                                  {crop.detalle.notas && (
-                                    <div className="pt-1 border-t">
-                                      <p className="text-xs text-muted-foreground mb-1">Notas:</p>
-                                      <p className="text-xs">{crop.detalle.notas}</p>
-                                    </div>
-                                  )}
-                                </CardContent>
-                              </Card>
-                            </TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
-                      ) : (
-                        <Badge variant="outline">Sin Detalle</Badge>
-                      )}
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Badge className="cursor-help bg-blue-500">Ver umbrales</Badge>
+                          </TooltipTrigger>
+                          <TooltipContent side="left" className="w-60 p-0">
+                            <Card className="border-0 shadow-none">
+                              <CardContent className="space-y-2 p-3">
+                                <p className="text-sm font-semibold">Umbrales del cultivo</p>
+                                <div className="flex justify-between text-xs">
+                                  <span className="text-muted-foreground">Humedad:</span>
+                                  <span>{crop.umbralHumedad ?? crop.detalle?.umbralHumedad ?? 40}%</span>
+                                </div>
+                                <div className="flex justify-between text-xs">
+                                  <span className="text-muted-foreground">Temp:</span>
+                                  <span>{crop.umbralTemperatura ?? 27} C</span>
+                                </div>
+                                <div className="flex justify-between text-xs">
+                                  <span className="text-muted-foreground">pH:</span>
+                                  <span>{crop.umbralPh ?? crop.detalle?.umbralPh ?? 6}</span>
+                                </div>
+                                <div className="flex justify-between text-xs">
+                                  <span className="text-muted-foreground">EC:</span>
+                                  <span>{crop.umbralEc ?? crop.detalle?.umbralEc ?? 1.5}</span>
+                                </div>
+                                <div className="flex justify-between text-xs">
+                                  <span className="text-muted-foreground">TDS:</span>
+                                  <span>{crop.umbralTds ?? crop.detalle?.umbralTds ?? 800}</span>
+                                </div>
+                                <div className="flex justify-between text-xs">
+                                  <span className="text-muted-foreground">Agua/mata:</span>
+                                  <span>{crop.aguaLitrosPorMataDia ?? 0} L/dia</span>
+                                </div>
+                                <div className="flex justify-between text-xs">
+                                  <span className="text-muted-foreground">Produccion/mata:</span>
+                                  <span>{crop.rendimientoPorMata ?? 0} {crop.unidadRendimiento || "lb"}</span>
+                                </div>
+                              </CardContent>
+                            </Card>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
                     </TableCell>
                     {!isReadOnly && (
                       <TableCell className="text-right">

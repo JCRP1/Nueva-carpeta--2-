@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import { requireAuth } from "@/lib/auth"
-import { query } from "@/lib/db"
+import { getPool, query } from "@/lib/db"
 import { getSensorZoneColumn } from "@/lib/sensor-zone-column"
 
 export const dynamic = "force-dynamic"
@@ -40,8 +40,12 @@ export async function GET(req: Request) {
     `
     const params: Record<string, unknown> = {}
     if (gh) {
-      sqlText += " WHERE s.id_invernadero = @gh"
+      sqlText += ` WHERE s.id_invernadero = @gh
+        AND s.id_invernadero IN (
+          SELECT id_invernadero FROM Invernaderos WHERE id_empresa = @empresaId
+        )`
       params.gh = Number(gh)
+      params.empresaId = session.empresaId
     } else {
       sqlText += ` WHERE s.id_invernadero IN (
         SELECT id_invernadero FROM Invernaderos WHERE id_empresa = @empresaId
@@ -141,6 +145,18 @@ export async function POST(req: Request) {
 
     if (!tipo || !idInvernadero) {
       return NextResponse.json({ error: "Tipo e invernadero requeridos" }, { status: 400 })
+    }
+
+    const greenhouseRows = (await query(
+      `SELECT id_invernadero
+       FROM Invernaderos
+       WHERE id_invernadero = @idInvernadero
+         AND id_empresa = @empresaId`,
+      { idInvernadero: Number(idInvernadero), empresaId: session.empresaId }
+    )) as Record<string, unknown>[]
+
+    if (greenhouseRows.length === 0) {
+      return NextResponse.json({ error: "Invernadero no encontrado para esta empresa" }, { status: 403 })
     }
 
     const sensorZoneColumn = await getSensorZoneColumn()
@@ -281,7 +297,20 @@ export async function PUT(req: Request) {
       return NextResponse.json({ error: "Sensor no encontrado" }, { status: 404 })
     }
 
-const mergedRangoMin = rangoMin !== undefined ? rangoMin : umbralMin
+    const nextIdInvernadero = idInvernadero !== undefined ? Number(idInvernadero) : Number(existing.idInvernadero)
+    const greenhouseRows = (await query(
+      `SELECT id_invernadero
+       FROM Invernaderos
+       WHERE id_invernadero = @idInvernadero
+         AND id_empresa = @empresaId`,
+      { idInvernadero: nextIdInvernadero, empresaId: session.empresaId }
+    )) as Record<string, unknown>[]
+
+    if (greenhouseRows.length === 0) {
+      return NextResponse.json({ error: "Invernadero no encontrado para esta empresa" }, { status: 403 })
+    }
+
+    const mergedRangoMin = rangoMin !== undefined ? rangoMin : umbralMin
     const mergedRangoMax = rangoMax !== undefined ? rangoMax : umbralMax
     const mergedZonaId = idZona !== undefined ? idZona : zonaRiegoId
 
@@ -315,7 +344,7 @@ const mergedRangoMin = rangoMin !== undefined ? rangoMin : umbralMin
        WHERE id_sensor = @id`,
       {
         id: Number(id),
-        idInvernadero: idInvernadero !== undefined ? Number(idInvernadero) : Number(existing.idInvernadero),
+        idInvernadero: nextIdInvernadero,
         idDispositivo: idDispositivo !== undefined
           ? (idDispositivo ? Number(idDispositivo) : null)
           : (existing.idDispositivo != null ? Number(existing.idDispositivo) : null),
@@ -367,5 +396,78 @@ const mergedRangoMin = rangoMin !== undefined ? rangoMin : umbralMin
   } catch (err) {
     console.error(err)
     return NextResponse.json({ error: "No se pudo actualizar" }, { status: 500 })
+  }
+}
+
+/* =========================
+   ELIMINAR
+ ========================= */
+
+export async function DELETE(req: Request) {
+  try {
+    const session = await requireAuth()
+    if (session.rol !== "administrador" && session.rol !== "tecnico") {
+      return NextResponse.json({ error: "Sin permisos" }, { status: 403 })
+    }
+
+    const body = await req.json()
+    const id = Number(body.id)
+
+    if (!Number.isFinite(id)) {
+      return NextResponse.json({ error: "ID requerido" }, { status: 400 })
+    }
+
+    const existingRows = (await query(
+      `SELECT
+         s.id_sensor,
+         s.tipo,
+         COALESCE(s.ubicacion_fisica, s.tipo + ' ' + CAST(s.id_sensor AS VARCHAR)) AS nombre
+       FROM Sensores s
+       INNER JOIN Invernaderos i ON i.id_invernadero = s.id_invernadero
+       WHERE s.id_sensor = @id AND i.id_empresa = @empresaId`,
+      { id, empresaId: session.empresaId }
+    )) as Record<string, unknown>[]
+
+    const existing = existingRows[0]
+    if (!existing) {
+      return NextResponse.json({ error: "Sensor no encontrado" }, { status: 404 })
+    }
+
+    const pool = await getPool()
+    const transaction = pool.transaction()
+    await transaction.begin()
+
+    try {
+      const request = transaction.request()
+      request.input("id", id)
+
+      await request.query(`
+        DELETE FROM Alertas
+        WHERE id_sensor = @id;
+
+        DELETE FROM LecturasSensores
+        WHERE id_sensor = @id;
+
+        DELETE FROM Sensores
+        WHERE id_sensor = @id;
+      `)
+
+      await transaction.commit()
+    } catch (error) {
+      await transaction.rollback()
+      throw error
+    }
+
+    return NextResponse.json({
+      ok: true,
+      id,
+      sensor: {
+        nombre: existing.nombre,
+        tipo: existing.tipo,
+      },
+    })
+  } catch (err) {
+    console.error("[SENSORS API] DELETE Error:", err)
+    return NextResponse.json({ error: "No se pudo eliminar el sensor" }, { status: 500 })
   }
 }

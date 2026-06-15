@@ -19,6 +19,7 @@ This document provides a detailed description of every table, column, constraint
   - [ConfiguracionSistema](#configuracionsistema)
   - [ControlPlagas](#controlplagas)
   - [CultivoDetalle](#cultivodetalle)
+  - [Cosechas](#cosechas)
   - [Cultivos](#cultivos)
   - [DispositivosIoT](#dispositivosiot)
   - [Empresas](#empresas)
@@ -218,10 +219,39 @@ Detailed cultivation information for a specific crop cycle, including dates and 
 | `tiempo_germinacion_dias` | `int` | YES | | Germination period in days. |
 | `tiempo_crecimiento_dias` | `int` | YES | | Growth period in days. |
 | `tiempo_cosecha_dias` | `int` | YES | | Harvest period in days. |
+| `umbral_humedad` | `decimal(5,2)` | YES | | Target soil humidity threshold for this crop. |
+| `umbral_ph` | `decimal(4,2)` | YES | | Target pH threshold for this crop. |
+| `umbral_ec` | `decimal(5,2)` | YES | | Target EC threshold for this crop. |
+| `umbral_tds` | `decimal(6,2)` | YES | | Target TDS threshold for this crop. |
 | `notas` | `nvarchar(max)` | YES | | Additional notes. |
 
 **Primary Key:** `id_detalle`  
 **Foreign Keys:** `FK_Detalle_Cultivo` → `Cultivos(id_cultivo)`
+
+---
+
+### Cosechas
+
+Stores harvested production records for crop detail cycles.
+
+| Column | Data Type | Nullable | Default | Description |
+|--------|-----------|----------|---------|-------------|
+| `id_cosecha` | `int` IDENTITY(1,1) | NO | | Primary key, auto-incremented harvest identifier. |
+| `id_detalle` | `int` | NO | | Foreign key referencing `CultivoDetalle.id_detalle`. |
+| `id_zona` | `int` | YES | | Foreign key referencing `ZonasRiego.id_zona`, identifying where the crop was harvested. |
+| `fecha_cosecha` | `date` | NO | | Harvest date. |
+| `cantidad_cosechada_kg` | `decimal(12,2)` | YES | | Harvested quantity in kilograms. |
+| `calidad` | `nvarchar(50)` | YES | | Harvest quality classification. |
+| `rendimiento_m2` | `decimal(12,2)` | YES | | Yield per square meter. |
+| `perdida_kg` | `decimal(12,2)` | YES | | Recorded loss in kilograms. |
+| `observaciones` | `nvarchar(max)` | YES | | Harvest notes. |
+| `registrado_por` | `int` | YES | | User who registered the harvest. |
+| `fecha_registro` | `datetime` | YES | `GETDATE()` | Registration timestamp. |
+
+**Primary Key:** `id_cosecha`  
+**Foreign Keys:**  
+- `id_detalle` â†’ `CultivoDetalle(id_detalle)`  
+- `FK_Cosechas_ZonasRiego` â†’ `ZonasRiego(id_zona)`
 
 ---
 
@@ -236,6 +266,10 @@ Represents crops planted in greenhouses.
 | `variedad` | `nvarchar(100)` | YES | | Variety name (optional at this level). |
 | `id_invernadero` | `int` | NO | | Foreign key referencing `Invernaderos.id_invernadero`. |
 | `fecha_siembra` | `date` | YES | | Planting date. |
+| `umbral_humedad` | `decimal(5,2)` | YES | | Default soil humidity threshold for this crop. |
+| `umbral_ph` | `decimal(4,2)` | YES | | Default pH threshold for this crop. |
+| `umbral_ec` | `decimal(5,2)` | YES | | Default EC threshold for this crop. |
+| `umbral_tds` | `decimal(6,2)` | YES | | Default TDS threshold for this crop. |
 
 **Primary Key:** `id_cultivo`  
 **Foreign Keys:** `FK_Cultivos_Invernaderos` → `Invernaderos(id_invernadero)`
@@ -693,6 +727,13 @@ Defines irrigation zones within a greenhouse, with target thresholds.
 | `umbral_ph` | `decimal(4,2)` | YES | | Target pH for nutrient solution. |
 | `umbral_ec` | `decimal(5,2)` | YES | | Target electrical conductivity (EC). |
 | `umbral_tds` | `decimal(6,2)` | YES | | Target total dissolved solids (TDS). |
+| `fecha_siembra` | `date` | YES | | Planting date for the crop assigned to this zone. |
+| `fecha_cosecha_estimada` | `date` | YES | | Estimated harvest date for the crop assigned to this zone. |
+| `tiempo_germinacion_dias` | `int` | YES | | Germination period for this zone crop cycle. |
+| `tiempo_crecimiento_dias` | `int` | YES | | Growth period for this zone crop cycle. |
+| `tiempo_cosecha_dias` | `int` | YES | | Harvest period for this zone crop cycle. |
+| `cantidad_cultivo` | `int` | YES | | Quantity of crop units/plants planted in this zone. |
+| `notas_cultivo` | `nvarchar(max)` | YES | | Crop cycle notes for this zone. |
 
 **Primary Key:** `id_zona`  
 **Foreign Keys:**  

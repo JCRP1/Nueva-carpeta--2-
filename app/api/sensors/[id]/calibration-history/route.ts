@@ -25,7 +25,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await requireAuth()
+    const session = await requireAuth()
     const { id } = await params
     const { searchParams } = new URL(req.url)
     const limit = searchParams.get("limit") || "50"
@@ -47,15 +47,19 @@ export async function GET(
         u.nombre AS nombre_usuario
       FROM Bitacora b
       LEFT JOIN Usuarios u ON u.id_usuario = b.id_usuario
+      INNER JOIN Sensores s ON s.id_sensor = TRY_CAST(b.entidad_id AS INT)
+      INNER JOIN Invernaderos i ON i.id_invernadero = s.id_invernadero
       WHERE b.entidad = 'Sensor' 
         AND b.entidad_id = @sensorId
         AND b.accion = 'CALIBRACION'
+        AND i.id_empresa = @empresaId
       ORDER BY b.fecha DESC
     `
 
     const results = (await query(sqlText, {
       sensorId: id,
       limit: Number(limit),
+      empresaId: session.empresaId,
     })) as BitacoraCalibracion[]
 
     const calibraciones = results.map((r) => ({

@@ -10,6 +10,18 @@ function buildAlertType(tipo: string, value: number, min: number | null, max: nu
   return null
 }
 
+function normalizeSensorTipo(value: unknown) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "_")
+}
+
+function isSoilHumiditySensor(value: unknown) {
+  const tipo = normalizeSensorTipo(value)
+  return tipo === "humedad_suelo" || tipo === "humedad" || tipo.includes("humedad_suelo")
+}
+
 function buildAlertLevel(value: number, min: number | null, max: number | null): "critico" | "advertencia" {
   if (min != null && value < min) {
     const gap = min - value
@@ -83,6 +95,7 @@ async function getSensorControlContext(sensorId: number) {
     `SELECT TOP 1
        s.${sensorZoneColumn} AS zonaId,
        s.id_dispositivo AS idDispositivo,
+       s.rango_min AS umbralMin,
        z.estado AS estadoRiego,
        z.umbral_humedad AS umbralHumedad,
        z.caudal_litros_min AS caudalLitrosMin,
@@ -121,6 +134,22 @@ async function enqueueDeviceCommand(
   return rows[0]?.idComando ?? null
 }
 
+async function hasRecentManualStop(zoneId: number) {
+  const rows = (await query(
+    `SELECT TOP 1 id_comando AS idComando
+     FROM ComandosIoT
+     WHERE comando = 'STOP_IRRIGATION'
+       AND estado IN ('Pendiente', 'Enviado', 'Ejecutado')
+       AND fecha_envio >= DATEADD(MINUTE, -5, GETDATE())
+       AND JSON_VALUE(parametros, '$.zonaId') = CONVERT(varchar(20), @zonaId)
+       AND JSON_VALUE(parametros, '$.motivo') = 'riego_manual_detenido'
+     ORDER BY fecha_envio DESC, id_comando DESC`,
+    { zonaId: zoneId }
+  )) as Record<string, unknown>[]
+
+  return rows.length > 0
+}
+
 async function evaluateAutomationRules(args: {
   sensorId: number
   sensorTipo: string
@@ -143,11 +172,20 @@ async function evaluateAutomationRules(args: {
   const isActive = estadoRiego === "activo" || estadoRiego === "activa"
   const now = args.fechaHora.toISOString()
 
-  if (args.sensorTipo === "humedad_suelo") {
-    const threshold = context.umbralHumedad != null ? Number(context.umbralHumedad) : null
+  if (isSoilHumiditySensor(args.sensorTipo)) {
+    const threshold = context.umbralMin != null ? Number(context.umbralMin) : context.umbralHumedad != null ? Number(context.umbralHumedad) : null
     if (threshold == null) return null
 
     if (args.rawValue < threshold && !isActive) {
+      if (await hasRecentManualStop(zonaId)) {
+        return {
+          action: "start_blocked_recent_manual_stop",
+          zonaId,
+          valor: args.rawValue,
+          umbral: threshold,
+        }
+      }
+
       const caudal = context.caudalLitrosMin != null ? Number(context.caudalLitrosMin) : 0
       const idComando = await enqueueDeviceCommand(zoneDeviceId, "START_IRRIGATION", {
         zonaId,
@@ -205,11 +243,13 @@ async function evaluateAutomationRules(args: {
     }
   }
 
-  if (args.sensorTipo === "tds" || args.sensorTipo === "ec" || args.sensorTipo === "ph") {
+  const normalizedTipo = normalizeSensorTipo(args.sensorTipo)
+
+  if (normalizedTipo === "tds" || normalizedTipo === "ec" || normalizedTipo === "ph") {
     const idComando = await enqueueDeviceCommand(zoneDeviceId, "CHECK_FERTIGATION", {
       zonaId,
       sensorId: args.sensorId,
-      tipo: args.sensorTipo,
+      tipo: normalizedTipo,
       valor: args.rawValue,
       umbralTds: context.umbralTds,
       umbralEc: context.umbralEc,
@@ -270,9 +310,8 @@ export async function processIotReading(body: IotReadingPayload, source: "http" 
       : typeof body.deviceCode === "string"
         ? body.deviceCode.trim().toUpperCase()
         : null
-  const tipo = typeof body.tipo === "string" ? body.tipo : null
+  const tipo = typeof body.tipo === "string" ? normalizeSensorTipo(body.tipo) : null
   const unidadRaw = typeof body.unidad === "string" ? body.unidad : null
-  const timestampRaw = typeof body.timestamp === "string" ? body.timestamp : null
   const ipLocal = typeof body.ipLocal === "string" ? body.ipLocal.trim() : null
 
   if (!Number.isFinite(rawValue)) {
@@ -311,7 +350,8 @@ export async function processIotReading(body: IotReadingPayload, source: "http" 
            FROM Sensores s
            INNER JOIN DispositivosIoT d ON d.id_dispositivo = s.id_dispositivo
            LEFT JOIN Invernaderos i ON i.id_invernadero = s.id_invernadero
-           WHERE d.codigo_dispositivo = @codigoDispositivo AND s.tipo = @tipo`
+           WHERE UPPER(d.codigo_dispositivo) = @codigoDispositivo
+             AND LOWER(REPLACE(LTRIM(RTRIM(s.tipo)), ' ', '_')) = @tipo`
         : `SELECT TOP 1
              s.id_sensor AS idSensor,
              s.id_dispositivo AS idDispositivo,
@@ -323,7 +363,8 @@ export async function processIotReading(body: IotReadingPayload, source: "http" 
            FROM Sensores s
            INNER JOIN DispositivosIoT d ON d.id_dispositivo = s.id_dispositivo
            LEFT JOIN Invernaderos i ON i.id_invernadero = s.id_invernadero
-           WHERE ${buildVirtualDeviceCodeExpression("d")} = @codigoDispositivo AND s.tipo = @tipo`,
+           WHERE UPPER(${buildVirtualDeviceCodeExpression("d")}) = @codigoDispositivo
+             AND LOWER(REPLACE(LTRIM(RTRIM(s.tipo)), ' ', '_')) = @tipo`,
       { codigoDispositivo: rawDeviceCode, tipo }
     )) as Record<string, unknown>[]
     sensorRow = rows[0]
@@ -339,7 +380,8 @@ export async function processIotReading(body: IotReadingPayload, source: "http" 
          s.unidad_medida AS unidad
        FROM Sensores s
        LEFT JOIN Invernaderos i ON i.id_invernadero = s.id_invernadero
-       WHERE s.id_dispositivo = @deviceId AND s.tipo = @tipo`,
+       WHERE s.id_dispositivo = @deviceId
+         AND LOWER(REPLACE(LTRIM(RTRIM(s.tipo)), ' ', '_')) = @tipo`,
       { deviceId: rawDeviceId, tipo }
     )) as Record<string, unknown>[]
     sensorRow = rows[0]
@@ -354,15 +396,11 @@ export async function processIotReading(body: IotReadingPayload, source: "http" 
   const sensorId = Number(sensorRow.idSensor)
   const deviceId = sensorRow.idDispositivo != null ? Number(sensorRow.idDispositivo) : null
   const empresaId = sensorRow.empresaId != null ? Number(sensorRow.empresaId) : null
-  const sensorTipo = String(sensorRow.tipo || tipo || "sensor")
+  const sensorTipo = normalizeSensorTipo(sensorRow.tipo || tipo || "sensor")
   const umbralMin = sensorRow.umbralMin != null ? Number(sensorRow.umbralMin) : null
   const umbralMax = sensorRow.umbralMax != null ? Number(sensorRow.umbralMax) : null
   const unidad = unidadRaw || String(sensorRow.unidad || "")
-  const fechaHora = timestampRaw ? new Date(timestampRaw) : new Date()
-
-  if (Number.isNaN(fechaHora.getTime())) {
-    throw new Error("INVALID_TIMESTAMP")
-  }
+  const fechaHora = new Date()
 
   await execute(
     `INSERT INTO LecturasSensores (id_sensor, valor, unidad, fecha_hora)
@@ -417,7 +455,7 @@ export async function processIotReading(body: IotReadingPayload, source: "http" 
         await execute(
           `UPDATE Alertas
            SET valor_detectado = @valor,
-               fecha_hora = GETDATE(),
+               fecha_hora = @fechaHora,
                umbral_min = @umbralMin,
                umbral_max = @umbralMax,
                nivel = @nivel,
@@ -427,6 +465,7 @@ export async function processIotReading(body: IotReadingPayload, source: "http" 
           {
             id: Number(latest.id),
             valor: rawValue,
+            fechaHora,
             umbralMin,
             umbralMax,
             nivel,
@@ -438,11 +477,12 @@ export async function processIotReading(body: IotReadingPayload, source: "http" 
           `INSERT INTO Alertas
             (id_sensor, tipo_alerta, valor_detectado, fecha_hora, estado, umbral_min, umbral_max, nivel, accion_recomendada)
            VALUES
-            (@sensorId, @tipoAlerta, @valor, GETDATE(), 'Pendiente', @umbralMin, @umbralMax, @nivel, @accion)`,
+            (@sensorId, @tipoAlerta, @valor, @fechaHora, 'Pendiente', @umbralMin, @umbralMax, @nivel, @accion)`,
           {
             sensorId,
             tipoAlerta,
             valor: rawValue,
+            fechaHora,
             umbralMin,
             umbralMax,
             nivel,
@@ -457,7 +497,7 @@ export async function processIotReading(body: IotReadingPayload, source: "http" 
   }
 
   const automation =
-    tipoAlerta || sensorTipo === "humedad_suelo"
+    tipoAlerta || isSoilHumiditySensor(sensorTipo)
       ? await evaluateAutomationRules({
           sensorId,
           sensorTipo,

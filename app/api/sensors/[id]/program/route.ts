@@ -12,6 +12,10 @@ type ProgramPayload = {
   actualizadoEn: string
 }
 
+function isUnauthorizedError(err: unknown) {
+  return err instanceof Error && err.message === "UNAUTHORIZED"
+}
+
 export async function GET(
   _req: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -43,14 +47,21 @@ export async function GET(
       return NextResponse.json({ programacion: null })
     }
 
-    const commandRows = (await query(
-      `SELECT TOP 20 parametros, fecha_envio AS fechaEnvio, estado
-       FROM ComandosIoT
-       WHERE id_dispositivo = @idDispositivo
-         AND comando = 'CONFIG_SENSOR'
-       ORDER BY fecha_envio DESC`,
-      { idDispositivo }
-    )) as Record<string, unknown>[]
+    let commandRows: Record<string, unknown>[] = []
+
+    try {
+      commandRows = (await query(
+        `SELECT TOP 20 parametros, fecha_envio AS fechaEnvio, estado
+         FROM ComandosIoT
+         WHERE id_dispositivo = @idDispositivo
+           AND comando = 'CONFIG_SENSOR'
+         ORDER BY fecha_envio DESC`,
+        { idDispositivo }
+      )) as Record<string, unknown>[]
+    } catch (err) {
+      console.warn("[Sensor Program GET] No se pudo leer ComandosIoT:", err)
+      return NextResponse.json({ programacion: null })
+    }
 
     let programacion: (ProgramPayload & { estadoComando: string; fechaEnvio: string }) | null = null
 
@@ -77,6 +88,10 @@ export async function GET(
 
     return NextResponse.json({ programacion })
   } catch (err) {
+    if (isUnauthorizedError(err)) {
+      return NextResponse.json({ error: "No autorizado" }, { status: 401 })
+    }
+
     console.error("[Sensor Program GET]", err)
     return NextResponse.json({ error: "No se pudo obtener la programacion" }, { status: 500 })
   }
@@ -172,6 +187,10 @@ export async function POST(
       programacion: payload,
     })
   } catch (err) {
+    if (isUnauthorizedError(err)) {
+      return NextResponse.json({ error: "No autorizado" }, { status: 401 })
+    }
+
     console.error("[Sensor Program POST]", err)
     return NextResponse.json({ error: "No se pudo guardar la programacion" }, { status: 500 })
   }

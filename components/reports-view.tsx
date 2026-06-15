@@ -4,6 +4,9 @@ import { useState, useMemo, useCallback } from "react"
 import useSWR from "swr"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   Select,
@@ -15,6 +18,7 @@ import {
 import {
   BarChart3,
   Download,
+  Save,
   TrendingUp,
   TrendingDown,
   Droplets,
@@ -25,8 +29,6 @@ import {
   FileSpreadsheet,
 } from "lucide-react"
 import {
-  Area,
-  AreaChart,
   Bar,
   BarChart,
   Line,
@@ -56,6 +58,17 @@ interface ReportsData {
   }
 }
 
+interface ZoneOption {
+  id: string
+  nombre: string
+}
+
+interface CropOption {
+  id: string
+  nombre: string
+  variedad?: string
+}
+
 const tooltipStyle = {
   background: "hsl(150, 14%, 9%)",
   border: "1px solid hsl(150, 10%, 16%)",
@@ -65,13 +78,6 @@ const tooltipStyle = {
 }
 const axisTickStyle = { fontSize: 10, fill: "hsl(150, 5%, 55%)" }
 const gridStroke = "hsl(150, 10%, 16%)"
-
-function formatChartTime(ts: string) {
-  return new Date(ts).toLocaleTimeString("es-DO", {
-    hour: "2-digit",
-    minute: "2-digit",
-  })
-}
 
 function downloadCSV(filename: string, headers: string[], rows: string[][]) {
   const bom = "\uFEFF"
@@ -95,21 +101,37 @@ export function ReportsView({ userRole, selectedGreenhouse }: ReportsViewProps) 
   const [period, setPeriod] = useState("semana")
   const [exporting, setExporting] = useState(false)
   const [activeTab, setActiveTab] = useState("consumo")
+  const [waterZoneId, setWaterZoneId] = useState("")
+  const [waterLiters, setWaterLiters] = useState("")
+  const [waterDate, setWaterDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const [savingWater, setSavingWater] = useState(false)
+  const [nutrientCropId, setNutrientCropId] = useState("")
+  const [nutrientAmount, setNutrientAmount] = useState("")
+  const [nutrientDate, setNutrientDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const [nutrientNotes, setNutrientNotes] = useState("")
+  const [savingNutrients, setSavingNutrients] = useState(false)
 
-  const { data: reportData } = useSWR<ReportsData>(
+  const { data: reportData, mutate: mutateReports } = useSWR<ReportsData>(
     selectedGreenhouse ? `/api/reports?greenhouse=${selectedGreenhouse}` : null,
     fetcher,
     { refreshInterval: 10000 }
   )
+  const { data: zones = [] } = useSWR<ZoneOption[]>(
+    selectedGreenhouse ? `/api/zones?greenhouse=${selectedGreenhouse}` : null,
+    fetcher
+  )
+  const { data: crops = [] } = useSWR<CropOption[]>(
+    selectedGreenhouse ? `/api/crops?greenhouse=${selectedGreenhouse}` : null,
+    fetcher
+  )
 
+  const today = useMemo(() => new Date().toISOString().slice(0, 10), [])
   const weeklyWater = reportData?.consumoAgua || []
   const dailyWater = weeklyWater.slice(0, 1).map((d) => ({ ...d, dia: "Hoy" }))
   const monthlyWater = reportData?.resumenRiego?.map((d) => ({ dia: d.semana, litros: d.aguaTotal })) || []
   const weeklyRiegoData = reportData?.resumenRiego || []
   const monthlyEfficiency = reportData?.eficiencia || []
   const nutrientUsage = reportData?.nutrientes || []
-  const humedadSueloHistory = (reportData?.sensorHistory || []).filter((s) => s.tipo === "humedad_suelo")
-  const tdsHistory = (reportData?.sensorHistory || []).filter((s) => s.tipo === "tds")
   const temperaturaStats = reportData?.sensores?.find((s) => s.tipo === "temperatura")
   const currentEfficiency = reportData?.eficiencia?.[reportData.eficiencia.length - 1]?.eficiencia || 0
 
@@ -154,14 +176,6 @@ export function ReportsView({ userRole, selectedGreenhouse }: ReportsViewProps) 
           )
           break
         }
-        case "sensores": {
-          downloadCSV(
-            `greensense-sensores-${period}.csv`,
-            ["Timestamp", "Humedad Suelo (%)"],
-            humedadSueloHistory.map((d) => [d.timestamp, String(d.valor)])
-          )
-          break
-        }
         case "nutrientes": {
           downloadCSV(
             `greensense-nutrientes-${period}.csv`,
@@ -184,12 +198,117 @@ export function ReportsView({ userRole, selectedGreenhouse }: ReportsViewProps) 
         description: `Archivo CSV generado para ${activeTab} (${periodLabel})`,
       })
     }, 600)
-  }, [activeTab, period, waterData, humedadSueloHistory, nutrientUsage, monthlyEfficiency, periodLabel])
+  }, [activeTab, period, waterData, nutrientUsage, monthlyEfficiency, periodLabel])
 
   function handlePeriodChange(value: string) {
     setPeriod(value)
     const labels: Record<string, string> = { dia: "Hoy", semana: "Esta Semana", mes: "Este Mes" }
     toast.info("Periodo actualizado", { description: `Mostrando datos de: ${labels[value]}` })
+  }
+
+  async function handleSaveWaterConsumption() {
+    const liters = Number(waterLiters)
+    const zoneId = waterZoneId || zones[0]?.id || ""
+
+    if (!selectedGreenhouse || !zoneId) {
+      toast.error("No hay zona disponible", {
+        description: "Selecciona un invernadero con zonas de riego",
+      })
+      return
+    }
+
+    if (!Number.isFinite(liters) || liters <= 0) {
+      toast.error("Consumo invalido", {
+        description: "Ingresa una cantidad mayor que 0 litros",
+      })
+      return
+    }
+
+    setSavingWater(true)
+    try {
+      const res = await fetch("/api/reports", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          greenhouse: selectedGreenhouse,
+          zoneId,
+          liters,
+          date: waterDate,
+        }),
+      })
+
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ error: "No se pudo guardar el consumo" }))
+        throw new Error(body.error || "No se pudo guardar el consumo")
+      }
+
+      setWaterLiters("")
+      await mutateReports()
+      toast.success("Consumo guardado", {
+        description: "El registro ya se muestra en los reportes",
+      })
+    } catch (err) {
+      toast.error("Error al guardar", {
+        description: err instanceof Error ? err.message : "Intenta nuevamente",
+      })
+    } finally {
+      setSavingWater(false)
+    }
+  }
+
+  async function handleSaveNutrients() {
+    const amount = Number(nutrientAmount)
+    const cropId = nutrientCropId || crops[0]?.id || ""
+
+    if (!selectedGreenhouse || !cropId) {
+      toast.error("No hay cultivo disponible", {
+        description: "Selecciona un invernadero con cultivos registrados",
+      })
+      return
+    }
+
+    if (!Number.isFinite(amount) || amount <= 0) {
+      toast.error("Cantidad invalida", {
+        description: "Ingresa una cantidad mayor que 0",
+      })
+      return
+    }
+
+    setSavingNutrients(true)
+    try {
+      const res = await fetch("/api/reports", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          type: "nutrients",
+          greenhouse: selectedGreenhouse,
+          cropId,
+          amount,
+          date: nutrientDate,
+          notes: nutrientNotes,
+        }),
+      })
+
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ error: "No se pudo guardar el registro" }))
+        throw new Error(body.error || "No se pudo guardar el registro")
+      }
+
+      setNutrientAmount("")
+      setNutrientNotes("")
+      await mutateReports()
+      toast.success("Nutrientes guardados", {
+        description: "El registro ya se muestra en los reportes",
+      })
+    } catch (err) {
+      toast.error("Error al guardar", {
+        description: err instanceof Error ? err.message : "Intenta nuevamente",
+      })
+    } finally {
+      setSavingNutrients(false)
+    }
   }
 
   return (
@@ -295,10 +414,6 @@ export function ReportsView({ userRole, selectedGreenhouse }: ReportsViewProps) 
             <Droplets className="h-3.5 w-3.5" />
             Consumo de Agua
           </TabsTrigger>
-          <TabsTrigger value="sensores" className="gap-1.5">
-            <Thermometer className="h-3.5 w-3.5" />
-            Sensores
-          </TabsTrigger>
           <TabsTrigger value="nutrientes" className="gap-1.5">
             <Leaf className="h-3.5 w-3.5" />
             Nutrientes
@@ -311,6 +426,76 @@ export function ReportsView({ userRole, selectedGreenhouse }: ReportsViewProps) 
 
         <TabsContent value="consumo" className="mt-4">
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-foreground">
+                  Registrar Consumo de Agua
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="water-zone">Zona de riego</Label>
+                  <Select
+                    value={waterZoneId || zones[0]?.id || ""}
+                    onValueChange={setWaterZoneId}
+                    disabled={savingWater || zones.length === 0}
+                  >
+                    <SelectTrigger id="water-zone">
+                      <SelectValue placeholder="Selecciona una zona" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {zones.map((zone) => (
+                        <SelectItem key={zone.id} value={zone.id}>
+                          {zone.nombre}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="water-liters">Litros consumidos</Label>
+                  <Input
+                    id="water-liters"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    placeholder="Ej: 120"
+                    value={waterLiters}
+                    onChange={(e) => setWaterLiters(e.target.value)}
+                    disabled={savingWater}
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="water-date">Fecha del consumo</Label>
+                  <Input
+                    id="water-date"
+                    type="date"
+                    value={waterDate}
+                    max={today}
+                    onChange={(e) => setWaterDate(e.target.value)}
+                    disabled={savingWater}
+                  />
+                </div>
+                <Button
+                  className="w-full"
+                  onClick={handleSaveWaterConsumption}
+                  disabled={savingWater || zones.length === 0}
+                >
+                  {savingWater ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Guardando...
+                    </>
+                  ) : (
+                    <>
+                      <Save className="mr-2 h-4 w-4" />
+                      Guardar en reportes
+                    </>
+                  )}
+                </Button>
+              </CardContent>
+            </Card>
+
             <Card>
               <CardHeader className="pb-2">
                 <div className="flex items-center justify-between">
@@ -389,62 +574,90 @@ export function ReportsView({ userRole, selectedGreenhouse }: ReportsViewProps) 
           </div>
         </TabsContent>
 
-        <TabsContent value="sensores" className="mt-4">
+        <TabsContent value="nutrientes" className="mt-4">
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-medium text-foreground">
-                  Humedad del Suelo (24h)
+                  Registrar Nutrientes
                 </CardTitle>
               </CardHeader>
-              <CardContent>
-                <ResponsiveContainer width="100%" height={250}>
-                  <AreaChart data={humedadSueloHistory}>
-                    <defs>
-                      <linearGradient id="repHumGrad" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="hsl(200, 65%, 46%)" stopOpacity={0.3} />
-                        <stop offset="95%" stopColor="hsl(200, 65%, 46%)" stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke={gridStroke} />
-                    <XAxis dataKey="timestamp" tickFormatter={formatChartTime} tick={axisTickStyle} stroke={gridStroke} />
-                    <YAxis tick={axisTickStyle} stroke={gridStroke} domain={[20, 70]} />
-                    <Tooltip contentStyle={tooltipStyle} labelFormatter={formatChartTime} formatter={(v: number) => [`${v}%`, "Humedad"]} />
-                    <Area type="monotone" dataKey="valor" stroke="hsl(200, 65%, 46%)" fill="url(#repHumGrad)" strokeWidth={2} />
-                  </AreaChart>
-                </ResponsiveContainer>
+              <CardContent className="space-y-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="nutrient-crop">Cultivo</Label>
+                  <Select
+                    value={nutrientCropId || crops[0]?.id || ""}
+                    onValueChange={setNutrientCropId}
+                    disabled={savingNutrients || crops.length === 0}
+                  >
+                    <SelectTrigger id="nutrient-crop">
+                      <SelectValue placeholder="Selecciona un cultivo" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {crops.map((crop) => (
+                        <SelectItem key={crop.id} value={crop.id}>
+                          {crop.variedad ? `${crop.nombre} - ${crop.variedad}` : crop.nombre}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="nutrient-amount">Cantidad aplicada</Label>
+                  <Input
+                    id="nutrient-amount"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    placeholder="Ej: 25"
+                    value={nutrientAmount}
+                    onChange={(e) => setNutrientAmount(e.target.value)}
+                    disabled={savingNutrients}
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="nutrient-date">Fecha de aplicacion</Label>
+                  <Input
+                    id="nutrient-date"
+                    type="date"
+                    value={nutrientDate}
+                    max={today}
+                    onChange={(e) => setNutrientDate(e.target.value)}
+                    disabled={savingNutrients}
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="nutrient-notes">Notas</Label>
+                  <Textarea
+                    id="nutrient-notes"
+                    placeholder="Producto, dosis o comentario"
+                    value={nutrientNotes}
+                    onChange={(e) => setNutrientNotes(e.target.value)}
+                    disabled={savingNutrients}
+                    className="min-h-[80px]"
+                  />
+                </div>
+                <Button
+                  className="w-full"
+                  onClick={handleSaveNutrients}
+                  disabled={savingNutrients || crops.length === 0}
+                >
+                  {savingNutrients ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Guardando...
+                    </>
+                  ) : (
+                    <>
+                      <Save className="mr-2 h-4 w-4" />
+                      Guardar en reportes
+                    </>
+                  )}
+                </Button>
               </CardContent>
             </Card>
 
             <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-foreground">
-                  TDS Nutrientes (24h)
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <ResponsiveContainer width="100%" height={250}>
-                  <AreaChart data={tdsHistory}>
-                    <defs>
-                      <linearGradient id="repTdsGrad" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="hsl(152, 60%, 42%)" stopOpacity={0.3} />
-                        <stop offset="95%" stopColor="hsl(152, 60%, 42%)" stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke={gridStroke} />
-                    <XAxis dataKey="timestamp" tickFormatter={formatChartTime} tick={axisTickStyle} stroke={gridStroke} />
-                    <YAxis tick={axisTickStyle} stroke={gridStroke} domain={[500, 1200]} />
-                    <Tooltip contentStyle={tooltipStyle} labelFormatter={formatChartTime} formatter={(v: number) => [`${v} ppm`, "TDS"]} />
-                    <Area type="monotone" dataKey="valor" stroke="hsl(152, 60%, 42%)" fill="url(#repTdsGrad)" strokeWidth={2} />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
-          </div>
-        </TabsContent>
-
-        <TabsContent value="nutrientes" className="mt-4">
-          <Card>
             <CardHeader className="pb-2">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-sm font-medium text-foreground">
@@ -457,8 +670,8 @@ export function ReportsView({ userRole, selectedGreenhouse }: ReportsViewProps) 
                     onClick={() => {
                       downloadCSV(
                         "nutrientes-semanal.csv",
-            ["Dia", "Aplicaciones", "Cantidad registrada"],
-            nutrientUsage.map((d) => [d.dia, String(d.aplicaciones), String(d.cantidad)])
+                        ["Dia", "Aplicaciones", "Cantidad registrada"],
+                        nutrientUsage.map((d) => [d.dia, String(d.aplicaciones), String(d.cantidad)])
                       )
                       toast.success("CSV descargado", { description: "nutrientes-semanal.csv" })
                     }}
@@ -481,7 +694,8 @@ export function ReportsView({ userRole, selectedGreenhouse }: ReportsViewProps) 
                 </BarChart>
               </ResponsiveContainer>
             </CardContent>
-          </Card>
+            </Card>
+          </div>
         </TabsContent>
 
         <TabsContent value="eficiencia" className="mt-4">

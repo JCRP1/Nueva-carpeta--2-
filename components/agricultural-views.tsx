@@ -1,0 +1,1187 @@
+"use client"
+
+import { useMemo, useState } from "react"
+import useSWR from "swr"
+import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
+import { Textarea } from "@/components/ui/textarea"
+import { fetcher } from "@/lib/api-client"
+import type { UserRole } from "@/lib/greensense-data"
+import { Banknote, CalendarDays, ClipboardList, Loader2, Package, Pencil, Plus, ReceiptText, Sprout, Trash2, TrendingUp } from "lucide-react"
+import { toast } from "sonner"
+
+type ViewProps = {
+  selectedGreenhouse: string
+  userRole: UserRole
+}
+
+type SaleRow = {
+  id: string
+  idCosecha: string
+  fechaVenta: string
+  cultivoNombre: string
+  invernaderoNombre: string
+  cantidadKg: number
+  precioKg: number
+  ingresoTotal: number
+  comprador: string
+  observaciones?: string
+}
+
+type HarvestOption = {
+  id: string
+  fechaCosecha: string
+  cantidadKg: number
+  cultivoNombre: string
+  invernaderoNombre: string
+}
+
+type CostRow = {
+  id: string
+  idZona: string
+  idCultivo: string
+  fecha: string
+  concepto: string
+  monto: number
+  costoMata: number
+  cantidadMatas: number
+  precioMercado: number
+  unidadPrecioMercado: string
+  margenEstimado: number
+  zonaNombre: string
+  cultivoNombre: string
+  invernaderoNombre: string
+  descripcion?: string
+}
+
+type ZoneOption = {
+  id: string
+  nombre: string
+  cultivoActual: string
+  invernaderoNombre: string
+}
+
+type CropOption = {
+  id: string
+  nombre: string
+  variedad?: string
+}
+
+type ProfitabilityRow = {
+  idZona: string
+  idCultivo: string
+  zonaNombre: string
+  cultivoNombre: string
+  invernaderoNombre: string
+  kgCosechados: number
+  ingresos: number
+  costos: number
+  ganancia: number
+  costoPorKg: number
+}
+
+type PlanRow = {
+  idPerfil: string
+  idCultivo: string
+  cultivoNombre: string
+  variedad: string
+  invernaderoNombre: string
+  densidadPlantasM2: string
+  sustratoSuelo: string
+  fertilizacion: string
+  manejo: string
+  sanidad: string
+  observaciones?: string
+}
+
+type ApplicationRow = {
+  id: string
+  tipo: string
+  idDetalle: string
+  tipoPlaga: string
+  fecha: string
+  cultivoNombre: string
+  invernaderoNombre: string
+  producto: string
+  dosis: string
+  cantidad: string
+  notas?: string
+}
+
+type DetailOption = {
+  id: string
+  cultivoNombre: string
+  variedad: string
+  invernaderoNombre: string
+}
+
+type CalendarRow = {
+  id: string
+  titulo: string
+  descripcion: string
+  tipo: string
+  fecha: string
+  estado: string
+  responsable: string
+  zonaNombre: string
+  cultivoNombre: string
+}
+
+type InventoryRow = {
+  id: string
+  nombre: string
+  tipo: string
+  composicion: string
+  fabricante: string
+  ph: number | null
+  nitrogeno: number | null
+  fosforo: number | null
+  potasio: number | null
+  formaAplicacion: string
+  micronutrientes?: string
+  riesgos?: string
+}
+
+type UserOption = {
+  id: string
+  nombre: string
+}
+
+function scoped(path: string, selectedGreenhouse: string) {
+  if (!selectedGreenhouse) return path
+  return `${path}${path.includes("?") ? "&" : "?"}greenhouse=${selectedGreenhouse}`
+}
+
+async function writeApi(path: string, method: "POST" | "PUT" | "DELETE", data: Record<string, unknown>) {
+  const res = await fetch(path, {
+    method,
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ error: "Error de red" }))
+    throw new Error(body.error || `HTTP ${res.status}`)
+  }
+  return res.json()
+}
+
+function today() {
+  return new Date().toISOString().slice(0, 10)
+}
+
+function money(value: number) {
+  return `RD$ ${Number(value || 0).toLocaleString("es-DO", { maximumFractionDigits: 2 })}`
+}
+
+function number(value: number, suffix = "") {
+  return `${Number(value || 0).toLocaleString("es-DO", { maximumFractionDigits: 2 })}${suffix}`
+}
+
+function date(value: string) {
+  if (!value) return "-"
+  const parsed = new Date(`${value}T00:00:00`)
+  if (Number.isNaN(parsed.getTime())) return value
+  return parsed.toLocaleDateString("es-DO", { month: "short", day: "numeric", year: "numeric" })
+}
+
+function EmptyRows({ colSpan, label }: { colSpan: number; label: string }) {
+  return (
+    <TableRow>
+      <TableCell colSpan={colSpan} className="h-24 text-center text-sm text-muted-foreground">
+        {label}
+      </TableCell>
+    </TableRow>
+  )
+}
+
+function Loading() {
+  return (
+    <div className="flex items-center justify-center py-20">
+      <Loader2 className="h-8 w-8 animate-spin text-primary" />
+    </div>
+  )
+}
+
+function SummaryCard({
+  title,
+  value,
+  icon: Icon,
+}: {
+  title: string
+  value: string
+  icon: typeof Banknote
+}) {
+  return (
+    <Card>
+      <CardContent className="flex items-center justify-between p-5">
+        <div>
+          <p className="text-xs text-muted-foreground">{title}</p>
+          <p className="mt-1 text-2xl font-semibold">{value}</p>
+        </div>
+        <div className="flex h-10 w-10 items-center justify-center rounded-md bg-primary/10">
+          <Icon className="h-5 w-5 text-primary" />
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+export function SalesView({ selectedGreenhouse }: ViewProps) {
+  const { data, isLoading, mutate } = useSWR<SaleRow[]>(scoped("/api/sales", selectedGreenhouse), fetcher)
+  const { data: harvests } = useSWR<HarvestOption[]>(scoped("/api/sales?mode=harvests", selectedGreenhouse), fetcher)
+  const rows = data || []
+  const total = useMemo(() => rows.reduce((sum, row) => sum + row.ingresoTotal, 0), [rows])
+  const kg = useMemo(() => rows.reduce((sum, row) => sum + row.cantidadKg, 0), [rows])
+  const [open, setOpen] = useState(false)
+  const [editing, setEditing] = useState<SaleRow | null>(null)
+  const [form, setForm] = useState({
+    idCosecha: "",
+    fechaVenta: today(),
+    cantidadKg: "",
+    precioKg: "",
+    comprador: "",
+    observaciones: "",
+  })
+
+  function openCreate() {
+    setEditing(null)
+    setForm({ idCosecha: "", fechaVenta: today(), cantidadKg: "", precioKg: "", comprador: "", observaciones: "" })
+    setOpen(true)
+  }
+
+  function openEdit(row: SaleRow) {
+    setEditing(row)
+    setForm({
+      idCosecha: row.idCosecha,
+      fechaVenta: row.fechaVenta,
+      cantidadKg: String(row.cantidadKg || ""),
+      precioKg: String(row.precioKg || ""),
+      comprador: row.comprador || "",
+      observaciones: row.observaciones || "",
+    })
+    setOpen(true)
+  }
+
+  async function save() {
+    try {
+      await writeApi("/api/sales", editing ? "PUT" : "POST", {
+        id: editing?.id,
+        ...form,
+        cantidadKg: Number(form.cantidadKg),
+        precioKg: Number(form.precioKg),
+      })
+      toast.success(editing ? "Venta actualizada" : "Venta registrada")
+      setOpen(false)
+      mutate()
+    } catch (err) {
+      toast.error("Error en ventas", { description: err instanceof Error ? err.message : "Error" })
+    }
+  }
+
+  async function remove(id: string) {
+    try {
+      await writeApi("/api/sales", "DELETE", { id })
+      toast.success("Venta eliminada")
+      mutate()
+    } catch (err) {
+      toast.error("Error al eliminar", { description: err instanceof Error ? err.message : "Error" })
+    }
+  }
+
+  if (isLoading) return <Loading />
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold">Ventas de Cosecha</h2>
+            <p className="text-sm text-muted-foreground">Ingresos registrados por cosecha vendida</p>
+          </div>
+          <Dialog open={open} onOpenChange={setOpen}>
+            <DialogTrigger asChild>
+              <Button size="sm" onClick={openCreate}><Plus className="mr-2 h-4 w-4" />Nueva venta</Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader><DialogTitle>{editing ? "Editar venta" : "Registrar venta"}</DialogTitle></DialogHeader>
+              <div className="grid gap-4 py-3">
+                <div className="grid gap-2">
+                  <Label>Cosecha</Label>
+                  <Select value={form.idCosecha} onValueChange={(value) => setForm({ ...form, idCosecha: value })}>
+                    <SelectTrigger><SelectValue placeholder="Seleccionar cosecha" /></SelectTrigger>
+                    <SelectContent>
+                      {(harvests || []).map((harvest) => (
+                        <SelectItem key={harvest.id} value={harvest.id}>
+                          {harvest.cultivoNombre} - {date(harvest.fechaCosecha)} ({number(harvest.cantidadKg, " kg")})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="grid gap-2"><Label>Fecha</Label><Input type="date" value={form.fechaVenta} onChange={(e) => setForm({ ...form, fechaVenta: e.target.value })} /></div>
+                  <div className="grid gap-2"><Label>Kg</Label><Input type="number" min={0} value={form.cantidadKg} onChange={(e) => setForm({ ...form, cantidadKg: e.target.value })} /></div>
+                  <div className="grid gap-2"><Label>Precio/kg</Label><Input type="number" min={0} value={form.precioKg} onChange={(e) => setForm({ ...form, precioKg: e.target.value })} /></div>
+                </div>
+                <div className="grid gap-2"><Label>Comprador</Label><Input value={form.comprador} onChange={(e) => setForm({ ...form, comprador: e.target.value })} /></div>
+                <div className="grid gap-2"><Label>Observaciones</Label><Textarea value={form.observaciones} onChange={(e) => setForm({ ...form, observaciones: e.target.value })} /></div>
+              </div>
+              <DialogFooter><Button onClick={save}>Guardar</Button></DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </div>
+      </div>
+      <div className="grid gap-4 md:grid-cols-3">
+        <SummaryCard title="Ingresos" value={money(total)} icon={Banknote} />
+        <SummaryCard title="Kg vendidos" value={number(kg, " kg")} icon={Package} />
+        <SummaryCard title="Ventas" value={String(rows.length)} icon={ReceiptText} />
+      </div>
+      <Card>
+        <CardHeader><CardTitle className="text-base">Historial</CardTitle></CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Fecha</TableHead>
+                <TableHead>Cultivo</TableHead>
+                <TableHead>Invernadero</TableHead>
+                <TableHead>Kg</TableHead>
+                <TableHead>Precio/kg</TableHead>
+                <TableHead>Total</TableHead>
+                <TableHead>Comprador</TableHead>
+                <TableHead className="w-24">Acciones</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rows.length === 0 ? <EmptyRows colSpan={8} label="No hay ventas registradas" /> : rows.map((row) => (
+                <TableRow key={row.id}>
+                  <TableCell>{date(row.fechaVenta)}</TableCell>
+                  <TableCell>{row.cultivoNombre}</TableCell>
+                  <TableCell>{row.invernaderoNombre}</TableCell>
+                  <TableCell>{number(row.cantidadKg, " kg")}</TableCell>
+                  <TableCell>{money(row.precioKg)}</TableCell>
+                  <TableCell>{money(row.ingresoTotal)}</TableCell>
+                  <TableCell>{row.comprador || "-"}</TableCell>
+                  <TableCell>
+                    <div className="flex gap-1">
+                      <Button variant="ghost" size="icon" onClick={() => openEdit(row)}><Pencil className="h-4 w-4" /></Button>
+                      <Button variant="ghost" size="icon" onClick={() => remove(row.id)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+
+export function CostsView({ selectedGreenhouse }: ViewProps) {
+  const { data, isLoading, mutate } = useSWR<CostRow[]>(scoped("/api/costs", selectedGreenhouse), fetcher)
+  const { data: zones } = useSWR<ZoneOption[]>(scoped("/api/harvests?mode=zones", selectedGreenhouse), fetcher)
+  const { data: crops } = useSWR<CropOption[]>(scoped("/api/crops", selectedGreenhouse), fetcher)
+  const rows = data || []
+  const total = useMemo(() => rows.reduce((sum, row) => sum + row.monto, 0), [rows])
+  const margenTotal = useMemo(() => rows.reduce((sum, row) => sum + Number(row.margenEstimado || 0), 0), [rows])
+  const [open, setOpen] = useState(false)
+  const [editing, setEditing] = useState<CostRow | null>(null)
+  const [form, setForm] = useState({
+    idZona: "",
+    idCultivo: "",
+    concepto: "",
+    monto: "",
+    costoMata: "",
+    cantidadMatas: "",
+    precioMercado: "",
+    unidadPrecioMercado: "lb",
+    fecha: today(),
+    descripcion: "",
+  })
+
+  function openCreate() {
+    setEditing(null)
+    setForm({ idZona: "", idCultivo: "", concepto: "", monto: "", costoMata: "", cantidadMatas: "", precioMercado: "", unidadPrecioMercado: "lb", fecha: today(), descripcion: "" })
+    setOpen(true)
+  }
+
+  function openEdit(row: CostRow) {
+    setEditing(row)
+    setForm({
+      idZona: row.idZona || "",
+      idCultivo: row.idCultivo || "",
+      concepto: row.concepto,
+      monto: String(row.monto || ""),
+      costoMata: String(row.costoMata || ""),
+      cantidadMatas: String(row.cantidadMatas || ""),
+      precioMercado: String(row.precioMercado || ""),
+      unidadPrecioMercado: row.unidadPrecioMercado || "lb",
+      fecha: row.fecha,
+      descripcion: row.descripcion || "",
+    })
+    setOpen(true)
+  }
+
+  async function save() {
+    try {
+      await writeApi("/api/costs", editing ? "PUT" : "POST", {
+        id: editing?.id,
+        ...form,
+        monto: Number(form.monto),
+        costoMata: Number(form.costoMata),
+        cantidadMatas: Number(form.cantidadMatas),
+        precioMercado: Number(form.precioMercado),
+      })
+      toast.success(editing ? "Costo actualizado" : "Costo registrado")
+      setOpen(false)
+      mutate()
+    } catch (err) {
+      toast.error("Error en costos", { description: err instanceof Error ? err.message : "Error" })
+    }
+  }
+
+  async function remove(id: string) {
+    try {
+      await writeApi("/api/costs", "DELETE", { id })
+      toast.success("Costo eliminado")
+      mutate()
+    } catch (err) {
+      toast.error("Error al eliminar", { description: err instanceof Error ? err.message : "Error" })
+    }
+  }
+
+  if (isLoading) return <Loading />
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold">Costos de Cultivo</h2>
+            <p className="text-sm text-muted-foreground">Gastos por zona, cultivo e invernadero</p>
+          </div>
+          <Dialog open={open} onOpenChange={setOpen}>
+            <DialogTrigger asChild>
+              <Button size="sm" onClick={openCreate}><Plus className="mr-2 h-4 w-4" />Nuevo costo</Button>
+            </DialogTrigger>
+            <DialogContent className="max-h-[90vh] overflow-y-auto">
+              <DialogHeader><DialogTitle>{editing ? "Editar costo" : "Registrar costo"}</DialogTitle></DialogHeader>
+              <div className="grid gap-4 py-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="grid gap-2">
+                    <Label>Zona</Label>
+                    <Select value={form.idZona || "none"} onValueChange={(value) => setForm({ ...form, idZona: value === "none" ? "" : value })}>
+                      <SelectTrigger><SelectValue placeholder="Opcional" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Sin zona</SelectItem>
+                        {(zones || []).map((zone) => <SelectItem key={zone.id} value={zone.id}>{zone.nombre} - {zone.cultivoActual}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>Cultivo</Label>
+                    <Select value={form.idCultivo || "none"} onValueChange={(value) => setForm({ ...form, idCultivo: value === "none" ? "" : value })}>
+                      <SelectTrigger><SelectValue placeholder="Opcional" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Sin cultivo</SelectItem>
+                        {(crops || []).map((crop) => <SelectItem key={crop.id} value={crop.id}>{crop.nombre}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <div className="grid gap-2"><Label>Concepto</Label><Input value={form.concepto} onChange={(e) => setForm({ ...form, concepto: e.target.value })} /></div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="grid gap-2"><Label>Monto</Label><Input type="number" min={0} value={form.monto} onChange={(e) => setForm({ ...form, monto: e.target.value })} /></div>
+                  <div className="grid gap-2"><Label>Fecha</Label><Input type="date" value={form.fecha} onChange={(e) => setForm({ ...form, fecha: e.target.value })} /></div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="grid gap-2"><Label>Costo por mata</Label><Input type="number" min={0} value={form.costoMata} onChange={(e) => setForm({ ...form, costoMata: e.target.value, monto: form.monto || String(Number(e.target.value || 0) * Number(form.cantidadMatas || 0)) })} /></div>
+                  <div className="grid gap-2"><Label>Cantidad de matas</Label><Input type="number" min={0} value={form.cantidadMatas} onChange={(e) => setForm({ ...form, cantidadMatas: e.target.value, monto: form.monto || String(Number(form.costoMata || 0) * Number(e.target.value || 0)) })} /></div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="grid gap-2"><Label>Precio de mercado</Label><Input type="number" min={0} value={form.precioMercado} onChange={(e) => setForm({ ...form, precioMercado: e.target.value })} /></div>
+                  <div className="grid gap-2"><Label>Unidad mercado</Label><Input value={form.unidadPrecioMercado} onChange={(e) => setForm({ ...form, unidadPrecioMercado: e.target.value })} placeholder="lb, unidad, caja" /></div>
+                </div>
+                <div className="rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground">
+                  Margen estimado: {money(Number(form.precioMercado || 0) * Number(form.cantidadMatas || 0) - Number(form.monto || 0))}
+                </div>
+                <div className="grid gap-2"><Label>Descripcion</Label><Textarea value={form.descripcion} onChange={(e) => setForm({ ...form, descripcion: e.target.value })} /></div>
+              </div>
+              <DialogFooter><Button onClick={save}>Guardar</Button></DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </div>
+      </div>
+      <div className="grid gap-4 md:grid-cols-3">
+        <SummaryCard title="Costo total" value={money(total)} icon={ReceiptText} />
+        <SummaryCard title="Margen estimado" value={money(margenTotal)} icon={Banknote} />
+        <SummaryCard title="Registros" value={String(rows.length)} icon={ClipboardList} />
+      </div>
+      <Card>
+        <CardHeader><CardTitle className="text-base">Detalle</CardTitle></CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Fecha</TableHead>
+                <TableHead>Concepto</TableHead>
+                <TableHead>Zona/Cultivo</TableHead>
+                <TableHead>Invernadero</TableHead>
+                <TableHead>Monto</TableHead>
+                <TableHead>Margen</TableHead>
+                <TableHead className="w-24">Acciones</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rows.length === 0 ? <EmptyRows colSpan={7} label="No hay costos registrados" /> : rows.map((row) => (
+                <TableRow key={row.id}>
+                  <TableCell>{date(row.fecha)}</TableCell>
+                  <TableCell>{row.concepto}</TableCell>
+                  <TableCell>{row.zonaNombre || row.cultivoNombre || "-"}</TableCell>
+                  <TableCell>{row.invernaderoNombre || "-"}</TableCell>
+                  <TableCell>{money(row.monto)}</TableCell>
+                  <TableCell>
+                    <div className={row.margenEstimado >= 0 ? "text-emerald-500" : "text-red-500"}>{money(row.margenEstimado)}</div>
+                    {row.cantidadMatas > 0 && <div className="text-xs text-muted-foreground">{number(row.cantidadMatas)} matas x {money(row.precioMercado)}/{row.unidadPrecioMercado || "unid."}</div>}
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex gap-1">
+                      <Button variant="ghost" size="icon" onClick={() => openEdit(row)}><Pencil className="h-4 w-4" /></Button>
+                      <Button variant="ghost" size="icon" onClick={() => remove(row.id)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+
+export function ProfitabilityView({ selectedGreenhouse }: ViewProps) {
+  const { data, isLoading } = useSWR<ProfitabilityRow[]>(scoped("/api/profitability", selectedGreenhouse), fetcher)
+  const rows = data || []
+  const totals = useMemo(() => rows.reduce((acc, row) => ({
+    ingresos: acc.ingresos + row.ingresos,
+    costos: acc.costos + row.costos,
+    ganancia: acc.ganancia + row.ganancia,
+    kg: acc.kg + row.kgCosechados,
+  }), { ingresos: 0, costos: 0, ganancia: 0, kg: 0 }), [rows])
+  const greenhouseRanking = useMemo(() => {
+    const grouped = new Map<string, { invernadero: string; ingresos: number; costos: number; ganancia: number; kg: number }>()
+    rows.forEach((row) => {
+      const key = row.invernaderoNombre || "Sin invernadero"
+      const current = grouped.get(key) || { invernadero: key, ingresos: 0, costos: 0, ganancia: 0, kg: 0 }
+      current.ingresos += Number(row.ingresos || 0)
+      current.costos += Number(row.costos || 0)
+      current.ganancia += Number(row.ganancia || 0)
+      current.kg += Number(row.kgCosechados || 0)
+      grouped.set(key, current)
+    })
+    return Array.from(grouped.values()).sort((a, b) => b.ganancia - a.ganancia)
+  }, [rows])
+
+  if (isLoading) return <Loading />
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-lg font-semibold">Rentabilidad</h2>
+        <p className="text-sm text-muted-foreground">Ingresos, costos y margen por cultivo o zona</p>
+      </div>
+      <div className="grid gap-4 md:grid-cols-4">
+        <SummaryCard title="Ingresos" value={money(totals.ingresos)} icon={Banknote} />
+        <SummaryCard title="Costos" value={money(totals.costos)} icon={ReceiptText} />
+        <SummaryCard title="Ganancia" value={money(totals.ganancia)} icon={TrendingUp} />
+        <SummaryCard title="Kg cosechados" value={number(totals.kg, " kg")} icon={Package} />
+      </div>
+      <Card>
+        <CardHeader><CardTitle className="text-base">Ranking de invernaderos</CardTitle></CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Invernadero</TableHead>
+                <TableHead>Kg</TableHead>
+                <TableHead>Ingresos</TableHead>
+                <TableHead>Costos</TableHead>
+                <TableHead>Ganancia</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {greenhouseRanking.length === 0 ? <EmptyRows colSpan={5} label="No hay datos para comparar invernaderos" /> : greenhouseRanking.map((row) => (
+                <TableRow key={row.invernadero}>
+                  <TableCell className="font-medium">{row.invernadero}</TableCell>
+                  <TableCell>{number(row.kg, " kg")}</TableCell>
+                  <TableCell>{money(row.ingresos)}</TableCell>
+                  <TableCell>{money(row.costos)}</TableCell>
+                  <TableCell className={row.ganancia >= 0 ? "text-emerald-500" : "text-red-500"}>{money(row.ganancia)}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader><CardTitle className="text-base">Por unidad productiva</CardTitle></CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Zona</TableHead>
+                <TableHead>Cultivo</TableHead>
+                <TableHead>Ingresos</TableHead>
+                <TableHead>Costos</TableHead>
+                <TableHead>Ganancia</TableHead>
+                <TableHead>Costo/kg</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rows.length === 0 ? <EmptyRows colSpan={6} label="No hay datos suficientes para calcular rentabilidad" /> : rows.map((row) => (
+                <TableRow key={`${row.idZona}-${row.idCultivo}`}>
+                  <TableCell>{row.zonaNombre}</TableCell>
+                  <TableCell>{row.cultivoNombre}</TableCell>
+                  <TableCell>{money(row.ingresos)}</TableCell>
+                  <TableCell>{money(row.costos)}</TableCell>
+                  <TableCell className={row.ganancia >= 0 ? "text-emerald-500" : "text-red-500"}>{money(row.ganancia)}</TableCell>
+                  <TableCell>{money(row.costoPorKg)}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+
+export function AgronomicPlanView({ selectedGreenhouse }: ViewProps) {
+  const { data, isLoading, mutate } = useSWR<PlanRow[]>(scoped("/api/agronomic-plan", selectedGreenhouse), fetcher)
+  const rows = data || []
+  const [open, setOpen] = useState(false)
+  const [editing, setEditing] = useState<PlanRow | null>(null)
+  const [form, setForm] = useState({ idCultivo: "", densidadPlantasM2: "", sustratoSuelo: "", observaciones: "" })
+
+  function openEdit(row: PlanRow) {
+    setEditing(row)
+    setForm({
+      idCultivo: row.idCultivo,
+      densidadPlantasM2: row.densidadPlantasM2 || "",
+      sustratoSuelo: row.sustratoSuelo || "",
+      observaciones: row.observaciones || "",
+    })
+    setOpen(true)
+  }
+
+  async function save() {
+    try {
+      await writeApi("/api/agronomic-plan", editing?.idPerfil ? "PUT" : "POST", form)
+      toast.success("Perfil agronomico guardado")
+      setOpen(false)
+      mutate()
+    } catch (err) {
+      toast.error("Error en plan agronomico", { description: err instanceof Error ? err.message : "Error" })
+    }
+  }
+
+  async function remove(idPerfil: string) {
+    try {
+      await writeApi("/api/agronomic-plan", "DELETE", { idPerfil })
+      toast.success("Perfil eliminado")
+      mutate()
+    } catch (err) {
+      toast.error("Error al eliminar", { description: err instanceof Error ? err.message : "Error" })
+    }
+  }
+
+  if (isLoading) return <Loading />
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-lg font-semibold">Plan Agronomico</h2>
+        <p className="text-sm text-muted-foreground">Densidad, sustrato, fertirriego, manejo y sanidad por cultivo</p>
+        <Dialog open={open} onOpenChange={setOpen}>
+          <DialogContent>
+            <DialogHeader><DialogTitle>Editar perfil agronomico</DialogTitle></DialogHeader>
+            <div className="grid gap-4 py-3">
+              <div className="grid gap-2"><Label>Cultivo</Label><Input value={editing?.cultivoNombre || ""} disabled /></div>
+              <div className="grid gap-2"><Label>Densidad plantas/m2</Label><Input value={form.densidadPlantasM2} onChange={(e) => setForm({ ...form, densidadPlantasM2: e.target.value })} /></div>
+              <div className="grid gap-2"><Label>Sustrato/suelo</Label><Textarea value={form.sustratoSuelo} onChange={(e) => setForm({ ...form, sustratoSuelo: e.target.value })} /></div>
+              <div className="grid gap-2"><Label>Observaciones</Label><Textarea value={form.observaciones} onChange={(e) => setForm({ ...form, observaciones: e.target.value })} /></div>
+            </div>
+            <DialogFooter><Button onClick={save}>Guardar</Button></DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
+      <div className="grid gap-4 xl:grid-cols-2">
+        {rows.length === 0 ? (
+          <Card><CardContent className="p-8 text-center text-sm text-muted-foreground">No hay perfiles agronomicos cargados</CardContent></Card>
+        ) : rows.map((row) => (
+          <Card key={row.idCultivo}>
+            <CardHeader>
+              <CardTitle className="flex items-center justify-between gap-3 text-base">
+                <span>{row.cultivoNombre}</span>
+                <Badge variant={row.idPerfil ? "default" : "outline"}>{row.idPerfil ? "Perfil" : "Sin perfil"}</Badge>
+              </CardTitle>
+              <p className="text-xs text-muted-foreground">{row.variedad || "-"} · {row.invernaderoNombre}</p>
+            </CardHeader>
+            <CardContent className="space-y-3 text-sm">
+              <p><span className="text-muted-foreground">Densidad:</span> {row.densidadPlantasM2 || "No definida"}</p>
+              <p><span className="text-muted-foreground">Sustrato/suelo:</span> {row.sustratoSuelo || "No definido"}</p>
+              <p className="whitespace-pre-line"><span className="text-muted-foreground">Fertirriego:</span> {row.fertilizacion || "No definido"}</p>
+              <p className="whitespace-pre-line"><span className="text-muted-foreground">Manejo:</span> {row.manejo || "No definido"}</p>
+              <p><span className="text-muted-foreground">Sanidad:</span> {row.sanidad || "No definida"}</p>
+              <div className="flex gap-2 pt-2">
+                <Button variant="outline" size="sm" onClick={() => openEdit(row)}><Pencil className="mr-2 h-4 w-4" />Editar</Button>
+                {row.idPerfil && <Button variant="outline" size="sm" onClick={() => remove(row.idPerfil)}><Trash2 className="mr-2 h-4 w-4 text-destructive" />Eliminar perfil</Button>}
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+export function ApplicationsView({ selectedGreenhouse }: ViewProps) {
+  const { data, isLoading, mutate } = useSWR<ApplicationRow[]>(scoped("/api/applications", selectedGreenhouse), fetcher)
+  const { data: details } = useSWR<DetailOption[]>(scoped("/api/harvests?mode=details", selectedGreenhouse), fetcher)
+  const rows = data || []
+  const [open, setOpen] = useState(false)
+  const [editing, setEditing] = useState<ApplicationRow | null>(null)
+  const [form, setForm] = useState({ idDetalle: "", tipoPlaga: "", producto: "", dosis: "", fecha: today(), notas: "" })
+
+  function openCreate() {
+    setEditing(null)
+    setForm({ idDetalle: "", tipoPlaga: "", producto: "", dosis: "", fecha: today(), notas: "" })
+    setOpen(true)
+  }
+
+  function openEdit(row: ApplicationRow) {
+    if (!row.id.startsWith("plaga-")) {
+      toast.info("Las aplicaciones de fertilizante se editan desde el plan de fertilizacion")
+      return
+    }
+    setEditing(row)
+    setForm({
+      idDetalle: row.idDetalle,
+      tipoPlaga: row.tipoPlaga || "",
+      producto: row.producto || "",
+      dosis: row.dosis || "",
+      fecha: row.fecha,
+      notas: row.notas || "",
+    })
+    setOpen(true)
+  }
+
+  async function save() {
+    try {
+      await writeApi("/api/applications", editing ? "PUT" : "POST", { id: editing?.id, ...form })
+      toast.success(editing ? "Aplicacion actualizada" : "Aplicacion registrada")
+      setOpen(false)
+      mutate()
+    } catch (err) {
+      toast.error("Error en aplicaciones", { description: err instanceof Error ? err.message : "Error" })
+    }
+  }
+
+  async function remove(id: string) {
+    try {
+      await writeApi("/api/applications", "DELETE", { id })
+      toast.success("Aplicacion eliminada")
+      mutate()
+    } catch (err) {
+      toast.error("Error al eliminar", { description: err instanceof Error ? err.message : "Error" })
+    }
+  }
+
+  if (isLoading) return <Loading />
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold">Aplicaciones</h2>
+            <p className="text-sm text-muted-foreground">Fertilizacion y control de plagas aplicados en campo</p>
+          </div>
+          <Dialog open={open} onOpenChange={setOpen}>
+            <DialogTrigger asChild>
+              <Button size="sm" onClick={openCreate}><Plus className="mr-2 h-4 w-4" />Nueva aplicacion</Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader><DialogTitle>{editing ? "Editar aplicacion" : "Registrar aplicacion"}</DialogTitle></DialogHeader>
+              <div className="grid gap-4 py-3">
+                <div className="grid gap-2">
+                  <Label>Cultivo</Label>
+                  <Select value={form.idDetalle} onValueChange={(value) => setForm({ ...form, idDetalle: value })}>
+                    <SelectTrigger><SelectValue placeholder="Seleccionar cultivo" /></SelectTrigger>
+                    <SelectContent>
+                      {(details || []).map((detail) => <SelectItem key={detail.id} value={detail.id}>{detail.cultivoNombre} - {detail.invernaderoNombre}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="grid gap-2"><Label>Tipo plaga/enfermedad</Label><Input value={form.tipoPlaga} onChange={(e) => setForm({ ...form, tipoPlaga: e.target.value })} /></div>
+                  <div className="grid gap-2"><Label>Fecha</Label><Input type="date" value={form.fecha} onChange={(e) => setForm({ ...form, fecha: e.target.value })} /></div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="grid gap-2"><Label>Producto</Label><Input value={form.producto} onChange={(e) => setForm({ ...form, producto: e.target.value })} /></div>
+                  <div className="grid gap-2"><Label>Dosis</Label><Input value={form.dosis} onChange={(e) => setForm({ ...form, dosis: e.target.value })} /></div>
+                </div>
+                <div className="grid gap-2"><Label>Notas</Label><Textarea value={form.notas} onChange={(e) => setForm({ ...form, notas: e.target.value })} /></div>
+              </div>
+              <DialogFooter><Button onClick={save}>Guardar</Button></DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </div>
+      </div>
+      <Card>
+        <CardContent className="pt-6">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Fecha</TableHead>
+                <TableHead>Tipo</TableHead>
+                <TableHead>Cultivo</TableHead>
+                <TableHead>Producto</TableHead>
+                <TableHead>Dosis</TableHead>
+                <TableHead>Cantidad</TableHead>
+                <TableHead className="w-24">Acciones</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rows.length === 0 ? <EmptyRows colSpan={7} label="No hay aplicaciones registradas" /> : rows.map((row) => (
+                <TableRow key={row.id}>
+                  <TableCell>{date(row.fecha)}</TableCell>
+                  <TableCell><Badge variant="outline">{row.tipo}</Badge></TableCell>
+                  <TableCell>{row.cultivoNombre}</TableCell>
+                  <TableCell>{row.producto || "-"}</TableCell>
+                  <TableCell>{row.dosis || "-"}</TableCell>
+                  <TableCell>{row.cantidad || "-"}</TableCell>
+                  <TableCell>
+                    {row.id.startsWith("plaga-") ? (
+                      <div className="flex gap-1">
+                        <Button variant="ghost" size="icon" onClick={() => openEdit(row)}><Pencil className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" onClick={() => remove(row.id)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
+                      </div>
+                    ) : "-"}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+
+export function FarmCalendarView({ selectedGreenhouse }: ViewProps) {
+  const { data, isLoading, mutate } = useSWR<CalendarRow[]>(scoped("/api/farm-calendar", selectedGreenhouse), fetcher)
+  const { data: users } = useSWR<UserOption[]>("/api/users", fetcher)
+  const rows = data || []
+  const [open, setOpen] = useState(false)
+  const [editing, setEditing] = useState<CalendarRow | null>(null)
+  const [form, setForm] = useState({
+    titulo: "",
+    descripcion: "",
+    frecuencia: "unica",
+    proximaEjecucion: today(),
+    responsable: "",
+    estado: "Activa",
+  })
+
+  function openCreate() {
+    setEditing(null)
+    setForm({ titulo: "", descripcion: "", frecuencia: "unica", proximaEjecucion: today(), responsable: users?.[0]?.id || "", estado: "Activa" })
+    setOpen(true)
+  }
+
+  function openEdit(row: CalendarRow) {
+    if (!row.id.startsWith("tarea-")) {
+      toast.info("Las cosechas estimadas se editan desde Zonas de Riego")
+      return
+    }
+    setEditing(row)
+    setForm({
+      titulo: row.titulo,
+      descripcion: row.descripcion || "",
+      frecuencia: row.tipo || "unica",
+      proximaEjecucion: row.fecha,
+      responsable: row.responsable || users?.[0]?.id || "",
+      estado: row.estado || "Activa",
+    })
+    setOpen(true)
+  }
+
+  async function save() {
+    try {
+      await writeApi("/api/farm-calendar", editing ? "PUT" : "POST", { id: editing?.id, ...form })
+      toast.success(editing ? "Tarea actualizada" : "Tarea creada")
+      setOpen(false)
+      mutate()
+    } catch (err) {
+      toast.error("Error en calendario", { description: err instanceof Error ? err.message : "Error" })
+    }
+  }
+
+  async function remove(id: string) {
+    try {
+      await writeApi("/api/farm-calendar", "DELETE", { id })
+      toast.success("Tarea eliminada")
+      mutate()
+    } catch (err) {
+      toast.error("Error al eliminar", { description: err instanceof Error ? err.message : "Error" })
+    }
+  }
+
+  if (isLoading) return <Loading />
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold">Calendario Agricola</h2>
+            <p className="text-sm text-muted-foreground">Tareas programadas y cosechas estimadas</p>
+          </div>
+          <Dialog open={open} onOpenChange={setOpen}>
+            <DialogTrigger asChild>
+              <Button size="sm" onClick={openCreate}><Plus className="mr-2 h-4 w-4" />Nueva tarea</Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader><DialogTitle>{editing ? "Editar tarea" : "Crear tarea"}</DialogTitle></DialogHeader>
+              <div className="grid gap-4 py-3">
+                <div className="grid gap-2"><Label>Titulo</Label><Input value={form.titulo} onChange={(e) => setForm({ ...form, titulo: e.target.value })} /></div>
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="grid gap-2"><Label>Frecuencia</Label><Input value={form.frecuencia} onChange={(e) => setForm({ ...form, frecuencia: e.target.value })} /></div>
+                  <div className="grid gap-2"><Label>Fecha</Label><Input type="date" value={form.proximaEjecucion} onChange={(e) => setForm({ ...form, proximaEjecucion: e.target.value })} /></div>
+                  <div className="grid gap-2"><Label>Estado</Label><Input value={form.estado} onChange={(e) => setForm({ ...form, estado: e.target.value })} /></div>
+                </div>
+                <div className="grid gap-2">
+                  <Label>Responsable</Label>
+                  <Select value={form.responsable} onValueChange={(value) => setForm({ ...form, responsable: value })}>
+                    <SelectTrigger><SelectValue placeholder="Seleccionar responsable" /></SelectTrigger>
+                    <SelectContent>
+                      {(users || []).map((user) => <SelectItem key={user.id} value={user.id}>{user.nombre}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="grid gap-2"><Label>Descripcion</Label><Textarea value={form.descripcion} onChange={(e) => setForm({ ...form, descripcion: e.target.value })} /></div>
+              </div>
+              <DialogFooter><Button onClick={save}>Guardar</Button></DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </div>
+      </div>
+      <div className="grid gap-3">
+        {rows.length === 0 ? (
+          <Card><CardContent className="p-8 text-center text-sm text-muted-foreground">No hay eventos programados</CardContent></Card>
+        ) : rows.map((row) => (
+          <Card key={row.id}>
+            <CardContent className="flex items-start gap-4 p-4">
+              <div className="flex h-10 w-10 items-center justify-center rounded-md bg-primary/10">
+                <CalendarDays className="h-5 w-5 text-primary" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="font-medium">{row.titulo}</p>
+                  <Badge variant="outline">{row.tipo}</Badge>
+                  {row.estado && <Badge variant="secondary">{row.estado}</Badge>}
+                </div>
+                <p className="mt-1 text-sm text-muted-foreground">{date(row.fecha)} · {row.zonaNombre || row.cultivoNombre || "General"}</p>
+                {row.descripcion && <p className="mt-2 text-sm">{row.descripcion}</p>}
+                {row.id.startsWith("tarea-") && (
+                  <div className="mt-3 flex gap-2">
+                    <Button variant="outline" size="sm" onClick={() => openEdit(row)}><Pencil className="mr-2 h-4 w-4" />Editar</Button>
+                    <Button variant="outline" size="sm" onClick={() => remove(row.id)}><Trash2 className="mr-2 h-4 w-4 text-destructive" />Eliminar</Button>
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+export function InventoryView({}: ViewProps) {
+  const { data, isLoading, mutate } = useSWR<InventoryRow[]>("/api/inventory", fetcher)
+  const rows = data || []
+  const [open, setOpen] = useState(false)
+  const [editing, setEditing] = useState<InventoryRow | null>(null)
+  const [form, setForm] = useState({
+    nombre: "",
+    tipo: "",
+    composicion: "",
+    fabricante: "",
+    ph: "",
+    nitrogeno: "",
+    fosforo: "",
+    potasio: "",
+    micronutrientes: "",
+    formaAplicacion: "",
+    riesgos: "",
+  })
+
+  function openCreate() {
+    setEditing(null)
+    setForm({ nombre: "", tipo: "", composicion: "", fabricante: "", ph: "", nitrogeno: "", fosforo: "", potasio: "", micronutrientes: "", formaAplicacion: "", riesgos: "" })
+    setOpen(true)
+  }
+
+  function openEdit(row: InventoryRow) {
+    setEditing(row)
+    setForm({
+      nombre: row.nombre,
+      tipo: row.tipo,
+      composicion: row.composicion || "",
+      fabricante: row.fabricante || "",
+      ph: row.ph != null ? String(row.ph) : "",
+      nitrogeno: row.nitrogeno != null ? String(row.nitrogeno) : "",
+      fosforo: row.fosforo != null ? String(row.fosforo) : "",
+      potasio: row.potasio != null ? String(row.potasio) : "",
+      micronutrientes: row.micronutrientes || "",
+      formaAplicacion: row.formaAplicacion || "",
+      riesgos: row.riesgos || "",
+    })
+    setOpen(true)
+  }
+
+  async function save() {
+    try {
+      await writeApi("/api/inventory", editing ? "PUT" : "POST", { id: editing?.id, ...form })
+      toast.success(editing ? "Producto actualizado" : "Producto registrado")
+      setOpen(false)
+      mutate()
+    } catch (err) {
+      toast.error("Error en inventario", { description: err instanceof Error ? err.message : "Error" })
+    }
+  }
+
+  async function remove(id: string) {
+    try {
+      await writeApi("/api/inventory", "DELETE", { id })
+      toast.success("Producto eliminado")
+      mutate()
+    } catch (err) {
+      toast.error("Error al eliminar", { description: err instanceof Error ? err.message : "Error" })
+    }
+  }
+
+  if (isLoading) return <Loading />
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold">Inventario Agricola</h2>
+            <p className="text-sm text-muted-foreground">Fertilizantes y productos disponibles en el sistema</p>
+          </div>
+          <Dialog open={open} onOpenChange={setOpen}>
+            <DialogTrigger asChild>
+              <Button size="sm" onClick={openCreate}><Plus className="mr-2 h-4 w-4" />Nuevo producto</Button>
+            </DialogTrigger>
+            <DialogContent className="max-h-[90vh] overflow-y-auto">
+              <DialogHeader><DialogTitle>{editing ? "Editar producto" : "Registrar producto"}</DialogTitle></DialogHeader>
+              <div className="grid gap-4 py-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="grid gap-2"><Label>Nombre</Label><Input value={form.nombre} onChange={(e) => setForm({ ...form, nombre: e.target.value })} /></div>
+                  <div className="grid gap-2"><Label>Tipo</Label><Input value={form.tipo} onChange={(e) => setForm({ ...form, tipo: e.target.value })} /></div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="grid gap-2"><Label>Composicion</Label><Input value={form.composicion} onChange={(e) => setForm({ ...form, composicion: e.target.value })} /></div>
+                  <div className="grid gap-2"><Label>Fabricante</Label><Input value={form.fabricante} onChange={(e) => setForm({ ...form, fabricante: e.target.value })} /></div>
+                </div>
+                <div className="grid grid-cols-4 gap-3">
+                  <div className="grid gap-2"><Label>pH</Label><Input type="number" step="0.1" value={form.ph} onChange={(e) => setForm({ ...form, ph: e.target.value })} /></div>
+                  <div className="grid gap-2"><Label>N</Label><Input type="number" step="0.1" value={form.nitrogeno} onChange={(e) => setForm({ ...form, nitrogeno: e.target.value })} /></div>
+                  <div className="grid gap-2"><Label>P</Label><Input type="number" step="0.1" value={form.fosforo} onChange={(e) => setForm({ ...form, fosforo: e.target.value })} /></div>
+                  <div className="grid gap-2"><Label>K</Label><Input type="number" step="0.1" value={form.potasio} onChange={(e) => setForm({ ...form, potasio: e.target.value })} /></div>
+                </div>
+                <div className="grid gap-2"><Label>Micronutrientes</Label><Input value={form.micronutrientes} onChange={(e) => setForm({ ...form, micronutrientes: e.target.value })} /></div>
+                <div className="grid gap-2"><Label>Forma de aplicacion</Label><Input value={form.formaAplicacion} onChange={(e) => setForm({ ...form, formaAplicacion: e.target.value })} /></div>
+                <div className="grid gap-2"><Label>Riesgos</Label><Textarea value={form.riesgos} onChange={(e) => setForm({ ...form, riesgos: e.target.value })} /></div>
+              </div>
+              <DialogFooter><Button onClick={save}>Guardar</Button></DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </div>
+      </div>
+      <Card>
+        <CardContent className="pt-6">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Producto</TableHead>
+                <TableHead>Tipo</TableHead>
+                <TableHead>Composicion</TableHead>
+                <TableHead>NPK</TableHead>
+                <TableHead>Aplicacion</TableHead>
+                <TableHead className="w-24">Acciones</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rows.length === 0 ? <EmptyRows colSpan={6} label="No hay productos registrados" /> : rows.map((row) => (
+                <TableRow key={row.id}>
+                  <TableCell>
+                    <div>
+                      <p className="font-medium">{row.nombre}</p>
+                      <p className="text-xs text-muted-foreground">{row.fabricante || "-"}</p>
+                    </div>
+                  </TableCell>
+                  <TableCell>{row.tipo}</TableCell>
+                  <TableCell>{row.composicion || "-"}</TableCell>
+                  <TableCell>
+                    {row.nitrogeno ?? "-"} / {row.fosforo ?? "-"} / {row.potasio ?? "-"}
+                  </TableCell>
+                  <TableCell>{row.formaAplicacion || "-"}</TableCell>
+                  <TableCell>
+                    <div className="flex gap-1">
+                      <Button variant="ghost" size="icon" onClick={() => openEdit(row)}><Pencil className="h-4 w-4" /></Button>
+                      <Button variant="ghost" size="icon" onClick={() => remove(row.id)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+    </div>
+  )
+}

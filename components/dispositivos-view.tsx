@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from "react"
 import useSWR from "swr"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -284,7 +284,7 @@ export function DispositivosView() {
     }
   }, [targetIps])
 
-  const useDiscoveredDevice = useCallback((device: DiscoveredDevice) => {
+  const handleUseDiscoveredDevice = useCallback((device: DiscoveredDevice) => {
     setFormData((current) => ({
       ...current,
       nombre: current.nombre || device.deviceName || `ESP32 ${device.ip}`,
@@ -482,7 +482,9 @@ export function DispositivosView() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline">Cancelar</Button>
+            <DialogClose asChild>
+              <Button variant="outline" disabled={saving}>Cancelar</Button>
+            </DialogClose>
             <Button onClick={handleSubmit} disabled={saving}>
               {saving ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Guardando...</> : editMode ? "Actualizar" : "Crear"}
             </Button>
@@ -502,7 +504,10 @@ export function DispositivosView() {
             </p>
           </div>
           <DialogFooter>
-            <Button variant="destructive" onClick={handleDelete} disabled={deleting}>
+            <DialogClose asChild>
+              <Button variant="outline" disabled={deleting}>Cancelar</Button>
+            </DialogClose>
+            <Button variant="destructive" onClick={handleDelete} disabled={deleting || !deletingDevice}>
               {deleting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Eliminando...</> : "Eliminar"}
             </Button>
           </DialogFooter>
@@ -584,7 +589,7 @@ export function DispositivosView() {
                           </Badge>
                         </TableCell>
                         <TableCell className="text-right">
-                          <Button size="sm" variant="outline" onClick={() => useDiscoveredDevice(device)}>
+                          <Button size="sm" variant="outline" onClick={() => handleUseDiscoveredDevice(device)}>
                             Usar
                           </Button>
                         </TableCell>

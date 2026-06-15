@@ -17,6 +17,7 @@ import {
   Pencil,
   Eye,
   Sparkles,
+  Trash2,
 } from "lucide-react"
 import type { UserRole } from "@/lib/greensense-data"
 import { api, fetcher } from "@/lib/api-client"
@@ -30,6 +31,16 @@ import {
   DialogFooter,
   DialogClose,
 } from "@/components/ui/dialog"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
 import {
@@ -183,7 +194,7 @@ export function SensorsView({ selectedGreenhouse, userRole }: SensorsViewProps) 
   const { data: sensors, isLoading, mutate } = useSWR<SensorData[]>(
     selectedGreenhouse ? `/api/sensors?greenhouse=${selectedGreenhouse}` : null,
     fetcher,
-    { refreshInterval: 3000 }
+    { refreshInterval: 5000 }
   )
   const { data: greenhouses } = useSWR<Invernadero[]>("/api/greenhouses", fetcher)
   const { data: zones } = useSWR<ZonaOption[]>(
@@ -210,6 +221,8 @@ export function SensorsView({ selectedGreenhouse, userRole }: SensorsViewProps) 
   const [savingMarca, setSavingMarca] = useState(false)
   const [savingModelo, setSavingModelo] = useState(false)
   const [savingTipoSensor, setSavingTipoSensor] = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState<SensorData | null>(null)
+  const [deleting, setDeleting] = useState(false)
 
   const { data: allModelos, mutate: mutateModelos } = useSWR<Modelo[]>("/api/modelos", fetcher, { refreshInterval: 0 })
   
@@ -372,6 +385,25 @@ export function SensorsView({ selectedGreenhouse, userRole }: SensorsViewProps) 
       setSaving(false)
     }
   }, [formData, idMarca, idModelo, editMode, editingSensor, mutate, resetForm])
+
+  const handleDeleteSensor = useCallback(async () => {
+    if (!deleteTarget) return
+
+    setDeleting(true)
+    try {
+      await api.deleteSensor(deleteTarget.id)
+      toast.success("Sensor eliminado", { description: deleteTarget.nombre || deleteTarget.tipo })
+      setDeleteTarget(null)
+      if (selectedSensor?.id === deleteTarget.id) {
+        setSelectedSensor(null)
+      }
+      mutate()
+    } catch (err) {
+      toast.error("Error al eliminar", { description: err instanceof Error ? err.message : "Error" })
+    } finally {
+      setDeleting(false)
+    }
+  }, [deleteTarget, mutate, selectedSensor])
 
   if (isLoading && !sensors && !selectedSensor) {
     return (
@@ -772,9 +804,14 @@ export function SensorsView({ selectedGreenhouse, userRole }: SensorsViewProps) 
                       <Eye className="mr-1 h-3 w-3" />Ver
                     </Button>
                     {isAdmin && (
-                      <Button variant="outline" size="sm" className="h-7" onClick={() => openEditDialog(sensor)}>
-                        <Pencil className="mr-1 h-3 w-3" />Editar
-                      </Button>
+                      <>
+                        <Button variant="outline" size="sm" className="h-7" onClick={() => openEditDialog(sensor)}>
+                          <Pencil className="mr-1 h-3 w-3" />Editar
+                        </Button>
+                        <Button variant="outline" size="sm" className="h-7 text-destructive hover:text-destructive" onClick={() => setDeleteTarget(sensor)}>
+                          <Trash2 className="mr-1 h-3 w-3" />Eliminar
+                        </Button>
+                      </>
                     )}
                   </div>
                 </CardContent>
@@ -798,6 +835,32 @@ export function SensorsView({ selectedGreenhouse, userRole }: SensorsViewProps) 
           </Card>
         )}
       </div>
+
+      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null) }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-foreground">Eliminar Sensor</AlertDialogTitle>
+            <AlertDialogDescription>
+              Esta accion eliminara el sensor{" "}
+              <strong className="text-foreground">{deleteTarget?.nombre || deleteTarget?.tipo}</strong>,
+              sus lecturas y sus alertas registradas. No se puede deshacer.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(event) => {
+                event.preventDefault()
+                handleDeleteSensor()
+              }}
+              disabled={deleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Eliminando...</> : "Eliminar"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

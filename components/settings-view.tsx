@@ -99,6 +99,21 @@ const defaultSettings: SettingsState = {
   rateLimit: 100,
 };
 
+function parseSettingBool(value: unknown, fallback: boolean) {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (["true", "1", "si", "sí", "yes", "on"].includes(normalized)) return true;
+    if (["false", "0", "no", "off"].includes(normalized)) return false;
+  }
+  return fallback;
+}
+
+function parseSettingNumber(value: unknown, fallback: number) {
+  const numberValue = Number(value);
+  return Number.isFinite(numberValue) ? numberValue : fallback;
+}
+
 interface DeviceState {
   id: string;
   nombre: string;
@@ -176,11 +191,18 @@ export function SettingsView() {
             ? String(serverSettings.autoIrrigation).toLowerCase() === "true"
             : prev.autoIrrigation,
         sensorInterval:
-          (serverSettings.lecturaIntervalo as number) || prev.sensorInterval,
+          parseSettingNumber(serverSettings.lecturaIntervalo, prev.sensorInterval),
         connectionTimeout:
-          (serverSettings.connectionTimeout as number) || prev.connectionTimeout,
-        emailAlerts: (serverSettings.notifEmail as boolean) ?? prev.emailAlerts,
-        smsAlerts: (serverSettings.notifSms as boolean) ?? prev.smsAlerts,
+          parseSettingNumber(serverSettings.connectionTimeout, prev.connectionTimeout),
+        emailAlerts: parseSettingBool(serverSettings.notifEmail, prev.emailAlerts),
+        smsAlerts: parseSettingBool(serverSettings.notifSms, prev.smsAlerts),
+        criticalOnly: parseSettingBool(serverSettings.alertaCritica, prev.criticalOnly),
+        alertEmail: (serverSettings.alertEmail as string) || prev.alertEmail,
+        alertPhone: (serverSettings.alertPhone as string) || prev.alertPhone,
+        jwtDuration: parseSettingNumber(serverSettings.sesionTimeout, prev.jwtDuration * 60) / 60,
+        refreshDuration: parseSettingNumber(serverSettings.refreshDuration, prev.refreshDuration),
+        maxLoginAttempts: parseSettingNumber(serverSettings.maxLoginAttempts, prev.maxLoginAttempts),
+        lockoutMinutes: parseSettingNumber(serverSettings.lockoutMinutes, prev.lockoutMinutes),
       }));
     }
   }, [serverSettings]);
@@ -224,7 +246,12 @@ export function SettingsView() {
         notifEmail: settings.emailAlerts,
         notifSms: settings.smsAlerts,
         alertaCritica: settings.criticalOnly,
+        alertEmail: settings.alertEmail,
+        alertPhone: settings.alertPhone,
         sesionTimeout: settings.jwtDuration * 60,
+        refreshDuration: settings.refreshDuration,
+        maxLoginAttempts: settings.maxLoginAttempts,
+        lockoutMinutes: settings.lockoutMinutes,
       });
       mutateSettings();
       toast.success("Configuracion guardada", {
@@ -258,7 +285,12 @@ export function SettingsView() {
         notifEmail: settings.emailAlerts,
         notifSms: settings.smsAlerts,
         alertaCritica: settings.criticalOnly,
+        alertEmail: settings.alertEmail,
+        alertPhone: settings.alertPhone,
         sesionTimeout: settings.jwtDuration * 60,
+        refreshDuration: settings.refreshDuration,
+        maxLoginAttempts: settings.maxLoginAttempts,
+        lockoutMinutes: settings.lockoutMinutes,
       });
       mutateSettings();
       toast.success(`Seccion "${section}" guardada`, {
@@ -386,8 +418,7 @@ export function SettingsView() {
   "codigoDispositivo": "ESP32-INV-A-01",
   "tipo": "temperatura",
   "valor": 27.4,
-  "unidad": "C",
-  "timestamp": "2026-04-05T14:30:00Z"
+  "unidad": "C"
 }`;
   const exampleCurl = `curl -X POST "${exampleBaseUrl}/api/iot/readings" \\
   -H "Content-Type: application/json" \\
@@ -1047,7 +1078,8 @@ export function SettingsView() {
                   La forma recomendada es enviar `codigoDispositivo + tipo`. El
                   backend buscara el sensor asociado, guardara la lectura en
                   `LecturasSensores` y actualizara `ultimo_reporte` del
-                  dispositivo.
+                  dispositivo. La fecha y hora se asignan automaticamente al
+                  momento de recibir la lectura.
                 </div>
               </CardContent>
             </Card>

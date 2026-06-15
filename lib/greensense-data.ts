@@ -33,12 +33,31 @@ export interface Cultivo {
   variedad: string
   invernaderoId: string
   fechaSiembra: string
+  umbralHumedad?: number
+  umbralTemperatura?: number
+  umbralPh?: number
+  umbralEc?: number
+  umbralTds?: number
+  aguaLitrosPorMataDia?: number
+  rendimientoPorMata?: number
+  unidadRendimiento?: string
+  fertilizantes?: string
+  abonos?: string
+  plagasComunes?: string
+  tratamientoRecomendado?: string
+  mejoresMeses?: string
+  recomendacionSiembra?: string
+  esCatalogo?: boolean
   detalle?: {
     id: string
     fechaCosechaEstimada: string
     tiempoGerminacionDias: number
     tiempoCrecimientoDias: number
     tiempoCosechaDias: number
+    umbralHumedad?: number
+    umbralPh?: number
+    umbralEc?: number
+    umbralTds?: number
     notas: string
   }
 }

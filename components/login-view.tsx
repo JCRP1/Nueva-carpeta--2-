@@ -6,14 +6,14 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
-import { Leaf, Eye, EyeOff, Loader2, Shield, Wrench, Sprout } from "lucide-react"
+import { Building2, Leaf, Eye, EyeOff, Loader2, Shield, Wrench, Sprout } from "lucide-react"
 import type { User } from "@/lib/greensense-data"
 import { api } from "@/lib/api-client"
 
 const quickAccess = [
-  { email: "carlos@greensense.io", password: "admin123", nombre: "Carlos Martinez", rol: "administrador" as const },
-  { email: "maria@greensense.io", password: "tecnico123", nombre: "Maria Lopez", rol: "tecnico" as const },
-  { email: "juan@greensense.io", password: "agri123", nombre: "Juan Perez", rol: "agricultor" as const },
+  { empresaCodigo: "EMP-0001", email: "carlos@greensense.io", password: "admin123", nombre: "Carlos Martinez", rol: "administrador" as const },
+  { empresaCodigo: "EMP-0001", email: "maria@greensense.io", password: "tecnico123", nombre: "Maria Lopez", rol: "tecnico" as const },
+  { empresaCodigo: "EMP-0001", email: "juan@greensense.io", password: "agri123", nombre: "Juan Perez", rol: "agricultor" as const },
 ]
 
 interface LoginViewProps {
@@ -23,24 +23,37 @@ interface LoginViewProps {
 export function LoginView({ onLogin }: LoginViewProps) {
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [empresaCodigo, setEmpresaCodigo] = useState("")
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [error, setError] = useState("")
-  const [view, setView] = useState<"login" | "forgot">("login")
+  const [view, setView] = useState<"login" | "forgot" | "company">("login")
   const [forgotEmail, setForgotEmail] = useState("")
   const [forgotSent, setForgotSent] = useState(false)
   const [welcomeMessage, setWelcomeMessage] = useState("")
+  const [companyCreated, setCompanyCreated] = useState("")
+  const [companyForm, setCompanyForm] = useState({
+    adminEmail: "",
+    adminPassword: "",
+    nombre: "",
+    rnc: "",
+    correo: "",
+    telefono: "",
+    userName: "",
+    userEmail: "",
+    userPassword: "",
+  })
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault()
     setError("")
-    if (!email || !password) {
+    if (!empresaCodigo || !email || !password) {
       setError("Complete todos los campos")
       return
     }
     setLoading(true)
     try {
-      const res = await api.login(email, password)
+      const res = await api.login(email, password, empresaCodigo)
       const msg = res.message || ""
       onLogin(res.user as unknown as User, msg)
     } catch (err: unknown) {
@@ -50,12 +63,13 @@ export function LoginView({ onLogin }: LoginViewProps) {
   }
 
   async function handleQuickLogin(cred: typeof quickAccess[number]) {
+    setEmpresaCodigo(cred.empresaCodigo)
     setEmail(cred.email)
     setPassword(cred.password)
     setLoading(true)
     setError("")
     try {
-      const res = await api.login(cred.email, cred.password)
+      const res = await api.login(cred.email, cred.password, cred.empresaCodigo)
       onLogin(res.user as unknown as User, "")
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Error al iniciar sesion. Ejecute npm run db:seed primero.")
@@ -75,6 +89,60 @@ export function LoginView({ onLogin }: LoginViewProps) {
         setError(err instanceof Error ? err.message : "No se pudo enviar el correo")
       })
       .finally(() => setLoading(false))
+  }
+
+  function updateCompanyField(field: keyof typeof companyForm, value: string) {
+    setCompanyForm((current) => ({ ...current, [field]: value }))
+  }
+
+  async function handleCreateCompany(e: React.FormEvent) {
+    e.preventDefault()
+    setError("")
+    setCompanyCreated("")
+
+    if (
+      !companyForm.adminEmail ||
+      !companyForm.adminPassword ||
+      !companyForm.nombre ||
+      !companyForm.userName ||
+      !companyForm.userEmail ||
+      !companyForm.userPassword
+    ) {
+      setError("Complete credenciales autorizadas, empresa y usuario administrador")
+      return
+    }
+
+    if (companyForm.userPassword.length < 8) {
+      setError("La contrasena del usuario administrador debe tener al menos 8 caracteres")
+      return
+    }
+
+    setLoading(true)
+    try {
+      const res = await api.createPublicCompany(companyForm)
+      const code = String(res.empresa?.codigo_empresa || res.empresa?.codigo || "")
+      setCompanyCreated(code)
+      setEmpresaCodigo(code)
+      setEmail(companyForm.userEmail)
+      setPassword("")
+      setWelcomeMessage(`Empresa creada. Codigo: ${code}`)
+      setView("login")
+      setCompanyForm({
+        adminEmail: "jean@greensense.com",
+        adminPassword: "",
+        nombre: "",
+        rnc: "",
+        correo: "",
+        telefono: "",
+        userName: "",
+        userEmail: "",
+        userPassword: "",
+      })
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "No se pudo crear la empresa")
+    } finally {
+      setLoading(false)
+    }
   }
 
   const roleIcons = {
@@ -106,6 +174,21 @@ export function LoginView({ onLogin }: LoginViewProps) {
             </CardHeader>
             <CardContent>
               <form onSubmit={handleLogin} className="flex flex-col gap-4">
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="empresaCodigo">Codigo de Empresa</Label>
+                  <div className="relative">
+                    <Input
+                      id="empresaCodigo"
+                      type="text"
+                      placeholder="EMP-0001"
+                      value={empresaCodigo}
+                      onChange={(e) => setEmpresaCodigo(e.target.value.toUpperCase())}
+                      autoComplete="organization"
+                      className="pl-10"
+                    />
+                    <Building2 className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  </div>
+                </div>
                 <div className="flex flex-col gap-2">
                   <Label htmlFor="email">Correo Electronico</Label>
                   <Input
@@ -171,9 +254,164 @@ export function LoginView({ onLogin }: LoginViewProps) {
                     "Ingresar"
                   )}
                 </Button>
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => {
+                    setError("")
+                    setWelcomeMessage("")
+                    setView("company")
+                  }}
+                >
+                  Crear empresa 
+                </Button>
               </form>
 
 
+            </CardContent>
+          </Card>
+        ) : view === "company" ? (
+          <Card>
+            <CardHeader className="pb-4">
+              <h2 className="text-lg font-semibold text-card-foreground">Crear Empresa</h2>
+              <p className="text-sm text-muted-foreground">
+                Use las credenciales autorizadas para generar un codigo de empresa
+              </p>
+            </CardHeader>
+            <CardContent>
+              <form onSubmit={handleCreateCompany} className="flex flex-col gap-4">
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="adminEmail">Correo Autorizado</Label>
+                  <Input
+                    id="adminEmail"
+                    type="email"
+                    value={companyForm.adminEmail}
+                    onChange={(e) => updateCompanyField("adminEmail", e.target.value)}
+                    autoComplete="email"
+                  />
+                </div>
+
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="adminPassword">Contrasena Autorizada</Label>
+                  <Input
+                    id="adminPassword"
+                    type="password"
+                    placeholder="Ingrese la contrasena autorizada"
+                    value={companyForm.adminPassword}
+                    onChange={(e) => updateCompanyField("adminPassword", e.target.value)}
+                    autoComplete="current-password"
+                  />
+                </div>
+
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="companyName">Nombre de Empresa</Label>
+                  <Input
+                    id="companyName"
+                    type="text"
+                    placeholder="Nombre de la empresa"
+                    value={companyForm.nombre}
+                    onChange={(e) => updateCompanyField("nombre", e.target.value)}
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div className="flex flex-col gap-2">
+                    <Label htmlFor="companyRnc">RNC</Label>
+                    <Input
+                      id="companyRnc"
+                      type="text"
+                      placeholder="Opcional"
+                      value={companyForm.rnc}
+                      onChange={(e) => updateCompanyField("rnc", e.target.value)}
+                    />
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <Label htmlFor="companyPhone">Telefono</Label>
+                    <Input
+                      id="companyPhone"
+                      type="text"
+                      placeholder="Opcional"
+                      value={companyForm.telefono}
+                      onChange={(e) => updateCompanyField("telefono", e.target.value)}
+                    />
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="companyEmail">Correo de Empresa</Label>
+                  <Input
+                    id="companyEmail"
+                    type="email"
+                    placeholder="correo@empresa.com"
+                    value={companyForm.correo}
+                    onChange={(e) => updateCompanyField("correo", e.target.value)}
+                  />
+                </div>
+
+                <div className="flex flex-col gap-2 border-t pt-4">
+                  <Label htmlFor="adminUserName">Nombre del Administrador</Label>
+                  <Input
+                    id="adminUserName"
+                    type="text"
+                    placeholder="Nombre del usuario administrador"
+                    value={companyForm.userName}
+                    onChange={(e) => updateCompanyField("userName", e.target.value)}
+                    autoComplete="name"
+                  />
+                </div>
+
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="adminUserEmail">Correo del Administrador</Label>
+                  <Input
+                    id="adminUserEmail"
+                    type="email"
+                    placeholder="admin@empresa.com"
+                    value={companyForm.userEmail}
+                    onChange={(e) => updateCompanyField("userEmail", e.target.value)}
+                    autoComplete="email"
+                  />
+                </div>
+
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="adminUserPassword">Contrasena del Administrador</Label>
+                  <Input
+                    id="adminUserPassword"
+                    type="password"
+                    placeholder="Minimo 8 caracteres"
+                    value={companyForm.userPassword}
+                    onChange={(e) => updateCompanyField("userPassword", e.target.value)}
+                    autoComplete="new-password"
+                  />
+                </div>
+
+                {error && (
+                  <div className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive">
+                    {error}
+                  </div>
+                )}
+
+                {companyCreated && (
+                  <div className="rounded-lg bg-primary/10 p-3 text-sm text-primary">
+                    Codigo creado: {companyCreated}
+                  </div>
+                )}
+
+                <Button type="submit" disabled={loading} className="w-full">
+                  {loading ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Creando...
+                    </>
+                  ) : (
+                    "Crear Empresa"
+                  )}
+                </Button>
+                <Button variant="ghost" onClick={() => setView("login")} type="button">
+                  Volver al Login
+                </Button>
+              </form>
             </CardContent>
           </Card>
         ) : (

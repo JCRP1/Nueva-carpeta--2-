@@ -11,6 +11,7 @@ import { AlertsView } from "@/components/alerts-view"
 import { ReportsView } from "@/components/reports-view"
 import { GreenhousesView } from "@/components/greenhouses-view"
 import { CropsView } from "@/components/crops-view"
+import { HarvestsView } from "@/components/harvests-view"
 import { UsersView } from "@/components/users-view"
 import { RolesView } from "@/components/roles-view"
 import { EnterprisesView } from "@/components/enterprises-view"
@@ -19,6 +20,15 @@ import { SensorsView } from "@/components/sensors-view"
 import { Separator } from "@/components/ui/separator"
 import { PersonalView } from "@/components/personal-view"
 import { DispositivosView } from "@/components/dispositivos-view"
+import {
+  AgronomicPlanView,
+  ApplicationsView,
+  CostsView,
+  FarmCalendarView,
+  InventoryView,
+  ProfitabilityView,
+  SalesView,
+} from "@/components/agricultural-views"
 
 import {
   Breadcrumb,
@@ -39,10 +49,30 @@ import { Badge } from "@/components/ui/badge"
 import { Wifi, Clock, ShieldAlert, Loader2 } from "lucide-react"
 import { toast } from "sonner"
 
+type MqttStatus = {
+  started: boolean
+  enabled: boolean
+  connected: boolean
+  connecting: boolean
+  brokerUrl: string | null
+  topic: string | null
+  clientId: string | null
+  lastError: string | null
+  lastMessageAt: string | null
+}
+
 const viewLabels: Record<string, string> = {
   dashboard: "Dashboard",
   zonas: "Zonas de Riego",
   cultivos: "Cultivos",
+  cosechas: "Cosechas",
+  ventas: "Ventas",
+  costos: "Costos",
+  rentabilidad: "Rentabilidad",
+  "plan-agronomico": "Plan Agronomico",
+  aplicaciones: "Aplicaciones",
+  calendario: "Calendario Agricola",
+  inventario: "Inventario",
   sensores: "Sensores",
   alertas: "Alertas",
   invernaderos: "Invernaderos",
@@ -56,9 +86,17 @@ const viewLabels: Record<string, string> = {
 }
 
 const roleAccess: Record<UserRole, string[]> = {
-  administrador: ["dashboard", "zonas", "cultivos", "sensores", "alertas", "personal", "invernaderos", "reportes", "usuarios", "roles", "empresas", "dispositivos", "configuracion"],
-  tecnico: ["dashboard", "zonas", "cultivos", "alertas", "invernaderos", "reportes"],
-  agricultor: ["dashboard", "zonas", "cultivos", "alertas", "invernaderos", "reportes"],
+  administrador: ["dashboard", "zonas", "cultivos", "cosechas", "ventas", "costos", "rentabilidad", "plan-agronomico", "aplicaciones", "calendario", "inventario", "sensores", "alertas", "personal", "invernaderos", "reportes", "usuarios", "roles", "empresas", "dispositivos", "configuracion"],
+  tecnico: ["dashboard", "zonas", "cultivos", "cosechas", "plan-agronomico", "aplicaciones", "calendario", "inventario", "alertas", "invernaderos", "reportes"],
+  agricultor: ["dashboard", "zonas", "cultivos", "cosechas", "costos", "rentabilidad", "plan-agronomico", "aplicaciones", "calendario", "inventario", "alertas", "invernaderos", "reportes"],
+}
+
+function resolveAccessRole(rol: string): UserRole {
+  const normalized = rol.trim().toLowerCase()
+  if (normalized === "administrador" || normalized === "tecnico" || normalized === "agricultor") {
+    return normalized
+  }
+  return "agricultor"
 }
 
 export default function Page() {
@@ -66,7 +104,6 @@ export default function Page() {
   const [activeView, setActiveView] = useState("dashboard")
   const [selectedGreenhouse, setSelectedGreenhouse] = useState<string>("")
   const [currentTime, setCurrentTime] = useState(new Date())
-  const [mqttConnected, setMqttConnected] = useState(true)
   const [checkingSession, setCheckingSession] = useState(true)
   const [mounted, setMounted] = useState(false)
 
@@ -82,6 +119,11 @@ export default function Page() {
     fetcher
   )
   const currentEmpresa = empresas?.[0]
+  const { data: mqttStatus } = useSWR<MqttStatus>(
+    currentUser ? "/api/iot/mqtt-status" : null,
+    fetcher,
+    { refreshInterval: 5000 }
+  )
 
   // Auto-select first greenhouse when greenhouses load
   useEffect(() => {
@@ -114,22 +156,6 @@ export default function Page() {
     return () => clearInterval(interval)
   }, [])
 
-  // Simulate MQTT connection status
-  useEffect(() => {
-    const interval = setInterval(() => {
-      const willDisconnect = Math.random() < 0.05
-      if (willDisconnect && mqttConnected) {
-        setMqttConnected(false)
-        toast.warning("Conexion MQTT perdida", { description: "Intentando reconectar..." })
-        setTimeout(() => {
-          setMqttConnected(true)
-          toast.success("MQTT reconectado", { description: "Conexion restablecida" })
-        }, 3000)
-      }
-    }, 30000)
-    return () => clearInterval(interval)
-  }, [mqttConnected])
-
   function handleLogin(user: User) {
     setCurrentUser(user)
     setActiveView("dashboard")
@@ -152,7 +178,7 @@ export default function Page() {
 
   function handleViewChange(view: string) {
     if (!currentUser) return
-    const allowed = roleAccess[currentUser.rol]
+    const allowed = roleAccess[resolveAccessRole(currentUser.rol)]
     if (!allowed.includes(view)) {
       toast.error("Acceso denegado", {
         description: "No tiene permisos para acceder a esta seccion",
@@ -184,26 +210,55 @@ export default function Page() {
     return <LoginView onLogin={handleLogin} />
   }
 
-  const isAdmin = currentUser.rol === "administrador"
-  const isReadOnly = currentUser.rol === "agricultor"
+  const accessRole = resolveAccessRole(currentUser.rol)
+  const isAdmin = accessRole === "administrador"
+  const isReadOnly = accessRole === "agricultor"
   const ghList = greenhouses || []
+  const mqttConnected = mqttStatus?.connected === true
+  const mqttConnecting = mqttStatus?.connecting === true
+  const mqttEnabled = mqttStatus?.enabled === true
+  const mqttLabel = !mqttStatus
+    ? "MQTT Consultando"
+    : !mqttEnabled
+    ? "MQTT Inactivo"
+    : mqttConnected
+      ? "MQTT Conectado"
+      : mqttConnecting
+        ? "MQTT Conectando"
+        : "MQTT Sin Conexion"
 
 function renderView() {
     switch (activeView) {
       case "dashboard":
-        return <DashboardView selectedGreenhouse={selectedGreenhouse} userRole={currentUser!.rol} />
+        return <DashboardView selectedGreenhouse={selectedGreenhouse} userRole={accessRole} />
       case "zonas":
-        return <ZonesView selectedGreenhouse={selectedGreenhouse} userRole={currentUser!.rol} />
+        return <ZonesView selectedGreenhouse={selectedGreenhouse} userRole={accessRole} />
       case "cultivos":
-        return <CropsView selectedGreenhouse={selectedGreenhouse} userRole={currentUser!.rol} />
+        return <CropsView selectedGreenhouse={selectedGreenhouse} userRole={accessRole} />
+      case "cosechas":
+        return <HarvestsView selectedGreenhouse={selectedGreenhouse} userRole={accessRole} />
+      case "ventas":
+        return <SalesView selectedGreenhouse={selectedGreenhouse} userRole={accessRole} />
+      case "costos":
+        return <CostsView selectedGreenhouse={selectedGreenhouse} userRole={accessRole} />
+      case "rentabilidad":
+        return <ProfitabilityView selectedGreenhouse={selectedGreenhouse} userRole={accessRole} />
+      case "plan-agronomico":
+        return <AgronomicPlanView selectedGreenhouse={selectedGreenhouse} userRole={accessRole} />
+      case "aplicaciones":
+        return <ApplicationsView selectedGreenhouse={selectedGreenhouse} userRole={accessRole} />
+      case "calendario":
+        return <FarmCalendarView selectedGreenhouse={selectedGreenhouse} userRole={accessRole} />
+      case "inventario":
+        return <InventoryView selectedGreenhouse={selectedGreenhouse} userRole={accessRole} />
       case "sensores":
-        return <SensorsView selectedGreenhouse={selectedGreenhouse} userRole={currentUser!.rol} />
+        return <SensorsView selectedGreenhouse={selectedGreenhouse} userRole={accessRole} />
       case "alertas":
-        return <AlertsView userRole={currentUser!.rol} />
+        return <AlertsView userRole={accessRole} />
       case "invernaderos":
-        return <GreenhousesView userRole={currentUser!.rol} />
+        return <GreenhousesView userRole={accessRole} />
       case "reportes":
-        return <ReportsView userRole={currentUser!.rol} selectedGreenhouse={selectedGreenhouse} />
+        return <ReportsView userRole={accessRole} selectedGreenhouse={selectedGreenhouse} />
       case "personal":
         if (!isAdmin) {
           return (
@@ -262,7 +317,7 @@ function renderView() {
       case "dispositivos":
         return <DispositivosView />
       default:
-        return <DashboardView selectedGreenhouse={selectedGreenhouse} userRole={currentUser!.rol} />
+        return <DashboardView selectedGreenhouse={selectedGreenhouse} userRole={accessRole} />
     }
   }
 
@@ -328,14 +383,26 @@ function renderView() {
 
             <Badge
               variant="outline"
+              title={
+                mqttStatus
+                  ? [
+                      mqttStatus.brokerUrl ? `Broker: ${mqttStatus.brokerUrl}` : "Broker no configurado",
+                      mqttStatus.topic ? `Topic: ${mqttStatus.topic}` : "",
+                      mqttStatus.lastMessageAt ? `Ultimo mensaje: ${mqttStatus.lastMessageAt}` : "",
+                      mqttStatus.lastError ? `Error: ${mqttStatus.lastError}` : "",
+                    ].filter(Boolean).join(" | ")
+                  : "Consultando estado MQTT real"
+              }
               className={`hidden gap-1.5 md:flex ${
                 mqttConnected
                   ? "text-emerald-400 border-emerald-400/30"
+                  : !mqttStatus || !mqttEnabled
+                    ? "text-muted-foreground border-border"
                   : "text-red-400 border-red-400/30 animate-pulse"
               }`}
             >
               <Wifi className="h-3 w-3" />
-              <span className="text-[10px]">{mqttConnected ? "MQTT Conectado" : "Reconectando..."}</span>
+              <span className="text-[10px]">{mqttLabel}</span>
             </Badge>
 
             <div className="hidden items-center gap-1.5 text-xs text-muted-foreground lg:flex">

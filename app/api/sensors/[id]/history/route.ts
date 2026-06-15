@@ -7,18 +7,22 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await requireAuth()
+    const session = await requireAuth()
     const { id } = await params
 
     const rows = (await query(
-      `SELECT TOP 48 valor, fecha_hora AS timestamp
-       FROM LecturasSensores
-       WHERE id_sensor = @sensorId
-       ORDER BY fecha_hora DESC`,
-      { sensorId: Number(id) }
+      `SELECT l.valor, l.fecha_hora AS timestamp
+       FROM LecturasSensores l
+       INNER JOIN Sensores s ON l.id_sensor = s.id_sensor
+       INNER JOIN Invernaderos i ON s.id_invernadero = i.id_invernadero
+       WHERE l.id_sensor = @sensorId
+         AND i.id_empresa = @empresaId
+         AND l.fecha_hora >= DATEADD(HOUR, -48, GETDATE())
+       ORDER BY l.fecha_hora ASC`,
+      { sensorId: Number(id), empresaId: session.empresaId }
     )) as Record<string, unknown>[]
 
-    const result = rows.reverse().map((h) => ({
+    const result = rows.map((h) => ({
       timestamp: h.timestamp,
       valor: Number(h.valor),
     }))

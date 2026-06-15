@@ -3,8 +3,73 @@ import { requireAuth } from "@/lib/auth"
 import { query } from "@/lib/db"
 import { registrarBitacora } from "@/lib/bitacora"
 
+async function syncCommonCropCatalog(body: Record<string, unknown>) {
+  const nombre = String(body.nombre || "").trim()
+  if (!nombre) return
+
+  await query(
+    `IF OBJECT_ID('dbo.CatalogoCultivos', 'U') IS NOT NULL
+     BEGIN
+       MERGE dbo.CatalogoCultivos AS target
+       USING (
+         SELECT
+           @nombre AS nombre,
+           @variedad AS variedad
+       ) AS src
+       ON LOWER(LTRIM(RTRIM(target.nombre))) = LOWER(LTRIM(RTRIM(src.nombre)))
+          AND LOWER(LTRIM(RTRIM(ISNULL(target.variedad, '')))) = LOWER(LTRIM(RTRIM(ISNULL(src.variedad, ''))))
+       WHEN MATCHED THEN
+         UPDATE SET
+           umbral_humedad = @umbralHumedad,
+           umbral_temperatura = @umbralTemperatura,
+           umbral_ph = @umbralPh,
+           umbral_ec = @umbralEc,
+           umbral_tds = @umbralTds,
+           agua_litros_por_mata_dia = @aguaLitrosPorMataDia,
+           rendimiento_por_mata = @rendimientoPorMata,
+           unidad_rendimiento = @unidadRendimiento,
+           fertilizantes = @fertilizantes,
+           abonos = @abonos,
+           plagas_comunes = @plagasComunes,
+           tratamiento_recomendado = @tratamientoRecomendado,
+           mejores_meses = @mejoresMeses,
+           recomendacion_siembra = @recomendacionSiembra,
+           fecha_actualizacion = GETDATE()
+       WHEN NOT MATCHED THEN
+         INSERT (
+           nombre, variedad, umbral_humedad, umbral_temperatura, umbral_ph, umbral_ec, umbral_tds,
+           agua_litros_por_mata_dia, rendimiento_por_mata, unidad_rendimiento,
+           fertilizantes, abonos, plagas_comunes, tratamiento_recomendado, mejores_meses, recomendacion_siembra
+         )
+         VALUES (
+           @nombre, @variedad, @umbralHumedad, @umbralTemperatura, @umbralPh, @umbralEc, @umbralTds,
+           @aguaLitrosPorMataDia, @rendimientoPorMata, @unidadRendimiento,
+           @fertilizantes, @abonos, @plagasComunes, @tratamientoRecomendado, @mejoresMeses, @recomendacionSiembra
+         );
+     END`,
+    {
+      nombre,
+      variedad: String(body.variedad || ""),
+      umbralHumedad: body.umbral_humedad ?? null,
+      umbralTemperatura: body.umbral_temperatura ?? null,
+      umbralPh: body.umbral_ph ?? null,
+      umbralEc: body.umbral_ec ?? null,
+      umbralTds: body.umbral_tds ?? null,
+      aguaLitrosPorMataDia: body.agua_litros_por_mata_dia ?? null,
+      rendimientoPorMata: body.rendimiento_por_mata ?? null,
+      unidadRendimiento: body.unidad_rendimiento || null,
+      fertilizantes: body.fertilizantes || null,
+      abonos: body.abonos || null,
+      plagasComunes: body.plagas_comunes || null,
+      tratamientoRecomendado: body.tratamiento_recomendado || null,
+      mejoresMeses: body.mejores_meses || null,
+      recomendacionSiembra: body.recomendacion_siembra || null,
+    }
+  )
+}
+
 /* =========================
-   CREAR (incluye CultivoDetalle)
+   CREAR
 ========================= */
 
 export async function POST(req: Request) {
@@ -16,52 +81,62 @@ export async function POST(req: Request) {
       nombre, 
       variedad, 
       invernaderoId, 
-      fecha_siembra,
-      fecha_cosecha_estimada,
-      tiempo_germinacion_dias,
-      tiempo_crecimiento_dias,
-      tiempo_cosecha_dias,
-      notas
+      umbral_humedad,
+      umbral_temperatura,
+      umbral_ph,
+      umbral_ec,
+      umbral_tds,
+      agua_litros_por_mata_dia,
+      rendimiento_por_mata,
+      unidad_rendimiento,
+      fertilizantes,
+      abonos,
+      plagas_comunes,
+      tratamiento_recomendado,
+      mejores_meses,
+      recomendacion_siembra,
     } = body
 
     if (!nombre || !invernaderoId) {
       return NextResponse.json({ error: "Nombre e invernadero requeridos" }, { status: 400 })
     }
 
-    // Insertar cultivo y obtener ID
     const result = await query<{ id_cultivo: number }[]>(
-      `INSERT INTO Cultivos (nombre, variedad, id_invernadero, fecha_siembra)
+      `INSERT INTO Cultivos (
+         nombre, variedad, id_invernadero, umbral_humedad, umbral_temperatura, umbral_ph, umbral_ec, umbral_tds,
+         agua_litros_por_mata_dia, rendimiento_por_mata, unidad_rendimiento,
+         fertilizantes, abonos, plagas_comunes, tratamiento_recomendado, mejores_meses, recomendacion_siembra
+       )
        OUTPUT INSERTED.id_cultivo
-       VALUES (@nombre, @variedad, @invernaderoId, @fechaSiembra);
+       VALUES (
+         @nombre, @variedad, @invernaderoId, @umbralHumedad, @umbralTemperatura, @umbralPh, @umbralEc, @umbralTds,
+         @aguaLitrosPorMataDia, @rendimientoPorMata, @unidadRendimiento,
+         @fertilizantes, @abonos, @plagasComunes, @tratamientoRecomendado, @mejoresMeses, @recomendacionSiembra
+       );
        SELECT SCOPE_IDENTITY() AS id_cultivo`,
       {
         nombre,
         variedad: variedad || "",
         invernaderoId: Number(invernaderoId),
-        fechaSiembra: fecha_siembra || null,
+        umbralHumedad: umbral_humedad || null,
+        umbralTemperatura: umbral_temperatura || null,
+        umbralPh: umbral_ph || null,
+        umbralEc: umbral_ec || null,
+        umbralTds: umbral_tds || null,
+        aguaLitrosPorMataDia: agua_litros_por_mata_dia || null,
+        rendimientoPorMata: rendimiento_por_mata || null,
+        unidadRendimiento: unidad_rendimiento || null,
+        fertilizantes: fertilizantes || null,
+        abonos: abonos || null,
+        plagasComunes: plagas_comunes || null,
+        tratamientoRecomendado: tratamiento_recomendado || null,
+        mejoresMeses: mejores_meses || null,
+        recomendacionSiembra: recomendacion_siembra || null,
       }
     )
 
     const cultivoId = result[0]?.id_cultivo
-
-    // Insertar CultivoDetalle si hay datos
-    if (cultivoId && fecha_siembra) {
-      await query(
-        `INSERT INTO CultivoDetalle 
-         (id_cultivo, fecha_siembra, fecha_cosecha_estimada, variedad, tiempo_germinacion_dias, tiempo_crecimiento_dias, tiempo_cosecha_dias, notas)
-         VALUES (@cultivoId, @fechaSiembra, @fechaCosecha, @variedad, @germinacion, @crecimiento, @cosecha, @notas)`,
-        {
-          cultivoId,
-          fechaSiembra: fecha_siembra,
-          fechaCosecha: fecha_cosecha_estimada || null,
-          variedad: variedad || "",
-          germinacion: tiempo_germinacion_dias || null,
-          crecimiento: tiempo_crecimiento_dias || null,
-          cosecha: tiempo_cosecha_dias || null,
-          notas: notas || "",
-        }
-      )
-    }
+    await syncCommonCropCatalog(body)
 
     await registrarBitacora({
       session,
@@ -86,45 +161,85 @@ export async function POST(req: Request) {
 }
 
 /* =========================
-   LISTAR (con CultivoDetalle)
+   LISTAR
 ========================= */
 
 export async function GET(req: Request) {
   try {
-    const session = await requireAuth()
+    await requireAuth()
     const { searchParams } = new URL(req.url)
     const greenhouseId = searchParams.get("greenhouse")
 
-    console.log("[CROPS API] Session empresaId:", session.empresaId)
     console.log("[CROPS API] GreenhouseId param:", greenhouseId)
 
     let sqlText = `
       SELECT
-        c.id_cultivo AS id,
+        CONVERT(nvarchar(30), c.id_cultivo) AS id,
         c.nombre,
         c.variedad,
         c.id_invernadero AS invernaderoId,
         CONVERT(char(10), c.fecha_siembra, 23) AS fechaSiembra,
-        d.id_detalle AS detalleId,
-        CONVERT(char(10), d.fecha_cosecha_estimada, 23) AS fechaCosechaEstimada,
-        d.tiempo_germinacion_dias AS tiempoGerminacionDias,
-        d.tiempo_crecimiento_dias AS tiempoCrecimientoDias,
-        d.tiempo_cosecha_dias AS tiempoCosechaDias,
-        d.notas
+        c.umbral_humedad AS umbralHumedad,
+        c.umbral_temperatura AS umbralTemperatura,
+        c.umbral_ph AS umbralPh,
+        c.umbral_ec AS umbralEc,
+        c.umbral_tds AS umbralTds,
+        c.agua_litros_por_mata_dia AS aguaLitrosPorMataDia,
+        c.rendimiento_por_mata AS rendimientoPorMata,
+        c.unidad_rendimiento AS unidadRendimiento,
+        c.fertilizantes,
+        c.abonos,
+        c.plagas_comunes AS plagasComunes,
+        c.tratamiento_recomendado AS tratamientoRecomendado,
+        c.mejores_meses AS mejoresMeses,
+        c.recomendacion_siembra AS recomendacionSiembra,
+        CAST(0 AS bit) AS esCatalogo
       FROM Cultivos c
-      LEFT JOIN CultivoDetalle d ON d.id_cultivo = c.id_cultivo
-      WHERE c.id_invernadero IN (
-        SELECT id_invernadero FROM Invernaderos WHERE id_empresa = @empresaId
-      )
     `
-    const params: Record<string, unknown> = { empresaId: session.empresaId }
+    const params: Record<string, unknown> = {}
 
     if (greenhouseId) {
-      sqlText += " AND c.id_invernadero = @greenhouseId"
+      sqlText += " WHERE c.id_invernadero = @greenhouseId"
       params.greenhouseId = Number(greenhouseId)
     }
 
-    sqlText += " ORDER BY c.id_cultivo DESC"
+    if (greenhouseId) {
+      sqlText += `
+        UNION ALL
+        SELECT
+          CONCAT('catalog:', cc.id_catalogo) AS id,
+          cc.nombre,
+          cc.variedad,
+          @greenhouseId AS invernaderoId,
+          NULL AS fechaSiembra,
+          cc.umbral_humedad AS umbralHumedad,
+          cc.umbral_temperatura AS umbralTemperatura,
+          cc.umbral_ph AS umbralPh,
+          cc.umbral_ec AS umbralEc,
+          cc.umbral_tds AS umbralTds,
+          cc.agua_litros_por_mata_dia AS aguaLitrosPorMataDia,
+          cc.rendimiento_por_mata AS rendimientoPorMata,
+          cc.unidad_rendimiento AS unidadRendimiento,
+          cc.fertilizantes,
+          cc.abonos,
+          cc.plagas_comunes AS plagasComunes,
+          cc.tratamiento_recomendado AS tratamientoRecomendado,
+          cc.mejores_meses AS mejoresMeses,
+          cc.recomendacion_siembra AS recomendacionSiembra,
+          CAST(1 AS bit) AS esCatalogo
+        FROM CatalogoCultivos cc
+        WHERE cc.activo = 1
+          AND NOT EXISTS (
+            SELECT 1
+            FROM Cultivos existing
+            WHERE existing.id_invernadero = @greenhouseId
+              AND LOWER(LTRIM(RTRIM(existing.nombre))) = LOWER(LTRIM(RTRIM(cc.nombre)))
+              AND LOWER(LTRIM(RTRIM(ISNULL(existing.variedad, '')))) = LOWER(LTRIM(RTRIM(ISNULL(cc.variedad, ''))))
+          )
+      `
+    }
+
+    sqlText += " ORDER BY esCatalogo ASC, nombre ASC"
 
     console.log("[CROPS API] SQL:", sqlText)
     console.log("[CROPS API] Params:", params)
@@ -133,7 +248,6 @@ export async function GET(req: Request) {
 
     console.log("[CROPS API] Rows found:", rows.length)
 
-    // Convertir filas a cultivos con detalle embebido
     const cropsMap = new Map<string, Record<string, unknown>>()
     
     for (const row of rows) {
@@ -145,19 +259,22 @@ export async function GET(req: Request) {
           variedad: String(row.variedad || ""),
           invernaderoId: String(row.invernaderoId),
           fechaSiembra: row.fechaSiembra ? String(row.fechaSiembra) : "",
-          detalle: undefined as Record<string, unknown> | undefined,
+          umbralHumedad: row.umbralHumedad != null ? Number(row.umbralHumedad) : undefined,
+          umbralTemperatura: row.umbralTemperatura != null ? Number(row.umbralTemperatura) : undefined,
+          umbralPh: row.umbralPh != null ? Number(row.umbralPh) : undefined,
+          umbralEc: row.umbralEc != null ? Number(row.umbralEc) : undefined,
+          umbralTds: row.umbralTds != null ? Number(row.umbralTds) : undefined,
+          aguaLitrosPorMataDia: row.aguaLitrosPorMataDia != null ? Number(row.aguaLitrosPorMataDia) : undefined,
+          rendimientoPorMata: row.rendimientoPorMata != null ? Number(row.rendimientoPorMata) : undefined,
+          unidadRendimiento: String(row.unidadRendimiento || ""),
+          fertilizantes: String(row.fertilizantes || ""),
+          abonos: String(row.abonos || ""),
+          plagasComunes: String(row.plagasComunes || ""),
+          tratamientoRecomendado: String(row.tratamientoRecomendado || ""),
+          mejoresMeses: String(row.mejoresMeses || ""),
+          recomendacionSiembra: String(row.recomendacionSiembra || ""),
+          esCatalogo: Boolean(row.esCatalogo),
         })
-      }
-      
-      if (row.detalleId) {
-        (cropsMap.get(rowId) as Record<string, unknown>).detalle = {
-          id: String(row.detalleId),
-          fechaCosechaEstimada: row.fechaCosechaEstimada ? String(row.fechaCosechaEstimada) : "",
-          tiempoGerminacionDias: row.tiempoGerminacionDias,
-          tiempoCrecimientoDias: row.tiempoCrecimientoDias,
-          tiempoCosechaDias: row.tiempoCosechaDias,
-          notas: String(row.notas || ""),
-        }
       }
     }
 
@@ -173,7 +290,7 @@ export async function GET(req: Request) {
 }
 
 /* =========================
-   EDITAR (incluye CultivoDetalle)
+   EDITAR
 ========================= */
 
 export async function PUT(req: Request) {
@@ -186,8 +303,20 @@ export async function PUT(req: Request) {
       nombre, 
       variedad, 
       invernaderoId, 
-      fecha_siembra,
-      detalle
+      umbral_humedad,
+      umbral_temperatura,
+      umbral_ph,
+      umbral_ec,
+      umbral_tds,
+      agua_litros_por_mata_dia,
+      rendimiento_por_mata,
+      unidad_rendimiento,
+      fertilizantes,
+      abonos,
+      plagas_comunes,
+      tratamiento_recomendado,
+      mejores_meses,
+      recomendacion_siembra
     } = body
 
     if (!id) {
@@ -195,77 +324,54 @@ export async function PUT(req: Request) {
     }
 
     const previousRows = await query<Record<string, unknown>[]>(
-      `SELECT nombre, variedad, id_invernadero AS invernaderoId, fecha_siembra AS fechaSiembra
+      `SELECT nombre, variedad, id_invernadero AS invernaderoId, fecha_siembra AS fechaSiembra, umbral_humedad AS umbralHumedad, umbral_ph AS umbralPh, umbral_ec AS umbralEc, umbral_tds AS umbralTds
        FROM Cultivos
        WHERE id_cultivo = @id`,
       { id }
     )
 
-    // Actualizar Cultivos
     await query(
       `UPDATE Cultivos
-       SET nombre = @nombre, variedad = @variedad, id_invernadero = @invernaderoId, fecha_siembra = @fechaSiembra
-       WHERE id_cultivo = @id
-       AND id_invernadero IN (SELECT id_invernadero FROM Invernaderos WHERE id_empresa = @empresaId)`,
+       SET nombre = @nombre,
+           variedad = @variedad,
+           id_invernadero = @invernaderoId,
+           umbral_humedad = @umbralHumedad,
+           umbral_temperatura = @umbralTemperatura,
+           umbral_ph = @umbralPh,
+           umbral_ec = @umbralEc,
+           umbral_tds = @umbralTds,
+           agua_litros_por_mata_dia = @aguaLitrosPorMataDia,
+           rendimiento_por_mata = @rendimientoPorMata,
+           unidad_rendimiento = @unidadRendimiento,
+           fertilizantes = @fertilizantes,
+           abonos = @abonos,
+           plagas_comunes = @plagasComunes,
+           tratamiento_recomendado = @tratamientoRecomendado,
+           mejores_meses = @mejoresMeses,
+           recomendacion_siembra = @recomendacionSiembra
+       WHERE id_cultivo = @id`,
       {
         id,
         nombre,
         variedad: variedad || "",
         invernaderoId: Number(invernaderoId),
-        fechaSiembra: fecha_siembra || null,
-        empresaId: session.empresaId,
+        umbralHumedad: umbral_humedad || null,
+        umbralTemperatura: umbral_temperatura || null,
+        umbralPh: umbral_ph || null,
+        umbralEc: umbral_ec || null,
+        umbralTds: umbral_tds || null,
+        aguaLitrosPorMataDia: agua_litros_por_mata_dia || null,
+        rendimientoPorMata: rendimiento_por_mata || null,
+        unidadRendimiento: unidad_rendimiento || null,
+        fertilizantes: fertilizantes || null,
+        abonos: abonos || null,
+        plagasComunes: plagas_comunes || null,
+        tratamientoRecomendado: tratamiento_recomendado || null,
+        mejoresMeses: mejores_meses || null,
+        recomendacionSiembra: recomendacion_siembra || null,
       }
     )
-
-    // Verificar si existe CultivoDetalle
-    const existingDetalle = await query<{ id_detalle: number }[]>(
-      "SELECT id_detalle FROM CultivoDetalle WHERE id_cultivo = @id",
-      { id }
-    )
-
-    if (detalle) {
-      if (existingDetalle.length > 0) {
-        // Actualizar detalle existente
-        await query(
-          `UPDATE CultivoDetalle
-           SET fecha_siembra = @fechaSiembra,
-               fecha_cosecha_estimada = @fechaCosecha,
-               variedad = @variedad,
-               tiempo_germinacion_dias = @germinacion,
-               tiempo_crecimiento_dias = @crecimiento,
-               tiempo_cosecha_dias = @cosecha,
-               notas = @notas
-           WHERE id_cultivo = @id`,
-          {
-            id,
-            fechaSiembra: fecha_siembra || null,
-            fechaCosecha: detalle.fecha_cosecha_estimada || null,
-            variedad: variedad || "",
-            germinacion: detalle.tiempo_germinacion_dias || null,
-            crecimiento: detalle.tiempo_crecimiento_dias || null,
-            cosecha: detalle.tiempo_cosecha_dias || null,
-            notas: detalle.notas || "",
-          }
-        )
-      } else {
-        // Crear nuevo detalle
-        await query(
-          `INSERT INTO CultivoDetalle
-           (id_cultivo, fecha_siembra, fecha_cosecha_estimada, variedad, tiempo_germinacion_dias, tiempo_crecimiento_dias, tiempo_cosecha_dias, notas)
-           VALUES (@id, @fechaSiembra, @fechaCosecha, @variedad, @germinacion, @crecimiento, @cosecha, @notas)`,
-          {
-            id,
-            fechaSiembra: fecha_siembra || null,
-            fechaCosecha: detalle.fecha_cosecha_estimada || null,
-            variedad: variedad || "",
-            germinacion: detalle.tiempo_germinacion_dias || null,
-            crecimiento: detalle.tiempo_crecimiento_dias || null,
-            cosecha: detalle.tiempo_cosecha_dias || null,
-            notas: detalle.notas || "",
-          }
-        )
-      }
-    }
+    await syncCommonCropCatalog(body)
 
     await registrarBitacora({
       session,
@@ -317,9 +423,8 @@ export async function DELETE(req: Request) {
     // Eliminar cultivo
     await query(
       `DELETE FROM Cultivos
-       WHERE id_cultivo = @id
-       AND id_invernadero IN (SELECT id_invernadero FROM Invernaderos WHERE id_empresa = @empresaId)`,
-      { id, empresaId: session.empresaId }
+       WHERE id_cultivo = @id`,
+      { id }
     )
 
     await registrarBitacora({

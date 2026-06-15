@@ -74,7 +74,15 @@ export async function GET(req: Request) {
        AND id_sensor IN (SELECT id_sensor FROM Sensores WHERE id_invernadero = @invId)`,
       { invId: invernaderoId }
     )) as Record<string, unknown>[]
-    const activeAlerts = Number(alertCountRows[0]?.cnt) || 0
+    const harvestReadyCountRows = (await query(
+      `SELECT COUNT(*) AS cnt
+       FROM dbo.ZonasRiego
+       WHERE id_invernadero = @invId
+         AND fecha_cosecha_estimada IS NOT NULL
+         AND CONVERT(date, fecha_cosecha_estimada) <= CONVERT(date, GETDATE())`,
+      { invId: invernaderoId }
+    )) as Record<string, unknown>[]
+    const activeAlerts = (Number(alertCountRows[0]?.cnt) || 0) + (Number(harvestReadyCountRows[0]?.cnt) || 0)
 
     // Recent irrigation events
     const riegoRows = (await query(

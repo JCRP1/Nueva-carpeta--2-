@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import useSWR from "swr"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -72,6 +72,13 @@ interface DashboardData {
   }>
   consumoAgua: Array<{ dia: string; litros: number }>
   greenhouse: { id: string; nombre: string; estado: string } | null
+}
+
+interface SaleData {
+  id: string
+  fechaVenta: string
+  ingresoTotal: number
+  cantidadKg: number
 }
 
 function getSensorIcon(tipo: string) {
@@ -207,7 +214,14 @@ export function DashboardView({ selectedGreenhouse, userRole }: DashboardViewPro
   )
 
   // Fetch users for status chart
-  const { data: users } = useSWR<Array<{ id: number; nombre: string; activo: boolean }>>("/api/users", fetcher)
+  const { data: users } = useSWR<Array<{ id: number; nombre: string; activo: boolean }>>(
+    userRole === "administrador" ? "/api/users" : null,
+    fetcher
+  )
+  const { data: sales } = useSWR<SaleData[]>(
+    userRole === "administrador" ? `/api/sales${selectedGreenhouse ? `?greenhouse=${selectedGreenhouse}` : ""}` : null,
+    fetcher
+  )
 
   const [refreshing, setRefreshing] = useState(false)
 
@@ -235,6 +249,24 @@ export function DashboardView({ selectedGreenhouse, userRole }: DashboardViewPro
   const humedadAmbHistory = (sensorsWithHistory || []).find((s) => s.tipo === "humedad_ambiental")?.history || []
   const phHistory = (sensorsWithHistory || []).find((s) => s.tipo === "ph")?.history || []
   const tdsHistory = (sensorsWithHistory || []).find((s) => s.tipo === "tds")?.history || []
+  const salesChartData = useMemo(() => {
+    const byMonth = new Map<string, { mes: string; ingresos: number; kg: number }>()
+    ;(sales || []).forEach((sale) => {
+      if (!sale.fechaVenta) return
+      const parsed = new Date(`${sale.fechaVenta}T00:00:00`)
+      if (Number.isNaN(parsed.getTime())) return
+      const key = `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, "0")}`
+      const mes = parsed.toLocaleDateString("es-DO", { month: "short" })
+      const current = byMonth.get(key) || { mes, ingresos: 0, kg: 0 }
+      current.ingresos += Number(sale.ingresoTotal || 0)
+      current.kg += Number(sale.cantidadKg || 0)
+      byMonth.set(key, current)
+    })
+    return Array.from(byMonth.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .slice(-6)
+      .map(([, value]) => value)
+  }, [sales])
 
   function handleRefreshAll() {
     setRefreshing(true)
@@ -313,6 +345,33 @@ export function DashboardView({ selectedGreenhouse, userRole }: DashboardViewPro
       </div>
 
       {/* User Status Chart */}
+      {userRole === "administrador" && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-foreground">Ventas por Mes</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={220}>
+              <BarChart data={salesChartData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="hsl(150, 10%, 16%)" />
+                <XAxis dataKey="mes" tick={{ fontSize: 10, fill: "hsl(150, 5%, 55%)" }} stroke="hsl(150, 10%, 16%)" />
+                <YAxis tick={{ fontSize: 10, fill: "hsl(150, 5%, 55%)" }} stroke="hsl(150, 10%, 16%)" />
+                <Tooltip
+                  contentStyle={{ background: "hsl(150, 14%, 9%)", border: "1px solid hsl(150, 10%, 16%)", borderRadius: "8px", fontSize: 12, color: "hsl(150, 8%, 93%)" }}
+                  formatter={(value: number, name: string) => [
+                    name === "ingresos" ? `RD$ ${Number(value || 0).toLocaleString("es-DO")}` : `${Number(value || 0).toLocaleString("es-DO")} kg`,
+                    name === "ingresos" ? "Ingresos" : "Kg vendidos",
+                  ]}
+                />
+                <Bar dataKey="ingresos" fill="hsl(152, 60%, 42%)" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* User Status Chart */}
+      {userRole === "administrador" && (
       <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-foreground">Estado de Usuarios</CardTitle>
@@ -358,6 +417,7 @@ export function DashboardView({ selectedGreenhouse, userRole }: DashboardViewPro
             </div>
           </CardContent>
         </Card>
+      )}
 
       {/* Sensor readings */}
       <div>

@@ -199,19 +199,20 @@ export function SensorDetailView({ sensor, onBack, userRole, historialPreload }:
   const [newCalibrationOpen, setNewCalibrationOpen] = useState(false)
 
   useEffect(() => {
+    setIsLoading(true)
     if (historialPreload && historialPreload.length > 0) {
       setHistorialData(historialPreload)
     } else {
-      setIsLoading(true)
       setHistorialData([])
-      fetch(`/api/sensors/${sensor.id}/history`)
-        .then(res => res.json())
-        .then(data => {
-          setHistorialData(Array.isArray(data) ? data : [])
-        })
-        .catch(err => console.error("Error historial:", err))
-        .finally(() => setIsLoading(false))
     }
+
+    fetch(`/api/sensors/${sensor.id}/history`)
+      .then(res => res.json())
+      .then(data => {
+        setHistorialData(Array.isArray(data) ? data : [])
+      })
+      .catch(err => console.error("Error historial:", err))
+      .finally(() => setIsLoading(false))
 
     fetch(`/api/alerts?sensor=${sensor.id}`)
       .then(res => res.json())
@@ -260,7 +261,7 @@ export function SensorDetailView({ sensor, onBack, userRole, historialPreload }:
       })
       .catch((err) => console.error("Error historial calibración:", err))
       .finally(() => setCalibrationLoading(false))
-  }, [sensor.id])
+  }, [sensor.id, historialPreload])
 
   const { data: greenhouses } = useSWR<Invernadero[]>("/api/greenhouses", fetcher)
 

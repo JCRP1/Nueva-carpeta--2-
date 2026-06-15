@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server"
-import { requireAdmin } from "@/lib/auth"
+import { requireAdmin, requireAuth } from "@/lib/auth"
 import { query } from "@/lib/db"
 
 export async function GET() {
   try {
+    const session = await requireAuth()
     const empresas = await query(`
       SELECT 
         id_empresa,
@@ -15,8 +16,9 @@ export async function GET() {
         COALESCE(estado, 'Activa') AS estado,
         fecha_creacion
       FROM Empresas
+      WHERE id_empresa = @empresaId
       ORDER BY nombre
-    `)
+    `, { empresaId: session.empresaId })
 
     return NextResponse.json(empresas)
   } catch (error) {

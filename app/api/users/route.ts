@@ -12,16 +12,19 @@ const mapUser = (row: any): any => ({
   correo: row.correo || "",
   contraseña: row.contraseña || "",
   rol: normalizeRole(row.rol),
+  empresaId: String(row.id_empresa ?? ""),
   activo: row.activo !== 0 && row.activo !== false && row.activo !== "false",
   ultimoAcceso: row.fecha_registro?.toString() || new Date().toISOString(),
   fecha_registro: row.fecha_registro?.toString() || new Date().toISOString(),
 })
 
 function normalizeRole(rol: string | null | undefined): string {
-  const r = String(rol || "").toLowerCase()
+  const raw = String(rol || "").trim()
+  const r = raw.toLowerCase()
   if (r === "admin" || r === "administrador") return "administrador"
   if (r === "tecnico" || r === "técnico") return "tecnico"
-  return "agricultor"
+  if (r === "agricultor") return "agricultor"
+  return raw || "agricultor"
 }
 
 function handleAuthError(e: any): NextResponse | null {
@@ -41,6 +44,7 @@ export async function GET() {
     const result = await query<Record<string, unknown>[]>(
       `SELECT 
         u.id_usuario,
+        u.id_empresa,
         u.nombre,
         u.correo,
         u.contraseña,
@@ -48,7 +52,9 @@ export async function GET() {
         u.activo,
         u.fecha_registro
        FROM Usuarios u
-       ORDER BY u.nombre, u.correo`
+       WHERE u.id_empresa = @empresaId
+       ORDER BY u.nombre, u.correo`,
+      { empresaId: session.empresaId }
     )
 
     return NextResponse.json(result.map(mapUser))
@@ -81,7 +87,7 @@ export async function POST(request: Request) {
     }
 
     let nombre = String(data.nombre || "").trim()
-    const personaIdRaw = data.personaId ?? data.idPersona ?? data.nombre
+    const personaIdRaw = data.personaId ?? data.idPersona ?? data.id_persona ?? data.nombre
 
     if ((!nombre || /^\d+$/.test(nombre)) && personaIdRaw) {
       const personaId = Number(personaIdRaw)
@@ -108,10 +114,11 @@ export async function POST(request: Request) {
     const hashedPassword = hashSync(String(data.password), 10)
 
     const result = await execute(
-      `INSERT INTO Usuarios (nombre, correo, [contraseña], rol, activo, fecha_registro)
+      `INSERT INTO Usuarios (id_empresa, nombre, correo, [contraseña], rol, activo, fecha_registro)
        OUTPUT INSERTED.id_usuario
-       VALUES (@nombre, @correo, @password, @rol, 1, GETDATE())`,
+       VALUES (@empresaId, @nombre, @correo, @password, @rol, 1, GETDATE())`,
       {
+        empresaId: session.empresaId,
         nombre,
         correo: String(data.email).trim(),
         password: hashedPassword,
@@ -132,8 +139,8 @@ export async function POST(request: Request) {
         u.activo,
         u.fecha_registro
        FROM Usuarios u
-       WHERE u.id_usuario = @id`,
-      { id: Number(insertedId) }
+       WHERE u.id_usuario = @id AND u.id_empresa = @empresaId`,
+      { id: Number(insertedId), empresaId: session.empresaId }
     )
 
     await registrarBitacora({
@@ -182,7 +189,7 @@ export async function PATCH(req: Request) {
     }
 
     const updates: string[] = []
-    const params: Record<string, unknown> = { id: Number(id) }
+    const params: Record<string, unknown> = { id: Number(id), empresaId: session.empresaId }
 
     if (activo !== undefined) {
       updates.push("activo = @activo")
@@ -206,7 +213,7 @@ export async function PATCH(req: Request) {
     }
 
     await query(
-      `UPDATE Usuarios SET ${updates.join(", ")} WHERE id_usuario = @id`,
+      `UPDATE Usuarios SET ${updates.join(", ")} WHERE id_usuario = @id AND id_empresa = @empresaId`,
       params
     )
 

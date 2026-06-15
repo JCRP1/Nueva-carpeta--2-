@@ -15,10 +15,16 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 
 // Auth
 export const api = {
-  login: (email: string, password: string) =>
-    request<{ user: Record<string, unknown>; message?: string }>("/auth/login", {
+  login: (email: string, password: string, empresaCodigo?: string) =>
+    request<{ user: Record<string, unknown>; empresa?: Record<string, unknown>; message?: string }>("/auth/login", {
       method: "POST",
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ email, password, empresaCodigo }),
+    }),
+
+  createPublicCompany: (data: Record<string, unknown>) =>
+    request<{ success: boolean; empresa: Record<string, unknown> }>("/empresas/public-create", {
+      method: "POST",
+      body: JSON.stringify(data),
     }),
 
   logout: () =>
@@ -70,6 +76,9 @@ export const api = {
   crops: (greenhouse?: string) =>
     request<Array<Record<string, unknown>>>(`/crops${greenhouse ? `?greenhouse=${greenhouse}` : ""}`),
 
+  cultivoRDProfile: (nombre: string) =>
+    request<Record<string, unknown>>(`/cultivosRD?mode=perfil&nombre=${encodeURIComponent(nombre)}`),
+
   createCrop: (data: Record<string, unknown>) =>
     request<Record<string, unknown>>("/crops", {
       method: "POST",
@@ -106,6 +115,12 @@ export const api = {
       body: JSON.stringify({ id, ...data }),
     }),
 
+  deleteSensor: (id: string) =>
+    request<Record<string, unknown>>("/sensors", {
+      method: "DELETE",
+      body: JSON.stringify({ id }),
+    }),
+
   getSensorProgramming: (sensorId: string) =>
     request<{ programacion: Record<string, unknown> | null }>(`/sensors/${sensorId}/program`),
 
@@ -129,6 +144,31 @@ export const api = {
     request<Record<string, unknown>>("/zones", {
       method: "PATCH",
       body: JSON.stringify({ id, ...data }),
+    }),
+
+  // Harvests
+  harvests: (greenhouse?: string) =>
+    request<Array<Record<string, unknown>>>(`/harvests${greenhouse ? `?greenhouse=${greenhouse}` : ""}`),
+
+  harvestDetails: (greenhouse?: string) =>
+    request<Array<Record<string, unknown>>>(`/harvests?mode=details${greenhouse ? `&greenhouse=${greenhouse}` : ""}`),
+
+  createHarvest: (data: Record<string, unknown>) =>
+    request<Record<string, unknown>>("/harvests", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  updateHarvest: (id: string, data: Record<string, unknown>) =>
+    request<Record<string, unknown>>("/harvests", {
+      method: "PUT",
+      body: JSON.stringify({ id, ...data }),
+    }),
+
+  deleteHarvest: (id: string) =>
+    request<Record<string, unknown>>("/harvests", {
+      method: "DELETE",
+      body: JSON.stringify({ id }),
     }),
 
   // Alerts

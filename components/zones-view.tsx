@@ -46,6 +46,20 @@ import {
 import { toast } from "sonner"
 import type { Invernadero } from "@/lib/greensense-data"
 import type { Cultivo } from "@/lib/greensense-data"
+import { getAllCultivos, getPerfilAgronomico } from "@/lib/cultivos-rd-data"
+
+type CultivoReferencia = ReturnType<typeof getAllCultivos>[number]
+type EtapaCultivo = "germinacion" | "crecimiento" | "cosecha"
+type EtapaApiValue = string | { recomendacion?: string | null; labores?: string | null } | null
+
+interface PerfilAgronomicoApi {
+  densidadPlantasM2?: string | null
+  sustratoSuelo?: string | null
+  fertilizacion?: Partial<Record<EtapaCultivo, EtapaApiValue>>
+  manejo?: Partial<Record<EtapaCultivo, EtapaApiValue>>
+  sanidad?: string[]
+  plagas?: Array<{ nombre?: string | null }>
+}
 
 interface SensorReading {
   valor: number
@@ -70,6 +84,21 @@ interface ZoneData {
   umbral_ec: number
   umbral_tds: number
   observaciones: string
+  fechaSiembra: string
+  fechaCosechaEstimada: string
+  tiempoGerminacionDias: number
+  tiempoCrecimientoDias: number
+  tiempoCosechaDias: number
+  cantidadCultivo: number
+  rendimientoEstimado: number
+  unidadRendimiento: string
+  aguaEstimadaLitrosDia: number
+  humedadSiembra: number | null
+  temperaturaSiembra: number | null
+  phSiembra: number | null
+  ecSiembra: number | null
+  tdsSiembra: number | null
+  notasCultivo: string
   humedadActual: number
   ultimoRiego: string
   duracionUltimoRiego: number
@@ -141,6 +170,149 @@ function getStatus(valor: number, min: number, max: number): "bajo" | "alto" | "
   if (valor < min) return "bajo"
   if (valor > max) return "alto"
   return "normal"
+}
+
+function formatArea(value?: number) {
+  return `${Number(value || 0).toLocaleString("es-DO")} m²`
+}
+
+function findCropReference(cropName?: string) {
+  const normalized = cropName?.trim().toLowerCase()
+  if (!normalized) return null
+  return getAllCultivos().find((item) => item.nombre.toLowerCase() === normalized) || null
+}
+
+function formatMeasure(value?: number | null, suffix = "") {
+  const numeric = Number(value)
+  if (!Number.isFinite(numeric) || numeric <= 0) return "--"
+  return `${numeric.toLocaleString("es-DO", { maximumFractionDigits: 2 })}${suffix}`
+}
+
+function optionalNumber(value: number | "") {
+  return value === "" ? null : Number(value)
+}
+
+function getDaysSincePlanting(fechaSiembra: string) {
+  if (!fechaSiembra) return null
+  const plantedAt = new Date(`${fechaSiembra}T00:00:00`)
+  if (Number.isNaN(plantedAt.getTime())) return null
+  const today = new Date()
+  const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate())
+  return Math.max(0, Math.floor((todayStart.getTime() - plantedAt.getTime()) / 86400000))
+}
+
+function getStageFromDays(reference: CultivoReferencia, diasDesdeSiembra: number): EtapaCultivo {
+  if (diasDesdeSiembra <= reference.germinacion) return "germinacion"
+  if (diasDesdeSiembra <= reference.germinacion + reference.crecimiento) return "crecimiento"
+  return "cosecha"
+}
+
+function getCropStageInfo(cropName: string, fechaSiembra: string) {
+  const reference = findCropReference(cropName)
+  const diasDesdeSiembra = getDaysSincePlanting(fechaSiembra)
+  if (!reference || diasDesdeSiembra == null) return null
+
+  const etapa = getStageFromDays(reference, diasDesdeSiembra)
+  return {
+    etapa,
+    diasDesdeSiembra,
+    thresholds: reference.etapas[etapa],
+  }
+}
+
+function formatStageName(etapa: EtapaCultivo) {
+  if (etapa === "germinacion") return "Germinación"
+  if (etapa === "crecimiento") return "Crecimiento"
+  return "Cosecha"
+}
+
+function getStageRecommendation(etapa: EtapaCultivo) {
+  if (etapa === "germinacion") return "Mantener humedad estable y evitar saturación."
+  if (etapa === "crecimiento") return "Priorizar nutrición balanceada y revisar vigor vegetativo."
+  return "Controlar madurez, calidad y exceso de humedad antes del corte."
+}
+
+function formatCropDetail(crop?: Cultivo) {
+  if (!crop) return null
+  const reference = findCropReference(crop.nombre)
+  if (!reference) return null
+
+  return [
+    `Germinación: ${reference.germinacion} días`,
+    `Crecimiento: ${reference.crecimiento} días`,
+    `Cosecha: ${reference.cosecha} días`,
+  ].join(" · ")
+}
+
+function getCropThresholds(crop?: Cultivo, fallback?: Partial<ZoneData>, fechaSiembra?: string) {
+  const stageInfo = getCropStageInfo(crop?.nombre || fallback?.cultivoActual || "", fechaSiembra || fallback?.fechaSiembra || "")
+
+  return {
+    umbralHumedad: stageInfo?.thresholds.umbral_humedad ?? crop?.umbralHumedad ?? crop?.detalle?.umbralHumedad ?? fallback?.umbralHumedad ?? 40,
+    umbral_ph: stageInfo?.thresholds.umbral_ph ?? crop?.umbralPh ?? crop?.detalle?.umbralPh ?? fallback?.umbral_ph ?? 6,
+    umbral_ec: stageInfo?.thresholds.umbral_ec ?? crop?.umbralEc ?? crop?.detalle?.umbralEc ?? fallback?.umbral_ec ?? 1.5,
+    umbral_tds: stageInfo?.thresholds.umbral_tds ?? crop?.umbralTds ?? crop?.detalle?.umbralTds ?? fallback?.umbral_tds ?? 800,
+  }
+}
+
+function formatCropThresholds(crop?: Cultivo, fallback?: Partial<ZoneData>, fechaSiembra?: string) {
+  const thresholds = getCropThresholds(crop, fallback, fechaSiembra)
+  return `Umbrales del cultivo: humedad ${thresholds.umbralHumedad}% · pH ${thresholds.umbral_ph} · EC ${thresholds.umbral_ec} · TDS ${thresholds.umbral_tds}`
+}
+
+function getEtapaText(value?: EtapaApiValue) {
+  if (!value) return null
+  if (typeof value === "string") return value
+  return value.recomendacion || value.labores || null
+}
+
+function getAgronomicSummary(cropName: string, etapa?: EtapaCultivo, apiProfile?: PerfilAgronomicoApi) {
+  const localProfile = getPerfilAgronomico(cropName)
+  const profile = apiProfile || localProfile
+  if (!profile) return null
+
+  const sanidad =
+    apiProfile?.sanidad?.length
+      ? apiProfile.sanidad.slice(0, 4).join(", ")
+      : apiProfile?.plagas?.length
+        ? apiProfile.plagas.map((plaga) => plaga.nombre).filter(Boolean).slice(0, 4).join(", ")
+        : localProfile?.sanidad.slice(0, 4).join(", ") || ""
+
+  return {
+    densidad: profile.densidadPlantasM2 || "No definido",
+    sustrato: profile.sustratoSuelo || "No definido",
+    fertilizacion: etapa ? getEtapaText(profile.fertilizacion?.[etapa]) : null,
+    manejo: etapa ? getEtapaText(profile.manejo?.[etapa]) : null,
+    sanidad,
+  }
+}
+
+function getCropCycle(cropName: string, fechaSiembra: string) {
+  const crop = findCropReference(cropName)
+  if (!crop) {
+    return {
+      tiempoGerminacionDias: 0,
+      tiempoCrecimientoDias: 0,
+      tiempoCosechaDias: 0,
+      fechaCosechaEstimada: "",
+      notasCultivo: "",
+    }
+  }
+
+  let fechaCosechaEstimada = ""
+  if (fechaSiembra && crop.duracion) {
+    const date = new Date(`${fechaSiembra}T00:00:00`)
+    date.setDate(date.getDate() + crop.duracion)
+    fechaCosechaEstimada = date.toISOString().slice(0, 10)
+  }
+
+  return {
+    tiempoGerminacionDias: crop.germinacion,
+    tiempoCrecimientoDias: crop.crecimiento,
+    tiempoCosechaDias: crop.cosecha,
+    fechaCosechaEstimada,
+    notasCultivo: `Duración total: ${crop.duracion} días`,
+  }
 }
 
 // -- Sensor micro-card inside the zone card --
@@ -218,14 +390,25 @@ function ZoneCard({
 }) {
   const [configNombre, setConfigNombre] = useState(zona.nombre)
   const [configCultivo, setConfigCultivo] = useState(zona.cultivoActual)
-  const [configUmbral, setConfigUmbral] = useState(zona.umbralHumedad)
   const [configArea, setConfigArea] = useState(zona.area_m2)
   const [configCaudal, setConfigCaudal] = useState(zona.caudal_litros_min)
   const [configMetodo, setConfigMetodo] = useState(zona.modoRiego || "")
-  const [configUmbralPh, setConfigUmbralPh] = useState(zona.umbral_ph)
-  const [configUmbralEc, setConfigUmbralEc] = useState(zona.umbral_ec)
-  const [configUmbralTds, setConfigUmbralTds] = useState(zona.umbral_tds)
   const [configObservaciones, setConfigObservaciones] = useState(zona.observaciones)
+  const [configFechaSiembra, setConfigFechaSiembra] = useState(zona.fechaSiembra)
+  const [configFechaCosecha, setConfigFechaCosecha] = useState(zona.fechaCosechaEstimada)
+  const [configGerminacion, setConfigGerminacion] = useState(zona.tiempoGerminacionDias)
+  const [configCrecimiento, setConfigCrecimiento] = useState(zona.tiempoCrecimientoDias)
+  const [configCosecha, setConfigCosecha] = useState(zona.tiempoCosechaDias)
+  const [configCantidadCultivo, setConfigCantidadCultivo] = useState(zona.cantidadCultivo)
+  const [configRendimientoEstimado, setConfigRendimientoEstimado] = useState(zona.rendimientoEstimado)
+  const [configUnidadRendimiento, setConfigUnidadRendimiento] = useState(zona.unidadRendimiento || "lb")
+  const [configAguaEstimada, setConfigAguaEstimada] = useState(zona.aguaEstimadaLitrosDia)
+  const [configHumedadSiembra, setConfigHumedadSiembra] = useState<number | "">(zona.humedadSiembra ?? "")
+  const [configTemperaturaSiembra, setConfigTemperaturaSiembra] = useState<number | "">(zona.temperaturaSiembra ?? "")
+  const [configPhSiembra, setConfigPhSiembra] = useState<number | "">(zona.phSiembra ?? "")
+  const [configEcSiembra, setConfigEcSiembra] = useState<number | "">(zona.ecSiembra ?? "")
+  const [configTdsSiembra, setConfigTdsSiembra] = useState<number | "">(zona.tdsSiembra ?? "")
+  const [configNotasCultivo, setConfigNotasCultivo] = useState(zona.notasCultivo)
   const [saving, setSaving] = useState(false)
   const [configOpen, setConfigOpen] = useState(false)
 
@@ -234,19 +417,83 @@ function ZoneCard({
   const isIrrigating = zona.estadoRiego === "activo"
 
   const greenhouse = greenhouses.find((i) => i.id === zona.invernaderoId)
+  const greenhouseArea = Number(greenhouse?.area || 0)
+  const selectedConfigCrop = crops.find((crop) => crop.nombre === configCultivo)
+  const selectedConfigCropDetail = formatCropDetail(selectedConfigCrop)
+  const selectedConfigCropThresholds = formatCropThresholds(selectedConfigCrop, zona, configFechaSiembra)
+  const currentStage = getCropStageInfo(zona.cultivoActual, zona.fechaSiembra)
+  const { data: currentApiAgronomy } = useSWR<PerfilAgronomicoApi>(
+    zona.cultivoActual ? `/api/cultivosRD?mode=perfil&nombre=${encodeURIComponent(zona.cultivoActual)}` : null,
+    fetcher
+  )
+  const { data: selectedConfigApiAgronomy } = useSWR<PerfilAgronomicoApi>(
+    configCultivo ? `/api/cultivosRD?mode=perfil&nombre=${encodeURIComponent(configCultivo)}` : null,
+    fetcher
+  )
+  const currentAgronomy = getAgronomicSummary(zona.cultivoActual, currentStage?.etapa, currentApiAgronomy)
+  const selectedConfigAgronomy = getAgronomicSummary(
+    configCultivo,
+    getCropStageInfo(configCultivo, configFechaSiembra)?.etapa,
+    selectedConfigApiAgronomy
+  )
+  const configAutoYield = Number(configCantidadCultivo || 0) * Number(selectedConfigCrop?.rendimientoPorMata || 0)
+  const configAutoWater = Number(configCantidadCultivo || 0) * Number(selectedConfigCrop?.aguaLitrosPorMataDia || 0)
+
+  function applyCropToConfig(cropName: string) {
+    setConfigCultivo(cropName)
+
+    const cycle = getCropCycle(cropName, configFechaSiembra)
+    if (cycle.tiempoGerminacionDias) setConfigGerminacion(cycle.tiempoGerminacionDias)
+    if (cycle.tiempoCrecimientoDias) setConfigCrecimiento(cycle.tiempoCrecimientoDias)
+    if (cycle.tiempoCosechaDias) setConfigCosecha(cycle.tiempoCosechaDias)
+    if (cycle.fechaCosechaEstimada) setConfigFechaCosecha(cycle.fechaCosechaEstimada)
+    if (cycle.notasCultivo) setConfigNotasCultivo(cycle.notasCultivo)
+    const crop = crops.find((item) => item.nombre === cropName)
+    if (crop) {
+      const cantidad = Number(configCantidadCultivo || 0)
+      setConfigRendimientoEstimado(cantidad * Number(crop.rendimientoPorMata || 0))
+      setConfigUnidadRendimiento(crop.unidadRendimiento || "lb")
+      setConfigAguaEstimada(cantidad * Number(crop.aguaLitrosPorMataDia || 0))
+    }
+  }
+
+  function updateConfigFechaSiembra(value: string) {
+    setConfigFechaSiembra(value)
+    const cycle = getCropCycle(configCultivo, value)
+    if (cycle.fechaCosechaEstimada) setConfigFechaCosecha(cycle.fechaCosechaEstimada)
+  }
 
   function handleSaveConfig() {
+    if (greenhouseArea > 0 && configArea > greenhouseArea) {
+      toast.error("Área de zona inválida", {
+        description: `La zona no puede superar el tamaño del invernadero (${formatArea(greenhouseArea)})`,
+      })
+      return
+    }
+
     setSaving(true)
     onSaveConfig(zona.id, {
       nombre: configNombre,
       cultivoActual: configCultivo,
-      umbralHumedad: configUmbral,
+      ...getCropThresholds(selectedConfigCrop, zona, configFechaSiembra),
       area_m2: configArea,
       caudal_litros_min: configCaudal,
       modoRiego: configMetodo,
-      umbral_ph: configUmbralPh,
-      umbral_ec: configUmbralEc,
-      umbral_tds: configUmbralTds,
+      fechaSiembra: configFechaSiembra || null,
+      fechaCosechaEstimada: configFechaCosecha || null,
+      tiempoGerminacionDias: configGerminacion || null,
+      tiempoCrecimientoDias: configCrecimiento || null,
+      tiempoCosechaDias: configCosecha || null,
+      cantidadCultivo: configCantidadCultivo,
+      rendimientoEstimado: configRendimientoEstimado || configAutoYield,
+      unidadRendimiento: configUnidadRendimiento || selectedConfigCrop?.unidadRendimiento || "lb",
+      aguaEstimadaLitrosDia: configAguaEstimada || configAutoWater,
+      humedadSiembra: optionalNumber(configHumedadSiembra),
+      temperaturaSiembra: optionalNumber(configTemperaturaSiembra),
+      phSiembra: optionalNumber(configPhSiembra),
+      ecSiembra: optionalNumber(configEcSiembra),
+      tdsSiembra: optionalNumber(configTdsSiembra),
+      notasCultivo: configNotasCultivo,
       observaciones: configObservaciones,
     })
     setTimeout(() => {
@@ -258,13 +505,24 @@ function ZoneCard({
   function handleOpenConfig() {
     setConfigNombre(zona.nombre)
     setConfigCultivo(zona.cultivoActual)
-    setConfigUmbral(zona.umbralHumedad)
     setConfigArea(zona.area_m2)
     setConfigCaudal(zona.caudal_litros_min)
     setConfigMetodo(zona.modoRiego || metodosRiego[0]?.nombre || "")
-    setConfigUmbralPh(zona.umbral_ph)
-    setConfigUmbralEc(zona.umbral_ec)
-    setConfigUmbralTds(zona.umbral_tds)
+    setConfigFechaSiembra(zona.fechaSiembra)
+    setConfigFechaCosecha(zona.fechaCosechaEstimada)
+    setConfigGerminacion(zona.tiempoGerminacionDias)
+    setConfigCrecimiento(zona.tiempoCrecimientoDias)
+    setConfigCosecha(zona.tiempoCosechaDias)
+    setConfigCantidadCultivo(zona.cantidadCultivo)
+    setConfigRendimientoEstimado(zona.rendimientoEstimado)
+    setConfigUnidadRendimiento(zona.unidadRendimiento || "lb")
+    setConfigAguaEstimada(zona.aguaEstimadaLitrosDia)
+    setConfigHumedadSiembra(zona.humedadSiembra ?? "")
+    setConfigTemperaturaSiembra(zona.temperaturaSiembra ?? "")
+    setConfigPhSiembra(zona.phSiembra ?? "")
+    setConfigEcSiembra(zona.ecSiembra ?? "")
+    setConfigTdsSiembra(zona.tdsSiembra ?? "")
+    setConfigNotasCultivo(zona.notasCultivo)
     setConfigObservaciones(zona.observaciones)
     setConfigOpen(true)
   }
@@ -277,6 +535,32 @@ function ZoneCard({
           <div>
             <CardTitle className="text-base font-semibold text-foreground">{zona.nombre}</CardTitle>
             <p className="text-xs text-muted-foreground">{greenhouse?.nombre} &middot; {zona.cultivoActual}</p>
+            {currentStage && (
+              <p className="mt-1 text-xs text-muted-foreground">
+                Día {currentStage.diasDesdeSiembra} &middot; Etapa: {formatStageName(currentStage.etapa)}
+              </p>
+            )}
+            {currentStage && (
+              <p className="mt-0.5 text-[11px] text-muted-foreground">
+                {getStageRecommendation(currentStage.etapa)}
+              </p>
+            )}
+            {currentAgronomy?.fertilizacion && (
+              <p className="mt-0.5 text-[11px] text-muted-foreground">
+                Fertirriego: {currentAgronomy.fertilizacion}
+              </p>
+            )}
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              Matas: {formatMeasure(zona.cantidadCultivo)} &middot; Produccion estimada:{" "}
+              {formatMeasure(zona.rendimientoEstimado, ` ${zona.unidadRendimiento || "lb"}`)} &middot; Agua/dia:{" "}
+              {formatMeasure(zona.aguaEstimadaLitrosDia, " L")}
+            </p>
+            {(zona.humedadSiembra || zona.temperaturaSiembra || zona.phSiembra) && (
+              <p className="mt-0.5 text-[11px] text-muted-foreground">
+                Siembra: humedad {formatMeasure(zona.humedadSiembra, "%")}, temp{" "}
+                {formatMeasure(zona.temperaturaSiembra, "°C")}, pH {formatMeasure(zona.phSiembra)}
+              </p>
+            )}
           </div>
           <Badge className={isIrrigating ? "bg-blue-500/20 text-blue-400 border-0" : "bg-emerald-500/20 text-emerald-400 border-0"}>
             {isIrrigating ? "Regando" : "Normal"}
@@ -354,7 +638,7 @@ function ZoneCard({
                     <Settings className="mr-1 h-3.5 w-3.5" />Config
                   </Button>
                 </DialogTrigger>
-                <DialogContent className="max-w-lg">
+                <DialogContent className="max-h-[90vh] max-w-lg overflow-y-auto">
                   <DialogHeader>
                     <DialogTitle className="text-foreground">Configurar Zona</DialogTitle>
                   </DialogHeader>
@@ -365,7 +649,7 @@ function ZoneCard({
                     </div>
                     <div className="flex flex-col gap-2">
                       <Label>Cultivo Actual</Label>
-                      <Select value={configCultivo} onValueChange={setConfigCultivo}>
+                      <Select value={configCultivo} onValueChange={applyCropToConfig}>
                         <SelectTrigger>
                           <SelectValue placeholder="Seleccionar cultivo" />
                         </SelectTrigger>
@@ -377,15 +661,123 @@ function ZoneCard({
                           ))}
                         </SelectContent>
                       </Select>
+                      {selectedConfigCrop && (
+                        <div className="rounded-md border bg-muted/30 p-3 text-xs text-muted-foreground">
+                          {selectedConfigCropDetail && <p>{selectedConfigCropDetail}</p>}
+                          <p className={selectedConfigCropDetail ? "mt-1" : ""}>{selectedConfigCropThresholds}</p>
+                          {selectedConfigAgronomy && (
+                            <div className="mt-2 space-y-1">
+                              <p>Densidad: {selectedConfigAgronomy.densidad}</p>
+                              <p>Sustrato/suelo: {selectedConfigAgronomy.sustrato}</p>
+                              {selectedConfigAgronomy.fertilizacion && <p>Fertirriego: {selectedConfigAgronomy.fertilizacion}</p>}
+                              {selectedConfigAgronomy.manejo && <p>Manejo: {selectedConfigAgronomy.manejo}</p>}
+                              <p>Vigilar: {selectedConfigAgronomy.sanidad}</p>
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
-                    <div className="flex flex-col gap-2">
-                      <Label>Umbral de Humedad: {configUmbral}%</Label>
-                      <Slider value={[configUmbral]} onValueChange={(v) => setConfigUmbral(v[0])} min={10} max={80} step={5} />
+                    <div className="border-t pt-4">
+                      <h3 className="mb-3 text-sm font-medium">Detalles de siembra</h3>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="flex flex-col gap-2">
+                          <Label>Fecha de Siembra</Label>
+                          <Input type="date" value={configFechaSiembra} onChange={(e) => updateConfigFechaSiembra(e.target.value)} />
+                        </div>
+                        <div className="flex flex-col gap-2">
+                          <Label>Fecha Cosecha Estimada</Label>
+                          <Input type="date" value={configFechaCosecha} onChange={(e) => setConfigFechaCosecha(e.target.value)} />
+                        </div>
+                      </div>
+                      <div className="mt-4 grid grid-cols-3 gap-4">
+                        <div className="flex flex-col gap-2">
+                          <Label>Germinación (días)</Label>
+                          <Input type="number" min={0} value={configGerminacion} onChange={(e) => setConfigGerminacion(Number(e.target.value))} />
+                        </div>
+                        <div className="flex flex-col gap-2">
+                          <Label>Crecimiento (días)</Label>
+                          <Input type="number" min={0} value={configCrecimiento} onChange={(e) => setConfigCrecimiento(Number(e.target.value))} />
+                        </div>
+                        <div className="flex flex-col gap-2">
+                          <Label>Cosecha (días)</Label>
+                          <Input type="number" min={0} value={configCosecha} onChange={(e) => setConfigCosecha(Number(e.target.value))} />
+                        </div>
+                      </div>
+                      <div className="mt-4 flex flex-col gap-2">
+                        <Label>Cantidad a sembrar</Label>
+                        <Input
+                          type="number"
+                          min={0}
+                          step={1}
+                          value={configCantidadCultivo}
+                          onChange={(e) => {
+                            const cantidad = Number(e.target.value)
+                            setConfigCantidadCultivo(cantidad)
+                            if (selectedConfigCrop) {
+                              setConfigRendimientoEstimado(cantidad * Number(selectedConfigCrop.rendimientoPorMata || 0))
+                              setConfigAguaEstimada(cantidad * Number(selectedConfigCrop.aguaLitrosPorMataDia || 0))
+                              setConfigUnidadRendimiento(selectedConfigCrop.unidadRendimiento || configUnidadRendimiento || "lb")
+                            }
+                          }}
+                          placeholder="Ej: 120 plantas"
+                        />
+                      </div>
+                      <div className="mt-4 grid grid-cols-3 gap-4">
+                        <div className="flex flex-col gap-2">
+                          <Label>Produccion esperada</Label>
+                          <Input type="number" min={0} value={configRendimientoEstimado || configAutoYield} onChange={(e) => setConfigRendimientoEstimado(Number(e.target.value))} />
+                        </div>
+                        <div className="flex flex-col gap-2">
+                          <Label>Unidad</Label>
+                          <Input value={configUnidadRendimiento} onChange={(e) => setConfigUnidadRendimiento(e.target.value)} placeholder="lb, unidad, kg" />
+                        </div>
+                        <div className="flex flex-col gap-2">
+                          <Label>Agua/dia (L)</Label>
+                          <Input type="number" min={0} value={configAguaEstimada || configAutoWater} onChange={(e) => setConfigAguaEstimada(Number(e.target.value))} />
+                        </div>
+                      </div>
+                      <div className="mt-4 grid grid-cols-5 gap-3">
+                        <div className="flex flex-col gap-2">
+                          <Label>Hum. siembra</Label>
+                          <Input type="number" value={configHumedadSiembra} onChange={(e) => setConfigHumedadSiembra(e.target.value === "" ? "" : Number(e.target.value))} />
+                        </div>
+                        <div className="flex flex-col gap-2">
+                          <Label>Temp.</Label>
+                          <Input type="number" value={configTemperaturaSiembra} onChange={(e) => setConfigTemperaturaSiembra(e.target.value === "" ? "" : Number(e.target.value))} />
+                        </div>
+                        <div className="flex flex-col gap-2">
+                          <Label>pH</Label>
+                          <Input type="number" step={0.1} value={configPhSiembra} onChange={(e) => setConfigPhSiembra(e.target.value === "" ? "" : Number(e.target.value))} />
+                        </div>
+                        <div className="flex flex-col gap-2">
+                          <Label>EC</Label>
+                          <Input type="number" step={0.1} value={configEcSiembra} onChange={(e) => setConfigEcSiembra(e.target.value === "" ? "" : Number(e.target.value))} />
+                        </div>
+                        <div className="flex flex-col gap-2">
+                          <Label>TDS</Label>
+                          <Input type="number" value={configTdsSiembra} onChange={(e) => setConfigTdsSiembra(e.target.value === "" ? "" : Number(e.target.value))} />
+                        </div>
+                      </div>
+                      <div className="mt-4 flex flex-col gap-2">
+                        <Label>Notas del cultivo en esta zona</Label>
+                        <Textarea value={configNotasCultivo} onChange={(e) => setConfigNotasCultivo(e.target.value)} placeholder="Notas de siembra, etapa o manejo..." />
+                      </div>
                     </div>
-<div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-2 gap-4">
                       <div className="flex flex-col gap-2">
                         <Label>Area (m²)</Label>
-                        <Input type="number" value={configArea} onChange={(e) => setConfigArea(Number(e.target.value))} min={1} />
+                        <Input
+                          type="number"
+                          value={configArea}
+                          onChange={(e) => setConfigArea(Number(e.target.value))}
+                          min={1}
+                          max={greenhouseArea || undefined}
+                        />
+                        {greenhouseArea > 0 && (
+                          <p className="text-xs text-muted-foreground">
+                            Tamaño del invernadero: {formatArea(greenhouseArea)}
+                          </p>
+                        )}
                       </div>
                       <div className="flex flex-col gap-2">
                         <Label>Caudal (L/min)</Label>
@@ -402,20 +794,6 @@ function ZoneCard({
                           ))}
                         </SelectContent>
                       </Select>
-                    </div>
-                    <div className="grid grid-cols-3 gap-4">
-                      <div className="flex flex-col gap-2">
-                        <Label>Umbral pH</Label>
-                        <Input type="number" value={configUmbralPh} onChange={(e) => setConfigUmbralPh(Number(e.target.value))} min={0} max={14} step={0.1} />
-                      </div>
-                      <div className="flex flex-col gap-2">
-                        <Label>Umbral EC</Label>
-                        <Input type="number" value={configUmbralEc} onChange={(e) => setConfigUmbralEc(Number(e.target.value))} min={0} step={0.1} />
-                      </div>
-                      <div className="flex flex-col gap-2">
-                        <Label>Umbral TDS</Label>
-                        <Input type="number" value={configUmbralTds} onChange={(e) => setConfigUmbralTds(Number(e.target.value))} min={0} step={10} />
-                      </div>
                     </div>
                     <div className="flex flex-col gap-2">
                       <Label>Observaciones</Label>
@@ -476,13 +854,21 @@ export function ZonesView({ selectedGreenhouse, userRole }: ZonesViewProps) {
   const [newZoneName, setNewZoneName] = useState("")
   const [newZoneCultivo, setNewZoneCultivo] = useState("")
   const [newZoneGreenhouse, setNewZoneGreenhouse] = useState(selectedGreenhouse)
-  const [newZoneUmbral, setNewZoneUmbral] = useState(40)
   const [newZoneArea, setNewZoneArea] = useState(100)
   const [newZoneCaudal, setNewZoneCaudal] = useState(10)
   const [newZoneMetodo, setNewZoneMetodo] = useState("goteo")
-  const [newZoneUmbralPh, setNewZoneUmbralPh] = useState(6.0)
-  const [newZoneUmbralEc, setNewZoneUmbralEc] = useState(1.5)
-  const [newZoneUmbralTds, setNewZoneUmbralTds] = useState(800)
+  const [newZoneFechaSiembra, setNewZoneFechaSiembra] = useState("")
+  const [newZoneFechaCosecha, setNewZoneFechaCosecha] = useState("")
+  const [newZoneGerminacion, setNewZoneGerminacion] = useState(0)
+  const [newZoneCrecimiento, setNewZoneCrecimiento] = useState(0)
+  const [newZoneCosecha, setNewZoneCosecha] = useState(0)
+  const [newZoneCantidadCultivo, setNewZoneCantidadCultivo] = useState(0)
+  const [newZoneHumedadSiembra, setNewZoneHumedadSiembra] = useState<number | "">("")
+  const [newZoneTemperaturaSiembra, setNewZoneTemperaturaSiembra] = useState<number | "">("")
+  const [newZonePhSiembra, setNewZonePhSiembra] = useState<number | "">("")
+  const [newZoneEcSiembra, setNewZoneEcSiembra] = useState<number | "">("")
+  const [newZoneTdsSiembra, setNewZoneTdsSiembra] = useState<number | "">("")
+  const [newZoneNotasCultivo, setNewZoneNotasCultivo] = useState("")
   const [newZoneObservaciones, setNewZoneObservaciones] = useState("")
   const [creatingZone, setCreatingZone] = useState(false)
   const [newMethodDialogOpen, setNewMethodDialogOpen] = useState(false)
@@ -495,6 +881,10 @@ export function ZonesView({ selectedGreenhouse, userRole }: ZonesViewProps) {
     newZoneGreenhouse ? `/api/crops?greenhouse=${newZoneGreenhouse}` : null,
     fetcher
   )
+  const { data: selectedNewZoneApiAgronomy } = useSWR<PerfilAgronomicoApi>(
+    newZoneCultivo ? `/api/cultivosRD?mode=perfil&nombre=${encodeURIComponent(newZoneCultivo)}` : null,
+    fetcher
+  )
   const { data: metodosRiego } = useSWR<Array<{ id: string; nombre: string }>>("/api/metodos-riego", fetcher)
 
   useEffect(() => {
@@ -504,6 +894,36 @@ export function ZonesView({ selectedGreenhouse, userRole }: ZonesViewProps) {
   const isAdmin = userRole === "administrador"
   const ghList = greenhouses || []
   const zoneList = zones || []
+  const selectedNewZoneGreenhouse = ghList.find((inv) => inv.id === newZoneGreenhouse)
+  const selectedNewZoneGreenhouseArea = Number(selectedNewZoneGreenhouse?.area || 0)
+  const selectedNewZoneCrop = (newZoneCrops || []).find((crop) => crop.nombre === newZoneCultivo)
+  const selectedNewZoneCropDetail = formatCropDetail(selectedNewZoneCrop)
+  const selectedNewZoneCropThresholds = formatCropThresholds(selectedNewZoneCrop, undefined, newZoneFechaSiembra)
+  const newZoneEstimatedYield = Number(newZoneCantidadCultivo || 0) * Number(selectedNewZoneCrop?.rendimientoPorMata || 0)
+  const newZoneEstimatedWater = Number(newZoneCantidadCultivo || 0) * Number(selectedNewZoneCrop?.aguaLitrosPorMataDia || 0)
+  const newZoneYieldUnit = selectedNewZoneCrop?.unidadRendimiento || "lb"
+  const selectedNewZoneAgronomy = getAgronomicSummary(
+    newZoneCultivo,
+    getCropStageInfo(newZoneCultivo, newZoneFechaSiembra)?.etapa,
+    selectedNewZoneApiAgronomy
+  )
+
+  function applyCropToNewZone(cropName: string) {
+    setNewZoneCultivo(cropName)
+
+    const cycle = getCropCycle(cropName, newZoneFechaSiembra)
+    if (cycle.tiempoGerminacionDias) setNewZoneGerminacion(cycle.tiempoGerminacionDias)
+    if (cycle.tiempoCrecimientoDias) setNewZoneCrecimiento(cycle.tiempoCrecimientoDias)
+    if (cycle.tiempoCosechaDias) setNewZoneCosecha(cycle.tiempoCosechaDias)
+    if (cycle.fechaCosechaEstimada) setNewZoneFechaCosecha(cycle.fechaCosechaEstimada)
+    if (cycle.notasCultivo) setNewZoneNotasCultivo(cycle.notasCultivo)
+  }
+
+  function updateNewZoneFechaSiembra(value: string) {
+    setNewZoneFechaSiembra(value)
+    const cycle = getCropCycle(newZoneCultivo, value)
+    if (cycle.fechaCosechaEstimada) setNewZoneFechaCosecha(cycle.fechaCosechaEstimada)
+  }
 
   const handleToggleIrrigation = useCallback(async (id: string) => {
     const zone = zoneList.find((z) => z.id === id)
@@ -546,6 +966,13 @@ export function ZonesView({ selectedGreenhouse, userRole }: ZonesViewProps) {
       toast.error("Complete todos los campos", { description: "Nombre y cultivo son requeridos" })
       return
     }
+    if (selectedNewZoneGreenhouseArea > 0 && newZoneArea > selectedNewZoneGreenhouseArea) {
+      toast.error("Área de zona inválida", {
+        description: `La zona no puede superar el tamaño del invernadero (${formatArea(selectedNewZoneGreenhouseArea)})`,
+      })
+      return
+    }
+
     setCreatingZone(true)
     try {
       const selectedMetodo = metodosRiego?.find((m) => m.nombre === newZoneMetodo)
@@ -553,26 +980,46 @@ export function ZonesView({ selectedGreenhouse, userRole }: ZonesViewProps) {
         nombre: newZoneName,
         invernaderoId: newZoneGreenhouse,
         cultivoActual: newZoneCultivo,
-        umbralHumedad: newZoneUmbral,
+        ...getCropThresholds(selectedNewZoneCrop, undefined, newZoneFechaSiembra),
         area_m2: newZoneArea,
         caudal_litros_min: newZoneCaudal,
         id_metodo_riego: selectedMetodo?.id || "1",
-        umbral_ph: newZoneUmbralPh,
-        umbral_ec: newZoneUmbralEc,
-        umbral_tds: newZoneUmbralTds,
+        fechaSiembra: newZoneFechaSiembra || null,
+        fechaCosechaEstimada: newZoneFechaCosecha || null,
+        tiempoGerminacionDias: newZoneGerminacion || null,
+        tiempoCrecimientoDias: newZoneCrecimiento || null,
+        tiempoCosechaDias: newZoneCosecha || null,
+        cantidadCultivo: newZoneCantidadCultivo,
+        rendimientoEstimado: newZoneEstimatedYield,
+        unidadRendimiento: newZoneYieldUnit,
+        aguaEstimadaLitrosDia: newZoneEstimatedWater,
+        humedadSiembra: optionalNumber(newZoneHumedadSiembra),
+        temperaturaSiembra: optionalNumber(newZoneTemperaturaSiembra),
+        phSiembra: optionalNumber(newZonePhSiembra),
+        ecSiembra: optionalNumber(newZoneEcSiembra),
+        tdsSiembra: optionalNumber(newZoneTdsSiembra),
+        notasCultivo: newZoneNotasCultivo,
         observaciones: newZoneObservaciones,
       })
       mutate()
       setNewZoneOpen(false)
       setNewZoneName("")
       setNewZoneCultivo("")
-      setNewZoneUmbral(40)
       setNewZoneArea(100)
       setNewZoneCaudal(10)
       setNewZoneMetodo("goteo")
-      setNewZoneUmbralPh(6.0)
-      setNewZoneUmbralEc(1.5)
-      setNewZoneUmbralTds(800)
+      setNewZoneFechaSiembra("")
+      setNewZoneFechaCosecha("")
+      setNewZoneGerminacion(0)
+      setNewZoneCrecimiento(0)
+      setNewZoneCosecha(0)
+      setNewZoneCantidadCultivo(0)
+      setNewZoneHumedadSiembra("")
+      setNewZoneTemperaturaSiembra("")
+      setNewZonePhSiembra("")
+      setNewZoneEcSiembra("")
+      setNewZoneTdsSiembra("")
+      setNewZoneNotasCultivo("")
       setNewZoneObservaciones("")
       toast.success("Zona creada exitosamente", { description: `${newZoneName} agregada al sistema` })
     } catch (err) {
@@ -607,7 +1054,7 @@ export function ZonesView({ selectedGreenhouse, userRole }: ZonesViewProps) {
                 <Plus className="mr-2 h-4 w-4" />Nueva Zona
               </Button>
             </DialogTrigger>
-            <DialogContent>
+            <DialogContent className="max-h-[90vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle className="text-foreground">Crear Nueva Zona de Riego</DialogTitle>
               </DialogHeader>
@@ -629,7 +1076,7 @@ export function ZonesView({ selectedGreenhouse, userRole }: ZonesViewProps) {
                 </div>
                 <div className="flex flex-col gap-2">
                   <Label>Cultivo</Label>
-                  <Select value={newZoneCultivo} onValueChange={setNewZoneCultivo} disabled={!newZoneGreenhouse}>
+                  <Select value={newZoneCultivo} onValueChange={applyCropToNewZone} disabled={!newZoneGreenhouse}>
                     <SelectTrigger>
                       <SelectValue placeholder={newZoneGreenhouse ? "Seleccionar cultivo" : "Primero seleccione un invernadero"} />
                     </SelectTrigger>
@@ -641,15 +1088,111 @@ export function ZonesView({ selectedGreenhouse, userRole }: ZonesViewProps) {
                       ))}
                     </SelectContent>
                   </Select>
+                  {selectedNewZoneCrop && (
+                    <div className="rounded-md border bg-muted/30 p-3 text-xs text-muted-foreground">
+                      {selectedNewZoneCropDetail && <p>{selectedNewZoneCropDetail}</p>}
+                      <p className={selectedNewZoneCropDetail ? "mt-1" : ""}>{selectedNewZoneCropThresholds}</p>
+                      <p className="mt-1">
+                        Produccion/mata: {formatMeasure(selectedNewZoneCrop.rendimientoPorMata, ` ${selectedNewZoneCrop.unidadRendimiento || "lb"}`)} &middot;
+                        Agua/mata/dia: {formatMeasure(selectedNewZoneCrop.aguaLitrosPorMataDia, " L")}
+                      </p>
+                      {selectedNewZoneCrop.mejoresMeses && <p className="mt-1">Mejores meses: {selectedNewZoneCrop.mejoresMeses}</p>}
+                      {selectedNewZoneCrop.recomendacionSiembra && <p className="mt-1">{selectedNewZoneCrop.recomendacionSiembra}</p>}
+                      {selectedNewZoneAgronomy && (
+                        <div className="mt-2 space-y-1">
+                          <p>Densidad: {selectedNewZoneAgronomy.densidad}</p>
+                          <p>Sustrato/suelo: {selectedNewZoneAgronomy.sustrato}</p>
+                          {selectedNewZoneAgronomy.fertilizacion && <p>Fertirriego: {selectedNewZoneAgronomy.fertilizacion}</p>}
+                          {selectedNewZoneAgronomy.manejo && <p>Manejo: {selectedNewZoneAgronomy.manejo}</p>}
+                          <p>Vigilar: {selectedNewZoneAgronomy.sanidad}</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
-                <div className="flex flex-col gap-2">
-                  <Label>Umbral de Humedad: {newZoneUmbral}%</Label>
-                  <Slider value={[newZoneUmbral]} onValueChange={(v) => setNewZoneUmbral(v[0])} min={10} max={80} step={5} />
+                <div className="border-t pt-4">
+                  <h3 className="mb-3 text-sm font-medium">Detalles de siembra</h3>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="flex flex-col gap-2">
+                      <Label>Fecha de Siembra</Label>
+                      <Input type="date" value={newZoneFechaSiembra} onChange={(e) => updateNewZoneFechaSiembra(e.target.value)} />
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      <Label>Fecha Cosecha Estimada</Label>
+                      <Input type="date" value={newZoneFechaCosecha} onChange={(e) => setNewZoneFechaCosecha(e.target.value)} />
+                    </div>
+                  </div>
+                  <div className="mt-4 grid grid-cols-3 gap-4">
+                    <div className="flex flex-col gap-2">
+                      <Label>Germinación (días)</Label>
+                      <Input type="number" min={0} value={newZoneGerminacion} onChange={(e) => setNewZoneGerminacion(Number(e.target.value))} />
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      <Label>Crecimiento (días)</Label>
+                      <Input type="number" min={0} value={newZoneCrecimiento} onChange={(e) => setNewZoneCrecimiento(Number(e.target.value))} />
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      <Label>Cosecha (días)</Label>
+                      <Input type="number" min={0} value={newZoneCosecha} onChange={(e) => setNewZoneCosecha(Number(e.target.value))} />
+                    </div>
+                  </div>
+                  <div className="mt-4 flex flex-col gap-2">
+                    <Label>Cantidad a sembrar</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      step={1}
+                      value={newZoneCantidadCultivo}
+                      onChange={(e) => setNewZoneCantidadCultivo(Number(e.target.value))}
+                      placeholder="Ej: 120 plantas"
+                    />
+                  </div>
+                  <div className="mt-4 rounded-md border bg-muted/30 p-3 text-xs text-muted-foreground">
+                    Produccion estimada: {formatMeasure(newZoneEstimatedYield, ` ${newZoneYieldUnit}`)} &middot; Agua estimada/dia:{" "}
+                    {formatMeasure(newZoneEstimatedWater, " L")}
+                  </div>
+                  <div className="mt-4 grid grid-cols-5 gap-3">
+                    <div className="flex flex-col gap-2">
+                      <Label>Hum. siembra</Label>
+                      <Input type="number" value={newZoneHumedadSiembra} onChange={(e) => setNewZoneHumedadSiembra(e.target.value === "" ? "" : Number(e.target.value))} />
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      <Label>Temp.</Label>
+                      <Input type="number" value={newZoneTemperaturaSiembra} onChange={(e) => setNewZoneTemperaturaSiembra(e.target.value === "" ? "" : Number(e.target.value))} />
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      <Label>pH</Label>
+                      <Input type="number" step={0.1} value={newZonePhSiembra} onChange={(e) => setNewZonePhSiembra(e.target.value === "" ? "" : Number(e.target.value))} />
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      <Label>EC</Label>
+                      <Input type="number" step={0.1} value={newZoneEcSiembra} onChange={(e) => setNewZoneEcSiembra(e.target.value === "" ? "" : Number(e.target.value))} />
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      <Label>TDS</Label>
+                      <Input type="number" value={newZoneTdsSiembra} onChange={(e) => setNewZoneTdsSiembra(e.target.value === "" ? "" : Number(e.target.value))} />
+                    </div>
+                  </div>
+                  <div className="mt-4 flex flex-col gap-2">
+                    <Label>Notas del cultivo en esta zona</Label>
+                    <Textarea value={newZoneNotasCultivo} onChange={(e) => setNewZoneNotasCultivo(e.target.value)} placeholder="Notas de siembra, etapa o manejo..." />
+                  </div>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="flex flex-col gap-2">
                     <Label>Area (m²)</Label>
-                    <Input type="number" value={newZoneArea} onChange={(e) => setNewZoneArea(Number(e.target.value))} min={1} />
+                    <Input
+                      type="number"
+                      value={newZoneArea}
+                      onChange={(e) => setNewZoneArea(Number(e.target.value))}
+                      min={1}
+                      max={selectedNewZoneGreenhouseArea || undefined}
+                    />
+                    {selectedNewZoneGreenhouseArea > 0 && (
+                      <p className="text-xs text-muted-foreground">
+                        Tamaño del invernadero: {formatArea(selectedNewZoneGreenhouseArea)}
+                      </p>
+                    )}
                   </div>
                   <div className="flex flex-col gap-2">
                     <Label>Caudal (L/min)</Label>
@@ -672,20 +1215,6 @@ export function ZonesView({ selectedGreenhouse, userRole }: ZonesViewProps) {
                     <Button variant="outline" size="icon" onClick={() => setNewMethodDialogOpen(true)}>
                       <Plus className="h-4 w-4" />
                     </Button>
-                  </div>
-                </div>
-                <div className="grid grid-cols-3 gap-4">
-                  <div className="flex flex-col gap-2">
-                    <Label>Umbral pH</Label>
-                    <Input type="number" value={newZoneUmbralPh} onChange={(e) => setNewZoneUmbralPh(Number(e.target.value))} min={0} max={14} step={0.1} />
-                  </div>
-                  <div className="flex flex-col gap-2">
-                    <Label>Umbral EC</Label>
-                    <Input type="number" value={newZoneUmbralEc} onChange={(e) => setNewZoneUmbralEc(Number(e.target.value))} min={0} step={0.1} />
-                  </div>
-                  <div className="flex flex-col gap-2">
-                    <Label>Umbral TDS</Label>
-                    <Input type="number" value={newZoneUmbralTds} onChange={(e) => setNewZoneUmbralTds(Number(e.target.value))} min={0} step={10} />
                   </div>
                 </div>
                 <div className="flex flex-col gap-2">

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import { requireAuth, requireAdmin } from "@/lib/auth"
-import { query } from "@/lib/db"
+import { getPool, query } from "@/lib/db"
 import { registrarBitacora } from "@/lib/bitacora"
 import { buildVirtualDeviceCodeExpression, hasPhysicalDeviceCodeColumn } from "@/lib/device-code"
 
@@ -14,7 +14,7 @@ function normalizeDeviceCode(value: unknown) {
 
 export async function GET(req: Request) {
   try {
-    await requireAuth()
+    const session = await requireAuth()
     const { searchParams } = new URL(req.url)
     const greenhouseId = searchParams.get("greenhouse")
     const hasDeviceCodeColumn = await hasPhysicalDeviceCodeColumn()
@@ -37,11 +37,13 @@ export async function GET(req: Request) {
       FROM DispositivosIoT d
       LEFT JOIN Invernaderos i ON d.id_invernadero = i.id_invernadero
     `
-    const params: Record<string, unknown> = {}
+    const params: Record<string, unknown> = { empresaId: session.empresaId }
 
     if (greenhouseId) {
-      sqlText += " WHERE d.id_invernadero = @greenhouseId"
+      sqlText += " WHERE d.id_invernadero = @greenhouseId AND i.id_empresa = @empresaId"
       params.greenhouseId = Number(greenhouseId)
+    } else {
+      sqlText += " WHERE i.id_empresa = @empresaId"
     }
 
     sqlText += " ORDER BY d.nombre"
@@ -82,6 +84,14 @@ export async function POST(req: Request) {
         { error: "Nombre, invernadero y codigo de dispositivo son requeridos" },
         { status: 400 }
       )
+    }
+
+    const greenhouseRows = await query<Array<{ id_invernadero: number }>>(
+      "SELECT id_invernadero FROM Invernaderos WHERE id_invernadero = @idInvernadero AND id_empresa = @empresaId",
+      { idInvernadero: Number(idInvernadero), empresaId: session.empresaId }
+    )
+    if (greenhouseRows.length === 0) {
+      return NextResponse.json({ error: "Invernadero no pertenece a la empresa actual" }, { status: 403 })
     }
 
     const result = await query(
@@ -174,30 +184,44 @@ export async function PUT(req: Request) {
       )
     }
 
+    const greenhouseRows = await query<Array<{ id_invernadero: number }>>(
+      "SELECT id_invernadero FROM Invernaderos WHERE id_invernadero = @idInvernadero AND id_empresa = @empresaId",
+      { idInvernadero: Number(idInvernadero), empresaId: session.empresaId }
+    )
+    if (greenhouseRows.length === 0) {
+      return NextResponse.json({ error: "Invernadero no pertenece a la empresa actual" }, { status: 403 })
+    }
+
     const previousRows = await query<Record<string, unknown>[]>(
       hasDeviceCodeColumn
         ? `SELECT
-            id_invernadero AS idInvernadero,
-            nombre,
-            tipo,
-            codigo_dispositivo AS codigoDispositivo,
-            estado,
-            firmware_version AS firmwareVersion,
-            ip_local AS ipLocal
-           FROM DispositivosIoT
-           WHERE id_dispositivo = @id`
-        : `SELECT
-            id_invernadero AS idInvernadero,
-            nombre,
-            tipo,
-            ${buildVirtualDeviceCodeExpression()} AS codigoDispositivo,
-            estado,
-            firmware_version AS firmwareVersion,
-            ip_local AS ipLocal
+            d.id_invernadero AS idInvernadero,
+            d.nombre,
+            d.tipo,
+            d.codigo_dispositivo AS codigoDispositivo,
+            d.estado,
+            d.firmware_version AS firmwareVersion,
+            d.ip_local AS ipLocal
            FROM DispositivosIoT d
-           WHERE id_dispositivo = @id`,
-      { id }
+           INNER JOIN Invernaderos i ON d.id_invernadero = i.id_invernadero
+           WHERE d.id_dispositivo = @id AND i.id_empresa = @empresaId`
+        : `SELECT
+            d.id_invernadero AS idInvernadero,
+            d.nombre,
+            d.tipo,
+            ${buildVirtualDeviceCodeExpression()} AS codigoDispositivo,
+            d.estado,
+           d.firmware_version AS firmwareVersion,
+           d.ip_local AS ipLocal
+           FROM DispositivosIoT d
+           INNER JOIN Invernaderos i ON d.id_invernadero = i.id_invernadero
+           WHERE d.id_dispositivo = @id AND i.id_empresa = @empresaId`,
+      { id, empresaId: session.empresaId }
     )
+
+    if (previousRows.length === 0) {
+      return NextResponse.json({ error: "Dispositivo no encontrado para la empresa actual" }, { status: 404 })
+    }
 
     await query(
       hasDeviceCodeColumn
@@ -209,7 +233,8 @@ export async function PUT(req: Request) {
             estado = @estado,
             firmware_version = @firmwareVersion,
             ip_local = @ipLocal
-           WHERE id_dispositivo = @id`
+           WHERE id_dispositivo = @id
+             AND id_invernadero IN (SELECT id_invernadero FROM Invernaderos WHERE id_empresa = @empresaId)`
         : `UPDATE DispositivosIoT SET
             id_invernadero = @idInvernadero,
             nombre = @nombre,
@@ -217,9 +242,11 @@ export async function PUT(req: Request) {
             estado = @estado,
             firmware_version = @firmwareVersion,
             ip_local = @ipLocal
-           WHERE id_dispositivo = @id`,
+           WHERE id_dispositivo = @id
+             AND id_invernadero IN (SELECT id_invernadero FROM Invernaderos WHERE id_empresa = @empresaId)`,
       {
         id,
+        empresaId: session.empresaId,
         idInvernadero,
         nombre,
         tipo: tipo || "gateway",
@@ -278,16 +305,58 @@ export async function DELETE(req: Request) {
 
     const previousRows = await query<Record<string, unknown>[]>(
       hasDeviceCodeColumn
-        ? `SELECT nombre, tipo, codigo_dispositivo AS codigoDispositivo
-           FROM DispositivosIoT
-           WHERE id_dispositivo = @id`
-        : `SELECT nombre, tipo, ${buildVirtualDeviceCodeExpression()} AS codigoDispositivo
+        ? `SELECT d.nombre, d.tipo, d.codigo_dispositivo AS codigoDispositivo
            FROM DispositivosIoT d
-           WHERE id_dispositivo = @id`,
-      { id }
+           INNER JOIN Invernaderos i ON d.id_invernadero = i.id_invernadero
+           WHERE d.id_dispositivo = @id AND i.id_empresa = @empresaId`
+        : `SELECT d.nombre, d.tipo, ${buildVirtualDeviceCodeExpression()} AS codigoDispositivo
+           FROM DispositivosIoT d
+           INNER JOIN Invernaderos i ON d.id_invernadero = i.id_invernadero
+           WHERE d.id_dispositivo = @id AND i.id_empresa = @empresaId`,
+      { id, empresaId: session.empresaId }
     )
 
-    await query("DELETE FROM DispositivosIoT WHERE id_dispositivo = @id", { id })
+    if (previousRows.length === 0) {
+      return NextResponse.json({ error: "Dispositivo no encontrado para la empresa actual" }, { status: 404 })
+    }
+
+    const pool = await getPool()
+    const transaction = pool.transaction()
+    await transaction.begin()
+
+    try {
+      const request = transaction.request()
+      request.input("id", id)
+      request.input("empresaId", session.empresaId)
+
+      await request.query(`
+        UPDATE Sensores
+        SET id_dispositivo = NULL
+        WHERE id_dispositivo = @id;
+
+        UPDATE Bitacora
+        SET id_dispositivo = NULL
+        WHERE id_dispositivo = @id;
+
+        DELETE FROM ComandosIoT
+        WHERE id_dispositivo = @id;
+
+        DELETE FROM IoTLog
+        WHERE id_dispositivo = @id;
+
+        DELETE FROM MantenimientoEquipos
+        WHERE id_dispositivo = @id;
+
+        DELETE FROM DispositivosIoT
+        WHERE id_dispositivo = @id
+          AND id_invernadero IN (SELECT id_invernadero FROM Invernaderos WHERE id_empresa = @empresaId);
+      `)
+
+      await transaction.commit()
+    } catch (error) {
+      await transaction.rollback()
+      throw error
+    }
 
     await registrarBitacora({
       session,
