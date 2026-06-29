@@ -48,7 +48,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
-import { getAllCultivos } from "@/lib/cultivos-rd-data"
+import { getAllCultivos, getPerfilAgronomico } from "@/lib/cultivos-rd-data"
 
 interface CropsViewProps {
   userRole: UserRole
@@ -64,14 +64,57 @@ interface CultivoDetalle {
   umbral_tds?: string
 }
 
+interface PerfilAgronomicoForm {
+  aguaAproximada: string
+  fertilizantes: string
+  abonos: string
+  rendimientoPorMata: string
+  plagas: string
+  mesesRecomendados: string
+}
+
 type CultivoRD = ReturnType<typeof getAllCultivos>[number]
+
+type CultivoConPerfil = Cultivo & {
+  perfilAgronomico?: Partial<Record<keyof PerfilAgronomicoForm, unknown>>
+}
+
+function emptyPerfilAgronomico(): PerfilAgronomicoForm {
+  return {
+    aguaAproximada: "",
+    fertilizantes: "",
+    abonos: "",
+    rendimientoPorMata: "",
+    plagas: "",
+    mesesRecomendados: "",
+  }
+}
+
+function valueToText(value: unknown): string {
+  if (Array.isArray(value)) return value.map((item) => String(item)).join("\n")
+  return String(value || "")
+}
+
+function getPerfilAgronomicoForm(nombre: string, fallback?: Partial<Record<keyof PerfilAgronomicoForm, unknown>>): PerfilAgronomicoForm {
+  const perfil = getPerfilAgronomico(nombre)
+  const base = emptyPerfilAgronomico()
+
+  return {
+    aguaAproximada: valueToText(fallback?.aguaAproximada ?? perfil?.aguaAproximada ?? base.aguaAproximada),
+    fertilizantes: valueToText(fallback?.fertilizantes ?? perfil?.fertilizantes ?? base.fertilizantes),
+    abonos: valueToText(fallback?.abonos ?? perfil?.abonos ?? base.abonos),
+    rendimientoPorMata: valueToText(fallback?.rendimientoPorMata ?? perfil?.rendimientoPorMata ?? base.rendimientoPorMata),
+    plagas: valueToText(fallback?.plagas ?? perfil?.plagas ?? base.plagas),
+    mesesRecomendados: valueToText(fallback?.mesesRecomendados ?? perfil?.mesesRecomendados ?? base.mesesRecomendados),
+  }
+}
 
 function getCultivoRDThresholds(cultivo?: CultivoRD): CultivoDetalle {
   const thresholds = cultivo?.etapas.crecimiento || cultivo?.etapas.germinacion || cultivo?.etapas.cosecha
 
   return {
     umbral_humedad: thresholds?.umbral_humedad?.toString() || "40",
-    umbral_temperatura: "27",
+    umbral_temperatura: "28",
     umbral_ph: thresholds?.umbral_ph?.toString() || "6",
     umbral_ec: thresholds?.umbral_ec?.toString() || "1.5",
     umbral_tds: thresholds?.umbral_tds?.toString() || "800",
@@ -107,20 +150,12 @@ export function CropsView({ userRole, selectedGreenhouse }: CropsViewProps) {
     invernaderoId: "",
     detalle: {
       umbral_humedad: "40",
-      umbral_temperatura: "27",
+      umbral_temperatura: "28",
       umbral_ph: "6",
       umbral_ec: "1.5",
       umbral_tds: "800",
     } as CultivoDetalle,
-    agua_litros_por_mata_dia: "",
-    rendimiento_por_mata: "",
-    unidad_rendimiento: "lb",
-    fertilizantes: "",
-    abonos: "",
-    plagas_comunes: "",
-    tratamiento_recomendado: "",
-    mejores_meses: "",
-    recomendacion_siembra: "",
+    perfilAgronomico: emptyPerfilAgronomico(),
   })
   const [searchCultivo, setSearchCultivo] = useState("")
   const [showSuggestions, setShowSuggestions] = useState(false)
@@ -161,20 +196,12 @@ export function CropsView({ userRole, selectedGreenhouse }: CropsViewProps) {
       invernaderoId: selectedGreenhouse,
       detalle: {
         umbral_humedad: "40",
-        umbral_temperatura: "27",
+        umbral_temperatura: "28",
         umbral_ph: "6",
         umbral_ec: "1.5",
         umbral_tds: "800",
       },
-      agua_litros_por_mata_dia: "",
-      rendimiento_por_mata: "",
-      unidad_rendimiento: "lb",
-      fertilizantes: "",
-      abonos: "",
-      plagas_comunes: "",
-      tratamiento_recomendado: "",
-      mejores_meses: "",
-      recomendacion_siembra: "",
+      perfilAgronomico: emptyPerfilAgronomico(),
     })
     setSearchCultivo("")
     setShowSuggestions(false)
@@ -183,6 +210,7 @@ export function CropsView({ userRole, selectedGreenhouse }: CropsViewProps) {
 
   function openEditDialog(crop: Cultivo) {
     const cultivoRDThresholds = getCultivoRDThresholds(findCultivoRD(crop.nombre, crop.variedad))
+    const cropWithPerfil = crop as CultivoConPerfil
 
     setEditingCrop(crop)
     setFormData({
@@ -196,15 +224,7 @@ export function CropsView({ userRole, selectedGreenhouse }: CropsViewProps) {
         umbral_ec: crop.umbralEc?.toString() || crop.detalle?.umbralEc?.toString() || cultivoRDThresholds.umbral_ec,
         umbral_tds: crop.umbralTds?.toString() || crop.detalle?.umbralTds?.toString() || cultivoRDThresholds.umbral_tds,
       },
-      agua_litros_por_mata_dia: crop.aguaLitrosPorMataDia?.toString() || "",
-      rendimiento_por_mata: crop.rendimientoPorMata?.toString() || "",
-      unidad_rendimiento: crop.unidadRendimiento || "lb",
-      fertilizantes: crop.fertilizantes || "",
-      abonos: crop.abonos || "",
-      plagas_comunes: crop.plagasComunes || "",
-      tratamiento_recomendado: crop.tratamientoRecomendado || "",
-      mejores_meses: crop.mejoresMeses || "",
-      recomendacion_siembra: crop.recomendacionSiembra || "",
+      perfilAgronomico: getPerfilAgronomicoForm(crop.nombre, cropWithPerfil.perfilAgronomico),
     })
     setSearchCultivo(crop.nombre)
     setShowSuggestions(false)
@@ -217,15 +237,7 @@ export function CropsView({ userRole, selectedGreenhouse }: CropsViewProps) {
       variedad: cultivo.variedad,
       invernaderoId: formData.invernaderoId,
       detalle: getCultivoRDThresholds(cultivo),
-      agua_litros_por_mata_dia: formData.agua_litros_por_mata_dia,
-      rendimiento_por_mata: formData.rendimiento_por_mata,
-      unidad_rendimiento: formData.unidad_rendimiento,
-      fertilizantes: formData.fertilizantes,
-      abonos: formData.abonos,
-      plagas_comunes: formData.plagas_comunes,
-      tratamiento_recomendado: formData.tratamiento_recomendado,
-      mejores_meses: formData.mejores_meses,
-      recomendacion_siembra: formData.recomendacion_siembra,
+      perfilAgronomico: getPerfilAgronomicoForm(cultivo.nombre),
     })
     setSearchCultivo(cultivo.nombre)
     setShowSuggestions(false)
@@ -248,15 +260,7 @@ export function CropsView({ userRole, selectedGreenhouse }: CropsViewProps) {
         umbral_ph: formData.detalle.umbral_ph ? Number(formData.detalle.umbral_ph) : null,
         umbral_ec: formData.detalle.umbral_ec ? Number(formData.detalle.umbral_ec) : null,
         umbral_tds: formData.detalle.umbral_tds ? Number(formData.detalle.umbral_tds) : null,
-        agua_litros_por_mata_dia: formData.agua_litros_por_mata_dia ? Number(formData.agua_litros_por_mata_dia) : null,
-        rendimiento_por_mata: formData.rendimiento_por_mata ? Number(formData.rendimiento_por_mata) : null,
-        unidad_rendimiento: formData.unidad_rendimiento,
-        fertilizantes: formData.fertilizantes,
-        abonos: formData.abonos,
-        plagas_comunes: formData.plagas_comunes,
-        tratamiento_recomendado: formData.tratamiento_recomendado,
-        mejores_meses: formData.mejores_meses,
-        recomendacion_siembra: formData.recomendacion_siembra,
+        perfilAgronomico: formData.perfilAgronomico,
       }
 
       if (editingCrop) {
@@ -315,7 +319,7 @@ export function CropsView({ userRole, selectedGreenhouse }: CropsViewProps) {
                 Nuevo Cultivo
               </Button>
             </DialogTrigger>
-             <DialogContent className="max-w-2xl">
+             <DialogContent className="max-w-3xl">
                <DialogHeader>
                  <DialogTitle>
                    {editingCrop ? "Editar Cultivo" : "Nuevo Cultivo"}
@@ -336,6 +340,7 @@ export function CropsView({ userRole, selectedGreenhouse }: CropsViewProps) {
                            ...formData,
                            nombre,
                            detalle: cultivoRD ? getCultivoRDThresholds(cultivoRD) : formData.detalle,
+                           perfilAgronomico: cultivoRD ? getPerfilAgronomicoForm(cultivoRD.nombre) : formData.perfilAgronomico,
                          })
                          setShowSuggestions(nombre.length > 0)
                        }}
@@ -371,6 +376,7 @@ export function CropsView({ userRole, selectedGreenhouse }: CropsViewProps) {
                            ...formData,
                            variedad,
                            detalle: cultivoRD ? getCultivoRDThresholds(cultivoRD) : formData.detalle,
+                           perfilAgronomico: cultivoRD ? getPerfilAgronomicoForm(cultivoRD.nombre) : formData.perfilAgronomico,
                          })
                        }}
                        placeholder="Se completa automaticamente o escriba una variedad"
@@ -396,9 +402,92 @@ export function CropsView({ userRole, selectedGreenhouse }: CropsViewProps) {
                     </select>
                   </div>
                 </div>
+                <div className="border-t pt-4 mt-2">
+                  <h3 className="mb-3 text-sm font-medium">Perfil agronomico</h3>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="grid gap-2">
+                      <Label htmlFor="agua_aproximada">Agua aproximada</Label>
+                      <Input
+                        id="agua_aproximada"
+                        value={formData.perfilAgronomico.aguaAproximada}
+                        onChange={(e) => setFormData({
+                          ...formData,
+                          perfilAgronomico: { ...formData.perfilAgronomico, aguaAproximada: e.target.value },
+                        })}
+                        placeholder="Ej: 1.5 a 2.5 L por mata/dia"
+                      />
+                    </div>
+                    <div className="grid gap-2">
+                      <Label htmlFor="rendimiento_por_mata">Rendimiento por mata</Label>
+                      <Input
+                        id="rendimiento_por_mata"
+                        value={formData.perfilAgronomico.rendimientoPorMata}
+                        onChange={(e) => setFormData({
+                          ...formData,
+                          perfilAgronomico: { ...formData.perfilAgronomico, rendimientoPorMata: e.target.value },
+                        })}
+                        placeholder="Ej: 8 a 12 lb por mata"
+                      />
+                    </div>
+                  </div>
+                  <div className="mt-4 grid grid-cols-2 gap-4">
+                    <div className="grid gap-2">
+                      <Label htmlFor="fertilizantes">Fertilizantes</Label>
+                      <Textarea
+                        id="fertilizantes"
+                        value={formData.perfilAgronomico.fertilizantes}
+                        onChange={(e) => setFormData({
+                          ...formData,
+                          perfilAgronomico: { ...formData.perfilAgronomico, fertilizantes: e.target.value },
+                        })}
+                        placeholder="Uno por linea"
+                        rows={3}
+                      />
+                    </div>
+                    <div className="grid gap-2">
+                      <Label htmlFor="abonos">Abonos</Label>
+                      <Textarea
+                        id="abonos"
+                        value={formData.perfilAgronomico.abonos}
+                        onChange={(e) => setFormData({
+                          ...formData,
+                          perfilAgronomico: { ...formData.perfilAgronomico, abonos: e.target.value },
+                        })}
+                        placeholder="Uno por linea"
+                        rows={3}
+                      />
+                    </div>
+                    <div className="grid gap-2">
+                      <Label htmlFor="plagas">Plagas o insectos</Label>
+                      <Textarea
+                        id="plagas"
+                        value={formData.perfilAgronomico.plagas}
+                        onChange={(e) => setFormData({
+                          ...formData,
+                          perfilAgronomico: { ...formData.perfilAgronomico, plagas: e.target.value },
+                        })}
+                        placeholder="Uno por linea"
+                        rows={3}
+                      />
+                    </div>
+                    <div className="grid gap-2">
+                      <Label htmlFor="meses_recomendados">Meses recomendados</Label>
+                      <Textarea
+                        id="meses_recomendados"
+                        value={formData.perfilAgronomico.mesesRecomendados}
+                        onChange={(e) => setFormData({
+                          ...formData,
+                          perfilAgronomico: { ...formData.perfilAgronomico, mesesRecomendados: e.target.value },
+                        })}
+                        placeholder="Uno por linea o separados por coma"
+                        rows={3}
+                      />
+                    </div>
+                  </div>
+                </div>
                 
                 <div className="border-t pt-4 mt-2">
-                  <h3 className="mb-3 text-sm font-medium">Parametros del Cultivo</h3>
+                  <h3 className="mb-3 text-sm font-medium">Umbrales del Cultivo</h3>
                     <div className="grid grid-cols-5 gap-4">
                       <div className="grid gap-2">
                         <Label htmlFor="umbral_humedad">Humedad (%)</Label>
@@ -472,65 +561,6 @@ export function CropsView({ userRole, selectedGreenhouse }: CropsViewProps) {
                           })}
                         />
                       </div>
-                    </div>
-                    <div className="mt-4 grid grid-cols-3 gap-4">
-                      <div className="grid gap-2">
-                        <Label htmlFor="agua_litros_por_mata_dia">Agua por mata/dia (L)</Label>
-                        <Input
-                          id="agua_litros_por_mata_dia"
-                          type="number"
-                          min="0"
-                          step="0.1"
-                          value={formData.agua_litros_por_mata_dia}
-                          onChange={(e) => setFormData({ ...formData, agua_litros_por_mata_dia: e.target.value })}
-                        />
-                      </div>
-                      <div className="grid gap-2">
-                        <Label htmlFor="rendimiento_por_mata">Produccion por mata</Label>
-                        <Input
-                          id="rendimiento_por_mata"
-                          type="number"
-                          min="0"
-                          step="0.1"
-                          value={formData.rendimiento_por_mata}
-                          onChange={(e) => setFormData({ ...formData, rendimiento_por_mata: e.target.value })}
-                        />
-                      </div>
-                      <div className="grid gap-2">
-                        <Label htmlFor="unidad_rendimiento">Unidad</Label>
-                        <Input
-                          id="unidad_rendimiento"
-                          value={formData.unidad_rendimiento}
-                          onChange={(e) => setFormData({ ...formData, unidad_rendimiento: e.target.value })}
-                          placeholder="lb, kg, unidad"
-                        />
-                      </div>
-                    </div>
-                    <div className="mt-4 grid grid-cols-2 gap-4">
-                      <div className="grid gap-2">
-                        <Label htmlFor="fertilizantes">Fertilizantes</Label>
-                        <Textarea id="fertilizantes" value={formData.fertilizantes} onChange={(e) => setFormData({ ...formData, fertilizantes: e.target.value })} />
-                      </div>
-                      <div className="grid gap-2">
-                        <Label htmlFor="abonos">Abonos</Label>
-                        <Textarea id="abonos" value={formData.abonos} onChange={(e) => setFormData({ ...formData, abonos: e.target.value })} />
-                      </div>
-                      <div className="grid gap-2">
-                        <Label htmlFor="plagas_comunes">Plagas o enfermedades</Label>
-                        <Textarea id="plagas_comunes" value={formData.plagas_comunes} onChange={(e) => setFormData({ ...formData, plagas_comunes: e.target.value })} />
-                      </div>
-                      <div className="grid gap-2">
-                        <Label htmlFor="tratamiento_recomendado">Tratamiento recomendado</Label>
-                        <Textarea id="tratamiento_recomendado" value={formData.tratamiento_recomendado} onChange={(e) => setFormData({ ...formData, tratamiento_recomendado: e.target.value })} />
-                      </div>
-                    </div>
-                    <div className="mt-4 grid gap-2">
-                      <Label htmlFor="mejores_meses">Mejores meses para sembrar</Label>
-                      <Input id="mejores_meses" value={formData.mejores_meses} onChange={(e) => setFormData({ ...formData, mejores_meses: e.target.value })} placeholder="Ej: enero, febrero, noviembre" />
-                    </div>
-                    <div className="mt-4 grid gap-2">
-                      <Label htmlFor="recomendacion_siembra">Recomendacion de siembra</Label>
-                      <Textarea id="recomendacion_siembra" value={formData.recomendacion_siembra} onChange={(e) => setFormData({ ...formData, recomendacion_siembra: e.target.value })} />
                     </div>
                 </div>
               </div>
@@ -614,8 +644,8 @@ export function CropsView({ userRole, selectedGreenhouse }: CropsViewProps) {
                                   <span>{crop.umbralHumedad ?? crop.detalle?.umbralHumedad ?? 40}%</span>
                                 </div>
                                 <div className="flex justify-between text-xs">
-                                  <span className="text-muted-foreground">Temp:</span>
-                                  <span>{crop.umbralTemperatura ?? 27} C</span>
+                                  <span className="text-muted-foreground">Temperatura:</span>
+                                  <span>{crop.umbralTemperatura ?? 28}C</span>
                                 </div>
                                 <div className="flex justify-between text-xs">
                                   <span className="text-muted-foreground">pH:</span>
@@ -628,14 +658,6 @@ export function CropsView({ userRole, selectedGreenhouse }: CropsViewProps) {
                                 <div className="flex justify-between text-xs">
                                   <span className="text-muted-foreground">TDS:</span>
                                   <span>{crop.umbralTds ?? crop.detalle?.umbralTds ?? 800}</span>
-                                </div>
-                                <div className="flex justify-between text-xs">
-                                  <span className="text-muted-foreground">Agua/mata:</span>
-                                  <span>{crop.aguaLitrosPorMataDia ?? 0} L/dia</span>
-                                </div>
-                                <div className="flex justify-between text-xs">
-                                  <span className="text-muted-foreground">Produccion/mata:</span>
-                                  <span>{crop.rendimientoPorMata ?? 0} {crop.unidadRendimiento || "lb"}</span>
                                 </div>
                               </CardContent>
                             </Card>

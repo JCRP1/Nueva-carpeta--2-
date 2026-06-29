@@ -27,6 +27,26 @@ export const api = {
       body: JSON.stringify(data),
     }),
 
+  listPublicCompanies: (adminEmail: string, adminPassword: string) =>
+    request<{ success: boolean; empresas: Array<Record<string, unknown>> }>(
+      `/empresas/public-create?adminEmail=${encodeURIComponent(adminEmail)}&adminPassword=${encodeURIComponent(adminPassword)}`
+    ),
+
+  updatePublicCompanyStatus: (data: Record<string, unknown>) =>
+    request<{ success: boolean; empresa: Record<string, unknown> }>("/empresas/public-create", {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+
+  accessPublicCompany: (data: Record<string, unknown>) =>
+    request<{ success: boolean; user: Record<string, unknown>; empresa?: Record<string, unknown> }>(
+      "/empresas/public-create",
+      {
+        method: "POST",
+        body: JSON.stringify({ ...data, action: "accessCompany" }),
+      }
+    ),
+
   logout: () =>
     request<{ ok: boolean }>("/auth/logout", { method: "POST" }),
 

@@ -2,9 +2,23 @@ import { NextResponse } from "next/server"
 import { requireAuth } from "@/lib/auth"
 import { execute, query } from "@/lib/db"
 
+async function getInventoryStockColumns() {
+  const rows = await query<Array<{ cantidadDisponible: number; unidadMedida: number }>>(
+    `SELECT
+       CASE WHEN COL_LENGTH('dbo.Fertilizantes', 'cantidad_disponible') IS NULL THEN 0 ELSE 1 END AS cantidadDisponible,
+       CASE WHEN COL_LENGTH('dbo.Fertilizantes', 'unidad_medida') IS NULL THEN 0 ELSE 1 END AS unidadMedida`
+  )
+
+  return {
+    cantidadDisponible: Number(rows[0]?.cantidadDisponible) === 1,
+    unidadMedida: Number(rows[0]?.unidadMedida) === 1,
+  }
+}
+
 export async function GET() {
   try {
     const session = await requireAuth()
+    const stockColumns = await getInventoryStockColumns()
     const rows = await query<Record<string, unknown>[]>(
       `
         SELECT
@@ -19,7 +33,9 @@ export async function GET() {
           potasio,
           micronutrientes,
           forma_aplicacion AS formaAplicacion,
-          riesgos
+          riesgos,
+          ${stockColumns.cantidadDisponible ? "cantidad_disponible" : "NULL"} AS cantidadDisponible,
+          ${stockColumns.unidadMedida ? "unidad_medida" : "NULL"} AS unidadMedida
         FROM dbo.Fertilizantes
         WHERE id_empresa = @empresaId OR id_empresa IS NULL
         ORDER BY nombre ASC
@@ -40,6 +56,8 @@ export async function GET() {
       micronutrientes: String(row.micronutrientes || ""),
       formaAplicacion: String(row.formaAplicacion || ""),
       riesgos: String(row.riesgos || ""),
+      cantidadDisponible: row.cantidadDisponible != null ? Number(row.cantidadDisponible) : null,
+      unidadMedida: String(row.unidadMedida || ""),
     })))
   } catch (err) {
     console.error("[inventory] GET Error:", err)
@@ -54,18 +72,45 @@ export async function POST(req: Request) {
     if (!body.nombre || !body.tipo) {
       return NextResponse.json({ error: "Nombre y tipo son requeridos" }, { status: 400 })
     }
+    const stockColumns = await getInventoryStockColumns()
+    const insertColumns = [
+      "nombre",
+      "tipo",
+      "composicion",
+      "fabricante",
+      "ph",
+      "nitrogeno",
+      "fosforo",
+      "potasio",
+      "micronutrientes",
+      "forma_aplicacion",
+      "riesgos",
+      ...(stockColumns.cantidadDisponible ? ["cantidad_disponible"] : []),
+      ...(stockColumns.unidadMedida ? ["unidad_medida"] : []),
+      "id_empresa",
+    ]
+    const insertValues = [
+      "@nombre",
+      "@tipo",
+      "@composicion",
+      "@fabricante",
+      "@ph",
+      "@nitrogeno",
+      "@fosforo",
+      "@potasio",
+      "@micronutrientes",
+      "@formaAplicacion",
+      "@riesgos",
+      ...(stockColumns.cantidadDisponible ? ["@cantidadDisponible"] : []),
+      ...(stockColumns.unidadMedida ? ["@unidadMedida"] : []),
+      "@empresaId",
+    ]
 
     const result = await execute(
       `
-        INSERT INTO dbo.Fertilizantes (
-          nombre, tipo, composicion, fabricante, ph, nitrogeno, fosforo, potasio,
-          micronutrientes, forma_aplicacion, riesgos, id_empresa
-        )
+        INSERT INTO dbo.Fertilizantes (${insertColumns.join(", ")})
         OUTPUT INSERTED.id_fertilizante
-        VALUES (
-          @nombre, @tipo, @composicion, @fabricante, @ph, @nitrogeno, @fosforo, @potasio,
-          @micronutrientes, @formaAplicacion, @riesgos, @empresaId
-        )
+        VALUES (${insertValues.join(", ")})
       `,
       {
         nombre: body.nombre,
@@ -79,6 +124,8 @@ export async function POST(req: Request) {
         micronutrientes: body.micronutrientes || null,
         formaAplicacion: body.formaAplicacion || null,
         riesgos: body.riesgos || null,
+        cantidadDisponible: body.cantidadDisponible != null && body.cantidadDisponible !== "" ? Number(body.cantidadDisponible) : 0,
+        unidadMedida: body.unidadMedida || null,
         empresaId: session.empresaId,
       }
     )
@@ -96,6 +143,7 @@ export async function PUT(req: Request) {
     const body = await req.json()
     const id = Number(body.id)
     if (!id) return NextResponse.json({ error: "ID requerido" }, { status: 400 })
+    const stockColumns = await getInventoryStockColumns()
 
     await execute(
       `
@@ -111,6 +159,8 @@ export async function PUT(req: Request) {
             micronutrientes = @micronutrientes,
             forma_aplicacion = @formaAplicacion,
             riesgos = @riesgos
+            ${stockColumns.cantidadDisponible ? ", cantidad_disponible = @cantidadDisponible" : ""}
+            ${stockColumns.unidadMedida ? ", unidad_medida = @unidadMedida" : ""}
         WHERE id_fertilizante = @id
           AND (id_empresa = @empresaId OR id_empresa IS NULL)
       `,
@@ -127,6 +177,8 @@ export async function PUT(req: Request) {
         micronutrientes: body.micronutrientes || null,
         formaAplicacion: body.formaAplicacion || null,
         riesgos: body.riesgos || null,
+        cantidadDisponible: body.cantidadDisponible != null && body.cantidadDisponible !== "" ? Number(body.cantidadDisponible) : 0,
+        unidadMedida: body.unidadMedida || null,
         empresaId: session.empresaId,
       }
     )

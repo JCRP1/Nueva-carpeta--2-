@@ -290,6 +290,35 @@ export async function GET(req: Request) {
       { invernaderoId }
     )) as Record<string, unknown>[]
 
+    const greenhouseComparisonRows = (await query(
+      `SELECT
+         i.id_invernadero AS id,
+         i.nombre,
+         SUM(ISNULL(co.cantidad_cosechada_kg, 0)) AS kgCosechados,
+         SUM(ISNULL(co.cantidad_unidades, 0)) AS unidadesCosechadas,
+         SUM(ISNULL(v.ingreso_total, 0)) AS ingresos,
+         SUM(ISNULL(costos.totalCostos, 0)) AS costos
+       FROM dbo.Invernaderos i
+       LEFT JOIN dbo.Cultivos c ON c.id_invernadero = i.id_invernadero
+       LEFT JOIN dbo.CultivoDetalle cd ON cd.id_cultivo = c.id_cultivo
+       LEFT JOIN dbo.Cosechas co ON co.id_detalle = cd.id_detalle
+       LEFT JOIN dbo.VentasCosecha v ON v.id_cosecha = co.id_cosecha
+       OUTER APPLY (
+         SELECT SUM(cc.monto) AS totalCostos
+         FROM dbo.CostosCultivo cc
+         WHERE cc.id_cultivo = c.id_cultivo
+            OR cc.id_zona IN (
+              SELECT z.id_zona
+              FROM dbo.ZonasRiego z
+              WHERE z.id_invernadero = i.id_invernadero
+            )
+       ) costos
+       WHERE i.id_empresa = @empresaId
+       GROUP BY i.id_invernadero, i.nombre
+       ORDER BY SUM(ISNULL(v.ingreso_total, 0)) - SUM(ISNULL(costos.totalCostos, 0)) DESC`,
+      { empresaId: session.empresaId }
+    ).catch(() => [])) as Record<string, unknown>[]
+
     const totalEvents = resumenRows.reduce((sum, row) => sum + Number(row.eventos || 0), 0)
     const autoEvents = resumenRows.reduce((sum, row) => sum + Number(row.riegoAuto || 0), 0)
     const efficiency = totalEvents > 0 ? Math.round((autoEvents / totalEvents) * 100) : 0
@@ -332,6 +361,19 @@ export async function GET(req: Request) {
         cosechasEstimadas: Number(productivityRows[0]?.cosechasEstimadas) || 0,
         rendimientoRegistrado: 0,
       },
+      comparativoInvernaderos: greenhouseComparisonRows.map((row) => {
+        const ingresos = Number(row.ingresos) || 0
+        const costos = Number(row.costos) || 0
+        return {
+          id: String(row.id || ""),
+          nombre: String(row.nombre || ""),
+          kgCosechados: Number(row.kgCosechados) || 0,
+          unidadesCosechadas: Number(row.unidadesCosechadas) || 0,
+          ingresos,
+          costos,
+          ganancia: ingresos - costos,
+        }
+      }),
     })
   } catch (err) {
     console.error("[reports] GET Error:", err)

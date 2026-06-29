@@ -1,40 +1,25 @@
 import { NextResponse } from "next/server"
-import { compareSync, hashSync } from "bcryptjs"
+import { hashSync } from "bcryptjs"
 import { generateCompanyCode, normalizeCompanyCode, parseCompanyCode } from "@/lib/company-code"
+import { createSession, sanitizeUser, type DbUser } from "@/lib/auth"
 import { query } from "@/lib/db"
 
-const ADMIN_EMAIL = "jean@greensense.com"
-const ADMIN_PASSWORD = "admin123"
+const SUPER_ADMIN_EMAIL = process.env.SUPER_ADMIN_EMAIL?.trim().toLowerCase() || ""
+const SUPER_ADMIN_PASSWORD = process.env.SUPER_ADMIN_PASSWORD || ""
+
+function normalizeCompanyStatus(value: string): string | null {
+  const normalized = value.trim().toLowerCase()
+  if (normalized === "activa" || normalized === "activo") return "Activa"
+  if (normalized === "inactiva" || normalized === "inactivo") return "Inactiva"
+  return null
+}
 
 async function validateAdminCredentials(email: string, password: string): Promise<boolean> {
-  if (email.toLowerCase() !== ADMIN_EMAIL || password !== ADMIN_PASSWORD) return false
+  if (!SUPER_ADMIN_EMAIL || !SUPER_ADMIN_PASSWORD) {
+    throw new Error("SUPER_ADMIN_NOT_CONFIGURED")
+  }
 
-  const passwordRows = await query<Array<{ passwordHash: string }>>(
-    `DECLARE @passwordColumn SYSNAME;
-     DECLARE @sql NVARCHAR(MAX);
-
-     SELECT TOP 1 @passwordColumn = name
-     FROM sys.columns
-     WHERE object_id = OBJECT_ID('Usuarios')
-       AND name LIKE 'contrase%';
-
-     IF @passwordColumn IS NULL
-     BEGIN
-       SELECT CAST('' AS NVARCHAR(255)) AS passwordHash;
-       RETURN;
-     END
-
-     SET @sql = N'
-       SELECT TOP 1 CAST(' + QUOTENAME(@passwordColumn) + N' AS NVARCHAR(255)) AS passwordHash
-       FROM Usuarios
-       WHERE LOWER(correo) = LOWER(@correo)';
-
-     EXEC sp_executesql @sql, N'@correo NVARCHAR(255)', @correo = @correo;`,
-    { correo: ADMIN_EMAIL }
-  )
-
-  const storedHash = passwordRows[0]?.passwordHash
-  return !storedHash || compareSync(password, storedHash)
+  return email.trim().toLowerCase() === SUPER_ADMIN_EMAIL && password === SUPER_ADMIN_PASSWORD
 }
 
 async function ensureCompanyAdminUser({
@@ -168,6 +153,141 @@ async function createUniqueCompanyCode(): Promise<string> {
   throw new Error("No se pudo generar un codigo de empresa unico")
 }
 
+async function getCompanyAccessUser(idEmpresa: number): Promise<DbUser | undefined> {
+  const rows = await query<DbUser[]>(
+    `DECLARE @passwordColumn SYSNAME;
+     DECLARE @hasEmpresaColumn BIT = 0;
+     DECLARE @passwordSelect NVARCHAR(MAX);
+     DECLARE @empresaFilter NVARCHAR(MAX) = N'';
+     DECLARE @sql NVARCHAR(MAX);
+
+     SELECT TOP 1 @passwordColumn = name
+     FROM sys.columns
+     WHERE object_id = OBJECT_ID('Usuarios')
+       AND name LIKE 'contrase%';
+
+     IF EXISTS (
+       SELECT 1
+       FROM sys.columns
+       WHERE object_id = OBJECT_ID('Usuarios')
+         AND name = 'id_empresa'
+     )
+     BEGIN
+       SET @hasEmpresaColumn = 1;
+       SET @empresaFilter = N' AND id_empresa = @idEmpresa';
+     END
+
+     SET @passwordSelect = CASE
+       WHEN @passwordColumn IS NOT NULL THEN N'CAST(' + QUOTENAME(@passwordColumn) + N' AS NVARCHAR(255))'
+       ELSE N'CAST('''' AS NVARCHAR(255))'
+     END;
+
+     SET @sql = N'
+       SELECT TOP 1
+         id_usuario,
+         @idEmpresa AS id_empresa,
+         nombre,
+         correo,
+         ' + @passwordSelect + N' AS passwordHash,
+         rol,
+         fecha_registro
+       FROM Usuarios
+       WHERE LOWER(rol) = ''administrador''' + @empresaFilter + N'
+       ORDER BY id_usuario';
+
+     EXEC sp_executesql @sql, N'@idEmpresa INT', @idEmpresa = @idEmpresa;`,
+    { idEmpresa }
+  )
+
+  return rows[0]
+}
+
+export async function GET(request: Request) {
+  try {
+    const { searchParams } = new URL(request.url)
+    const adminEmail = String(searchParams.get("adminEmail") || "").trim()
+    const adminPassword = String(searchParams.get("adminPassword") || "")
+
+    if (!(await validateAdminCredentials(adminEmail, adminPassword))) {
+      return NextResponse.json({ error: "Credenciales de administrador invalidas" }, { status: 401 })
+    }
+
+    const empresas = await query(
+      `SELECT
+         id_empresa,
+         COALESCE(codigo_empresa, '') AS codigo_empresa,
+         nombre,
+         COALESCE(rnc, '') AS rnc,
+         COALESCE(direccion, '') AS direccion,
+         COALESCE(telefono, '') AS telefono,
+         COALESCE(correo, '') AS correo,
+         COALESCE(estado, 'Activa') AS estado,
+         fecha_creacion
+       FROM Empresas
+       ORDER BY nombre`
+    )
+
+    return NextResponse.json({ success: true, empresas })
+  } catch (error: unknown) {
+    console.error("[Empresas public-create GET error]", error)
+    const message = error instanceof Error ? error.message : "desconocido"
+    return NextResponse.json({ error: "Error al obtener empresas: " + message }, { status: 500 })
+  }
+}
+
+export async function PATCH(request: Request) {
+  try {
+    const data = await request.json()
+    const adminEmail = String(data.adminEmail || "").trim()
+    const adminPassword = String(data.adminPassword || "")
+
+    if (!(await validateAdminCredentials(adminEmail, adminPassword))) {
+      return NextResponse.json({ error: "Credenciales de administrador invalidas" }, { status: 401 })
+    }
+
+    const idEmpresa = Number(data.id_empresa || data.idEmpresa || data.id)
+    if (!Number.isInteger(idEmpresa) || idEmpresa <= 0) {
+      return NextResponse.json({ error: "El id de la empresa es obligatorio" }, { status: 400 })
+    }
+
+    const estado = normalizeCompanyStatus(String(data.estado || ""))
+    if (!estado) {
+      return NextResponse.json({ error: "Estado invalido. Use Activa o Inactiva" }, { status: 400 })
+    }
+
+    const existing = await query<Array<{ id_empresa: number; nombre: string }>>(
+      `SELECT id_empresa, nombre
+       FROM Empresas
+       WHERE id_empresa = @idEmpresa`,
+      { idEmpresa }
+    )
+
+    if (existing.length === 0) {
+      return NextResponse.json({ error: "Empresa no encontrada" }, { status: 404 })
+    }
+
+    await query(
+      `UPDATE Empresas
+       SET estado = @estado
+       WHERE id_empresa = @idEmpresa`,
+      { idEmpresa, estado }
+    )
+
+    return NextResponse.json({
+      success: true,
+      empresa: {
+        id_empresa: idEmpresa,
+        nombre: existing[0].nombre,
+        estado,
+      },
+    })
+  } catch (error: unknown) {
+    console.error("[Empresas public-create PATCH error]", error)
+    const message = error instanceof Error ? error.message : "desconocido"
+    return NextResponse.json({ error: "Error al cambiar estado de empresa: " + message }, { status: 500 })
+  }
+}
+
 export async function POST(request: Request) {
   try {
     const data = await request.json()
@@ -176,6 +296,46 @@ export async function POST(request: Request) {
 
     if (!(await validateAdminCredentials(adminEmail, adminPassword))) {
       return NextResponse.json({ error: "Credenciales de administrador invalidas" }, { status: 401 })
+    }
+
+    if (data.action === "accessCompany") {
+      const idEmpresa = Number(data.id_empresa || data.idEmpresa || data.id)
+      if (!Number.isInteger(idEmpresa) || idEmpresa <= 0) {
+        return NextResponse.json({ error: "El id de la empresa es obligatorio" }, { status: 400 })
+      }
+
+      const empresas = await query<Array<{ id_empresa: number; codigo_empresa: string; nombre: string }>>(
+        `SELECT TOP 1
+           id_empresa,
+           COALESCE(codigo_empresa, '') AS codigo_empresa,
+           nombre
+         FROM Empresas
+         WHERE id_empresa = @idEmpresa`,
+        { idEmpresa }
+      )
+
+      if (empresas.length === 0) {
+        return NextResponse.json({ error: "Empresa no encontrada" }, { status: 404 })
+      }
+
+      const user = await getCompanyAccessUser(idEmpresa)
+      if (!user) {
+        return NextResponse.json(
+          { error: "Esta empresa no tiene un usuario administrador para acceder" },
+          { status: 404 }
+        )
+      }
+
+      await createSession(user)
+      return NextResponse.json({
+        success: true,
+        user: sanitizeUser(user),
+        empresa: {
+          id: String(empresas[0].id_empresa),
+          codigo: empresas[0].codigo_empresa,
+          nombre: empresas[0].nombre,
+        },
+      })
     }
 
     const nombre = String(data.nombre || "").trim()

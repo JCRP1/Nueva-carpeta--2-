@@ -58,6 +58,8 @@ type HarvestOption = {
   id: string
   fechaCosecha: string
   cantidadKg: number
+  kgVendidos: number
+  kgDisponible: number
   cultivoNombre: string
   invernaderoNombre: string
 }
@@ -69,11 +71,6 @@ type CostRow = {
   fecha: string
   concepto: string
   monto: number
-  costoMata: number
-  cantidadMatas: number
-  precioMercado: number
-  unidadPrecioMercado: string
-  margenEstimado: number
   zonaNombre: string
   cultivoNombre: string
   invernaderoNombre: string
@@ -99,8 +96,17 @@ type ProfitabilityRow = {
   zonaNombre: string
   cultivoNombre: string
   invernaderoNombre: string
+  produccionEstimada: number
+  unidadRendimiento: string
   kgCosechados: number
+  kgVendidos: number
+  kgDisponible: number
+  cumplimientoProduccion: number
+  diferenciaProduccion: number
   ingresos: number
+  ingresoEstimado: number
+  diferenciaIngresos: number
+  cumplimientoIngresos: number
   costos: number
   ganancia: number
   costoPorKg: number
@@ -128,6 +134,7 @@ type ApplicationRow = {
   fecha: string
   cultivoNombre: string
   invernaderoNombre: string
+  idProducto: string
   producto: string
   dosis: string
   cantidad: string
@@ -166,6 +173,8 @@ type InventoryRow = {
   formaAplicacion: string
   micronutrientes?: string
   riesgos?: string
+  cantidadDisponible?: number | null
+  unidadMedida?: string
 }
 
 type UserOption = {
@@ -269,6 +278,13 @@ export function SalesView({ selectedGreenhouse }: ViewProps) {
     comprador: "",
     observaciones: "",
   })
+  const selectedHarvest = useMemo(
+    () => (harvests || []).find((harvest) => harvest.id === form.idCosecha),
+    [harvests, form.idCosecha]
+  )
+  const maxKgVenta = selectedHarvest
+    ? selectedHarvest.kgDisponible + (editing?.idCosecha === selectedHarvest.id ? editing.cantidadKg : 0)
+    : undefined
 
   function openCreate() {
     setEditing(null)
@@ -291,6 +307,10 @@ export function SalesView({ selectedGreenhouse }: ViewProps) {
 
   async function save() {
     try {
+      if (maxKgVenta != null && Number(form.cantidadKg) > maxKgVenta) {
+        toast.error("Cantidad no disponible", { description: `Disponible: ${number(maxKgVenta, " kg")}` })
+        return
+      }
       await writeApi("/api/sales", editing ? "PUT" : "POST", {
         id: editing?.id,
         ...form,
@@ -339,15 +359,31 @@ export function SalesView({ selectedGreenhouse }: ViewProps) {
                     <SelectContent>
                       {(harvests || []).map((harvest) => (
                         <SelectItem key={harvest.id} value={harvest.id}>
-                          {harvest.cultivoNombre} - {date(harvest.fechaCosecha)} ({number(harvest.cantidadKg, " kg")})
+                          {harvest.cultivoNombre} - {date(harvest.fechaCosecha)}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
+                  {selectedHarvest && (
+                    <div className="grid gap-2 rounded-md border bg-muted/30 p-3 text-sm">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-muted-foreground">Cantidad cosechada</span>
+                        <span className="font-medium">{number(selectedHarvest.cantidadKg, " kg")}</span>
+                      </div>
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-muted-foreground">Cantidad vendida</span>
+                        <span className="font-medium">{number(selectedHarvest.kgVendidos, " kg")}</span>
+                      </div>
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-muted-foreground">Cantidad disponible</span>
+                        <span className="font-semibold text-primary">{number(maxKgVenta || 0, " kg")}</span>
+                      </div>
+                    </div>
+                  )}
                 </div>
                 <div className="grid grid-cols-3 gap-3">
                   <div className="grid gap-2"><Label>Fecha</Label><Input type="date" value={form.fechaVenta} onChange={(e) => setForm({ ...form, fechaVenta: e.target.value })} /></div>
-                  <div className="grid gap-2"><Label>Kg</Label><Input type="number" min={0} value={form.cantidadKg} onChange={(e) => setForm({ ...form, cantidadKg: e.target.value })} /></div>
+                  <div className="grid gap-2"><Label>Kg</Label><Input type="number" min={0} max={maxKgVenta} value={form.cantidadKg} onChange={(e) => setForm({ ...form, cantidadKg: e.target.value })} /></div>
                   <div className="grid gap-2"><Label>Precio/kg</Label><Input type="number" min={0} value={form.precioKg} onChange={(e) => setForm({ ...form, precioKg: e.target.value })} /></div>
                 </div>
                 <div className="grid gap-2"><Label>Comprador</Label><Input value={form.comprador} onChange={(e) => setForm({ ...form, comprador: e.target.value })} /></div>
@@ -411,25 +447,13 @@ export function CostsView({ selectedGreenhouse }: ViewProps) {
   const { data: crops } = useSWR<CropOption[]>(scoped("/api/crops", selectedGreenhouse), fetcher)
   const rows = data || []
   const total = useMemo(() => rows.reduce((sum, row) => sum + row.monto, 0), [rows])
-  const margenTotal = useMemo(() => rows.reduce((sum, row) => sum + Number(row.margenEstimado || 0), 0), [rows])
   const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState<CostRow | null>(null)
-  const [form, setForm] = useState({
-    idZona: "",
-    idCultivo: "",
-    concepto: "",
-    monto: "",
-    costoMata: "",
-    cantidadMatas: "",
-    precioMercado: "",
-    unidadPrecioMercado: "lb",
-    fecha: today(),
-    descripcion: "",
-  })
+  const [form, setForm] = useState({ idZona: "", idCultivo: "", concepto: "", monto: "", fecha: today(), descripcion: "" })
 
   function openCreate() {
     setEditing(null)
-    setForm({ idZona: "", idCultivo: "", concepto: "", monto: "", costoMata: "", cantidadMatas: "", precioMercado: "", unidadPrecioMercado: "lb", fecha: today(), descripcion: "" })
+    setForm({ idZona: "", idCultivo: "", concepto: "", monto: "", fecha: today(), descripcion: "" })
     setOpen(true)
   }
 
@@ -440,10 +464,6 @@ export function CostsView({ selectedGreenhouse }: ViewProps) {
       idCultivo: row.idCultivo || "",
       concepto: row.concepto,
       monto: String(row.monto || ""),
-      costoMata: String(row.costoMata || ""),
-      cantidadMatas: String(row.cantidadMatas || ""),
-      precioMercado: String(row.precioMercado || ""),
-      unidadPrecioMercado: row.unidadPrecioMercado || "lb",
       fecha: row.fecha,
       descripcion: row.descripcion || "",
     })
@@ -456,9 +476,6 @@ export function CostsView({ selectedGreenhouse }: ViewProps) {
         id: editing?.id,
         ...form,
         monto: Number(form.monto),
-        costoMata: Number(form.costoMata),
-        cantidadMatas: Number(form.cantidadMatas),
-        precioMercado: Number(form.precioMercado),
       })
       toast.success(editing ? "Costo actualizado" : "Costo registrado")
       setOpen(false)
@@ -492,7 +509,7 @@ export function CostsView({ selectedGreenhouse }: ViewProps) {
             <DialogTrigger asChild>
               <Button size="sm" onClick={openCreate}><Plus className="mr-2 h-4 w-4" />Nuevo costo</Button>
             </DialogTrigger>
-            <DialogContent className="max-h-[90vh] overflow-y-auto">
+            <DialogContent>
               <DialogHeader><DialogTitle>{editing ? "Editar costo" : "Registrar costo"}</DialogTitle></DialogHeader>
               <div className="grid gap-4 py-3">
                 <div className="grid grid-cols-2 gap-3">
@@ -522,17 +539,6 @@ export function CostsView({ selectedGreenhouse }: ViewProps) {
                   <div className="grid gap-2"><Label>Monto</Label><Input type="number" min={0} value={form.monto} onChange={(e) => setForm({ ...form, monto: e.target.value })} /></div>
                   <div className="grid gap-2"><Label>Fecha</Label><Input type="date" value={form.fecha} onChange={(e) => setForm({ ...form, fecha: e.target.value })} /></div>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="grid gap-2"><Label>Costo por mata</Label><Input type="number" min={0} value={form.costoMata} onChange={(e) => setForm({ ...form, costoMata: e.target.value, monto: form.monto || String(Number(e.target.value || 0) * Number(form.cantidadMatas || 0)) })} /></div>
-                  <div className="grid gap-2"><Label>Cantidad de matas</Label><Input type="number" min={0} value={form.cantidadMatas} onChange={(e) => setForm({ ...form, cantidadMatas: e.target.value, monto: form.monto || String(Number(form.costoMata || 0) * Number(e.target.value || 0)) })} /></div>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="grid gap-2"><Label>Precio de mercado</Label><Input type="number" min={0} value={form.precioMercado} onChange={(e) => setForm({ ...form, precioMercado: e.target.value })} /></div>
-                  <div className="grid gap-2"><Label>Unidad mercado</Label><Input value={form.unidadPrecioMercado} onChange={(e) => setForm({ ...form, unidadPrecioMercado: e.target.value })} placeholder="lb, unidad, caja" /></div>
-                </div>
-                <div className="rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground">
-                  Margen estimado: {money(Number(form.precioMercado || 0) * Number(form.cantidadMatas || 0) - Number(form.monto || 0))}
-                </div>
                 <div className="grid gap-2"><Label>Descripcion</Label><Textarea value={form.descripcion} onChange={(e) => setForm({ ...form, descripcion: e.target.value })} /></div>
               </div>
               <DialogFooter><Button onClick={save}>Guardar</Button></DialogFooter>
@@ -540,9 +546,8 @@ export function CostsView({ selectedGreenhouse }: ViewProps) {
           </Dialog>
         </div>
       </div>
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-2">
         <SummaryCard title="Costo total" value={money(total)} icon={ReceiptText} />
-        <SummaryCard title="Margen estimado" value={money(margenTotal)} icon={Banknote} />
         <SummaryCard title="Registros" value={String(rows.length)} icon={ClipboardList} />
       </div>
       <Card>
@@ -556,22 +561,17 @@ export function CostsView({ selectedGreenhouse }: ViewProps) {
                 <TableHead>Zona/Cultivo</TableHead>
                 <TableHead>Invernadero</TableHead>
                 <TableHead>Monto</TableHead>
-                <TableHead>Margen</TableHead>
                 <TableHead className="w-24">Acciones</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {rows.length === 0 ? <EmptyRows colSpan={7} label="No hay costos registrados" /> : rows.map((row) => (
+              {rows.length === 0 ? <EmptyRows colSpan={6} label="No hay costos registrados" /> : rows.map((row) => (
                 <TableRow key={row.id}>
                   <TableCell>{date(row.fecha)}</TableCell>
                   <TableCell>{row.concepto}</TableCell>
                   <TableCell>{row.zonaNombre || row.cultivoNombre || "-"}</TableCell>
                   <TableCell>{row.invernaderoNombre || "-"}</TableCell>
                   <TableCell>{money(row.monto)}</TableCell>
-                  <TableCell>
-                    <div className={row.margenEstimado >= 0 ? "text-emerald-500" : "text-red-500"}>{money(row.margenEstimado)}</div>
-                    {row.cantidadMatas > 0 && <div className="text-xs text-muted-foreground">{number(row.cantidadMatas)} matas x {money(row.precioMercado)}/{row.unidadPrecioMercado || "unid."}</div>}
-                  </TableCell>
                   <TableCell>
                     <div className="flex gap-1">
                       <Button variant="ghost" size="icon" onClick={() => openEdit(row)}><Pencil className="h-4 w-4" /></Button>
@@ -592,24 +592,14 @@ export function ProfitabilityView({ selectedGreenhouse }: ViewProps) {
   const { data, isLoading } = useSWR<ProfitabilityRow[]>(scoped("/api/profitability", selectedGreenhouse), fetcher)
   const rows = data || []
   const totals = useMemo(() => rows.reduce((acc, row) => ({
+    estimado: acc.estimado + row.produccionEstimada,
     ingresos: acc.ingresos + row.ingresos,
+    ingresoEstimado: acc.ingresoEstimado + row.ingresoEstimado,
     costos: acc.costos + row.costos,
     ganancia: acc.ganancia + row.ganancia,
     kg: acc.kg + row.kgCosechados,
-  }), { ingresos: 0, costos: 0, ganancia: 0, kg: 0 }), [rows])
-  const greenhouseRanking = useMemo(() => {
-    const grouped = new Map<string, { invernadero: string; ingresos: number; costos: number; ganancia: number; kg: number }>()
-    rows.forEach((row) => {
-      const key = row.invernaderoNombre || "Sin invernadero"
-      const current = grouped.get(key) || { invernadero: key, ingresos: 0, costos: 0, ganancia: 0, kg: 0 }
-      current.ingresos += Number(row.ingresos || 0)
-      current.costos += Number(row.costos || 0)
-      current.ganancia += Number(row.ganancia || 0)
-      current.kg += Number(row.kgCosechados || 0)
-      grouped.set(key, current)
-    })
-    return Array.from(grouped.values()).sort((a, b) => b.ganancia - a.ganancia)
-  }, [rows])
+    vendidos: acc.vendidos + row.kgVendidos,
+  }), { estimado: 0, ingresos: 0, ingresoEstimado: 0, costos: 0, ganancia: 0, kg: 0, vendidos: 0 }), [rows])
 
   if (isLoading) return <Loading />
 
@@ -617,64 +607,59 @@ export function ProfitabilityView({ selectedGreenhouse }: ViewProps) {
     <div className="space-y-6">
       <div>
         <h2 className="text-lg font-semibold">Rentabilidad</h2>
-        <p className="text-sm text-muted-foreground">Ingresos, costos y margen por cultivo o zona</p>
+        <p className="text-sm text-muted-foreground">Compara lo estimado contra cosecha real, ventas reales y margen</p>
       </div>
       <div className="grid gap-4 md:grid-cols-4">
         <SummaryCard title="Ingresos" value={money(totals.ingresos)} icon={Banknote} />
         <SummaryCard title="Costos" value={money(totals.costos)} icon={ReceiptText} />
         <SummaryCard title="Ganancia" value={money(totals.ganancia)} icon={TrendingUp} />
-        <SummaryCard title="Kg cosechados" value={number(totals.kg, " kg")} icon={Package} />
+        <SummaryCard title="Real / estimado" value={`${number(totals.kg, " kg")} / ${number(totals.estimado, " kg")}`} icon={Package} />
       </div>
       <Card>
-        <CardHeader><CardTitle className="text-base">Ranking de invernaderos</CardTitle></CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Invernadero</TableHead>
-                <TableHead>Kg</TableHead>
-                <TableHead>Ingresos</TableHead>
-                <TableHead>Costos</TableHead>
-                <TableHead>Ganancia</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {greenhouseRanking.length === 0 ? <EmptyRows colSpan={5} label="No hay datos para comparar invernaderos" /> : greenhouseRanking.map((row) => (
-                <TableRow key={row.invernadero}>
-                  <TableCell className="font-medium">{row.invernadero}</TableCell>
-                  <TableCell>{number(row.kg, " kg")}</TableCell>
-                  <TableCell>{money(row.ingresos)}</TableCell>
-                  <TableCell>{money(row.costos)}</TableCell>
-                  <TableCell className={row.ganancia >= 0 ? "text-emerald-500" : "text-red-500"}>{money(row.ganancia)}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
-      <Card>
-        <CardHeader><CardTitle className="text-base">Por unidad productiva</CardTitle></CardHeader>
+        <CardHeader><CardTitle className="text-base">Estimado vs real por unidad productiva</CardTitle></CardHeader>
         <CardContent>
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>Zona</TableHead>
                 <TableHead>Cultivo</TableHead>
-                <TableHead>Ingresos</TableHead>
+                <TableHead>Estimado</TableHead>
+                <TableHead>Cosechado</TableHead>
+                <TableHead>Vendido</TableHead>
+                <TableHead>Disponible</TableHead>
+                <TableHead>Cumplimiento</TableHead>
                 <TableHead>Costos</TableHead>
                 <TableHead>Ganancia</TableHead>
-                <TableHead>Costo/kg</TableHead>
+                <TableHead>Ingreso real/est.</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {rows.length === 0 ? <EmptyRows colSpan={6} label="No hay datos suficientes para calcular rentabilidad" /> : rows.map((row) => (
+              {rows.length === 0 ? <EmptyRows colSpan={10} label="No hay datos suficientes para calcular rentabilidad" /> : rows.map((row) => (
                 <TableRow key={`${row.idZona}-${row.idCultivo}`}>
                   <TableCell>{row.zonaNombre}</TableCell>
                   <TableCell>{row.cultivoNombre}</TableCell>
-                  <TableCell>{money(row.ingresos)}</TableCell>
+                  <TableCell>{number(row.produccionEstimada, ` ${row.unidadRendimiento || "kg"}`)}</TableCell>
+                  <TableCell>
+                    <div>
+                      <p>{number(row.kgCosechados, " kg")}</p>
+                      <p className={row.diferenciaProduccion >= 0 ? "text-xs text-emerald-500" : "text-xs text-red-500"}>
+                        {row.diferenciaProduccion >= 0 ? "+" : ""}{number(row.diferenciaProduccion, " kg")}
+                      </p>
+                    </div>
+                  </TableCell>
+                  <TableCell>{number(row.kgVendidos, " kg")}</TableCell>
+                  <TableCell>{number(row.kgDisponible, " kg")}</TableCell>
+                  <TableCell>{row.cumplimientoProduccion ? number(row.cumplimientoProduccion, "%") : "-"}</TableCell>
                   <TableCell>{money(row.costos)}</TableCell>
                   <TableCell className={row.ganancia >= 0 ? "text-emerald-500" : "text-red-500"}>{money(row.ganancia)}</TableCell>
-                  <TableCell>{money(row.costoPorKg)}</TableCell>
+                  <TableCell>
+                    <div>
+                      <p>{money(row.ingresos)} / {money(row.ingresoEstimado)}</p>
+                      <p className={row.diferenciaIngresos >= 0 ? "text-xs text-emerald-500" : "text-xs text-red-500"}>
+                        {row.diferenciaIngresos >= 0 ? "+" : ""}{money(row.diferenciaIngresos)}
+                      </p>
+                    </div>
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>
@@ -777,14 +762,31 @@ export function AgronomicPlanView({ selectedGreenhouse }: ViewProps) {
 export function ApplicationsView({ selectedGreenhouse }: ViewProps) {
   const { data, isLoading, mutate } = useSWR<ApplicationRow[]>(scoped("/api/applications", selectedGreenhouse), fetcher)
   const { data: details } = useSWR<DetailOption[]>(scoped("/api/harvests?mode=details", selectedGreenhouse), fetcher)
+  const { data: inventory, mutate: mutateInventory } = useSWR<InventoryRow[]>("/api/inventory", fetcher)
   const rows = data || []
   const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState<ApplicationRow | null>(null)
-  const [form, setForm] = useState({ idDetalle: "", tipoPlaga: "", producto: "", dosis: "", fecha: today(), notas: "" })
+  const [form, setForm] = useState({
+    idDetalle: "",
+    tipoPlaga: "",
+    idProducto: "",
+    producto: "",
+    dosis: "",
+    cantidad: "",
+    fecha: today(),
+    notas: "",
+  })
+  const selectedProduct = useMemo(
+    () => (inventory || []).find((product) => product.id === form.idProducto),
+    [inventory, form.idProducto]
+  )
+  const availableProductQuantity = selectedProduct
+    ? Number(selectedProduct.cantidadDisponible || 0) + (editing?.idProducto === selectedProduct.id ? Number(editing.cantidad || 0) : 0)
+    : 0
 
   function openCreate() {
     setEditing(null)
-    setForm({ idDetalle: "", tipoPlaga: "", producto: "", dosis: "", fecha: today(), notas: "" })
+    setForm({ idDetalle: "", tipoPlaga: "", idProducto: "", producto: "", dosis: "", cantidad: "", fecha: today(), notas: "" })
     setOpen(true)
   }
 
@@ -797,8 +799,10 @@ export function ApplicationsView({ selectedGreenhouse }: ViewProps) {
     setForm({
       idDetalle: row.idDetalle,
       tipoPlaga: row.tipoPlaga || "",
+      idProducto: row.idProducto || "",
       producto: row.producto || "",
       dosis: row.dosis || "",
+      cantidad: row.cantidad || "",
       fecha: row.fecha,
       notas: row.notas || "",
     })
@@ -807,10 +811,25 @@ export function ApplicationsView({ selectedGreenhouse }: ViewProps) {
 
   async function save() {
     try {
+      if (!form.idProducto) {
+        toast.error("Producto requerido", { description: "Selecciona un producto del inventario" })
+        return
+      }
+      if (Number(form.cantidad) <= 0) {
+        toast.error("Cantidad requerida", { description: "La cantidad aplicada debe ser mayor que 0" })
+        return
+      }
+      if (selectedProduct && Number(form.cantidad) > availableProductQuantity) {
+        toast.error("Inventario insuficiente", {
+          description: `Disponible: ${number(availableProductQuantity, selectedProduct.unidadMedida ? ` ${selectedProduct.unidadMedida}` : "")}`,
+        })
+        return
+      }
       await writeApi("/api/applications", editing ? "PUT" : "POST", { id: editing?.id, ...form })
       toast.success(editing ? "Aplicacion actualizada" : "Aplicacion registrada")
       setOpen(false)
       mutate()
+      mutateInventory()
     } catch (err) {
       toast.error("Error en aplicaciones", { description: err instanceof Error ? err.message : "Error" })
     }
@@ -857,9 +876,45 @@ export function ApplicationsView({ selectedGreenhouse }: ViewProps) {
                   <div className="grid gap-2"><Label>Fecha</Label><Input type="date" value={form.fecha} onChange={(e) => setForm({ ...form, fecha: e.target.value })} /></div>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
-                  <div className="grid gap-2"><Label>Producto</Label><Input value={form.producto} onChange={(e) => setForm({ ...form, producto: e.target.value })} /></div>
+                  <div className="grid gap-2">
+                    <Label>Producto</Label>
+                    <Select
+                      value={form.idProducto}
+                      onValueChange={(value) => {
+                        const product = (inventory || []).find((item) => item.id === value)
+                        setForm({ ...form, idProducto: value, producto: product?.nombre || "" })
+                      }}
+                    >
+                      <SelectTrigger><SelectValue placeholder="Seleccionar producto" /></SelectTrigger>
+                      <SelectContent>
+                        {(inventory || []).map((product) => (
+                          <SelectItem key={product.id} value={product.id}>
+                            {product.nombre}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                   <div className="grid gap-2"><Label>Dosis</Label><Input value={form.dosis} onChange={(e) => setForm({ ...form, dosis: e.target.value })} /></div>
                 </div>
+                {selectedProduct && (
+                  <div className="grid gap-2 rounded-md border bg-muted/30 p-3 text-sm">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-muted-foreground">Disponible en inventario</span>
+                      <span className="font-medium">{number(availableProductQuantity, selectedProduct.unidadMedida ? ` ${selectedProduct.unidadMedida}` : "")}</span>
+                    </div>
+                    <div className="grid gap-2">
+                      <Label>Cantidad aplicada</Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        max={availableProductQuantity}
+                        value={form.cantidad}
+                        onChange={(e) => setForm({ ...form, cantidad: e.target.value })}
+                      />
+                    </div>
+                  </div>
+                )}
                 <div className="grid gap-2"><Label>Notas</Label><Textarea value={form.notas} onChange={(e) => setForm({ ...form, notas: e.target.value })} /></div>
               </div>
               <DialogFooter><Button onClick={save}>Guardar</Button></DialogFooter>
@@ -1055,11 +1110,13 @@ export function InventoryView({}: ViewProps) {
     micronutrientes: "",
     formaAplicacion: "",
     riesgos: "",
+    cantidadDisponible: "",
+    unidadMedida: "",
   })
 
   function openCreate() {
     setEditing(null)
-    setForm({ nombre: "", tipo: "", composicion: "", fabricante: "", ph: "", nitrogeno: "", fosforo: "", potasio: "", micronutrientes: "", formaAplicacion: "", riesgos: "" })
+    setForm({ nombre: "", tipo: "", composicion: "", fabricante: "", ph: "", nitrogeno: "", fosforo: "", potasio: "", micronutrientes: "", formaAplicacion: "", riesgos: "", cantidadDisponible: "", unidadMedida: "" })
     setOpen(true)
   }
 
@@ -1077,6 +1134,8 @@ export function InventoryView({}: ViewProps) {
       micronutrientes: row.micronutrientes || "",
       formaAplicacion: row.formaAplicacion || "",
       riesgos: row.riesgos || "",
+      cantidadDisponible: row.cantidadDisponible != null ? String(row.cantidadDisponible) : "",
+      unidadMedida: row.unidadMedida || "",
     })
     setOpen(true)
   }
@@ -1135,6 +1194,10 @@ export function InventoryView({}: ViewProps) {
                 </div>
                 <div className="grid gap-2"><Label>Micronutrientes</Label><Input value={form.micronutrientes} onChange={(e) => setForm({ ...form, micronutrientes: e.target.value })} /></div>
                 <div className="grid gap-2"><Label>Forma de aplicacion</Label><Input value={form.formaAplicacion} onChange={(e) => setForm({ ...form, formaAplicacion: e.target.value })} /></div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="grid gap-2"><Label>Cantidad disponible</Label><Input type="number" min={0} value={form.cantidadDisponible} onChange={(e) => setForm({ ...form, cantidadDisponible: e.target.value })} /></div>
+                  <div className="grid gap-2"><Label>Unidad</Label><Input value={form.unidadMedida} placeholder="kg, L, unidad..." onChange={(e) => setForm({ ...form, unidadMedida: e.target.value })} /></div>
+                </div>
                 <div className="grid gap-2"><Label>Riesgos</Label><Textarea value={form.riesgos} onChange={(e) => setForm({ ...form, riesgos: e.target.value })} /></div>
               </div>
               <DialogFooter><Button onClick={save}>Guardar</Button></DialogFooter>
@@ -1150,13 +1213,14 @@ export function InventoryView({}: ViewProps) {
                 <TableHead>Producto</TableHead>
                 <TableHead>Tipo</TableHead>
                 <TableHead>Composicion</TableHead>
+                <TableHead>Disponible</TableHead>
                 <TableHead>NPK</TableHead>
                 <TableHead>Aplicacion</TableHead>
                 <TableHead className="w-24">Acciones</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {rows.length === 0 ? <EmptyRows colSpan={6} label="No hay productos registrados" /> : rows.map((row) => (
+              {rows.length === 0 ? <EmptyRows colSpan={7} label="No hay productos registrados" /> : rows.map((row) => (
                 <TableRow key={row.id}>
                   <TableCell>
                     <div>
@@ -1166,6 +1230,7 @@ export function InventoryView({}: ViewProps) {
                   </TableCell>
                   <TableCell>{row.tipo}</TableCell>
                   <TableCell>{row.composicion || "-"}</TableCell>
+                  <TableCell>{row.cantidadDisponible != null ? number(row.cantidadDisponible, row.unidadMedida ? ` ${row.unidadMedida}` : "") : "-"}</TableCell>
                   <TableCell>
                     {row.nitrogeno ?? "-"} / {row.fosforo ?? "-"} / {row.potasio ?? "-"}
                   </TableCell>

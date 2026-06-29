@@ -114,56 +114,189 @@ function parseNonNegativeInteger(value: unknown, fallback = 0) {
   return Number.isFinite(parsed) && parsed >= 0 ? Math.floor(parsed) : fallback
 }
 
-function parseNonNegativeNumber(value: unknown, fallback = 0) {
-  const parsed = Number(value ?? fallback)
-  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback
-}
-
-async function getCropProductionParams(cropName: string, greenhouseId: number) {
-  const rows = await query<Record<string, unknown>[]>(
-    `SELECT TOP 1
-       rendimiento_por_mata AS rendimientoPorMata,
-       unidad_rendimiento AS unidadRendimiento,
-       agua_litros_por_mata_dia AS aguaLitrosPorMataDia
-     FROM dbo.Cultivos
-     WHERE id_invernadero = @greenhouseId
-       AND LOWER(LTRIM(RTRIM(nombre))) = LOWER(LTRIM(RTRIM(@cropName)))
-     ORDER BY id_cultivo DESC`,
-    { cropName, greenhouseId }
-  )
-  if (rows[0]) {
-    return {
-      rendimientoPorMata: Number(rows[0].rendimientoPorMata) || 0,
-      unidadRendimiento: String(rows[0].unidadRendimiento || "lb"),
-      aguaLitrosPorMataDia: Number(rows[0].aguaLitrosPorMataDia) || 0,
-    }
-  }
-
-  const catalogRows = await query<Record<string, unknown>[]>(
-    `IF OBJECT_ID('dbo.CatalogoCultivos', 'U') IS NOT NULL
-       SELECT TOP 1
-         rendimiento_por_mata AS rendimientoPorMata,
-         unidad_rendimiento AS unidadRendimiento,
-         agua_litros_por_mata_dia AS aguaLitrosPorMataDia
-       FROM dbo.CatalogoCultivos
-       WHERE LOWER(LTRIM(RTRIM(nombre))) = LOWER(LTRIM(RTRIM(@cropName)))
-       ORDER BY id_catalogo ASC`,
-    { cropName }
-  )
-
-  return {
-    rendimientoPorMata: Number(catalogRows[0]?.rendimientoPorMata) || 0,
-    unidadRendimiento: String(catalogRows[0]?.unidadRendimiento || "lb"),
-    aguaLitrosPorMataDia: Number(catalogRows[0]?.aguaLitrosPorMataDia) || 0,
-  }
-}
-
 async function hasZoneCropQuantityColumn() {
   const rows = await query<Array<{ exists: number }>>(
     `SELECT CASE WHEN COL_LENGTH('ZonasRiego', 'cantidad_cultivo') IS NULL THEN 0 ELSE 1 END AS [exists]`
   )
 
   return Number(rows[0]?.exists) === 1
+}
+
+async function getZoneProductionColumns() {
+  const rows = await query<Array<{
+    rendimientoPorMata: number
+    unidadRendimiento: number
+    produccionEstimada: number
+    aguaEstimadaLitrosDia: number
+    humedadSiembra: number
+    temperaturaSiembra: number
+    phSiembra: number
+    ecSiembra: number
+    tdsSiembra: number
+    fertilizanteEstimado: number
+    abonoEstimado: number
+    recomendacionSiembra: number
+    costoPorMata: number
+    precioMercado: number
+    costoTotalMatas: number
+    ingresoEstimado: number
+    margenEstimado: number
+    margenPorcentaje: number
+  }>>(
+    `SELECT
+       CASE WHEN COL_LENGTH('ZonasRiego', 'rendimiento_por_mata') IS NULL THEN 0 ELSE 1 END AS rendimientoPorMata,
+       CASE WHEN COL_LENGTH('ZonasRiego', 'unidad_rendimiento') IS NULL THEN 0 ELSE 1 END AS unidadRendimiento,
+       CASE WHEN COL_LENGTH('ZonasRiego', 'produccion_estimada') IS NULL THEN 0 ELSE 1 END AS produccionEstimada,
+       CASE WHEN COL_LENGTH('ZonasRiego', 'agua_estimada_litros_dia') IS NULL THEN 0 ELSE 1 END AS aguaEstimadaLitrosDia,
+       CASE WHEN COL_LENGTH('ZonasRiego', 'humedad_siembra') IS NULL THEN 0 ELSE 1 END AS humedadSiembra,
+       CASE WHEN COL_LENGTH('ZonasRiego', 'temperatura_siembra') IS NULL THEN 0 ELSE 1 END AS temperaturaSiembra,
+       CASE WHEN COL_LENGTH('ZonasRiego', 'ph_siembra') IS NULL THEN 0 ELSE 1 END AS phSiembra,
+       CASE WHEN COL_LENGTH('ZonasRiego', 'ec_siembra') IS NULL THEN 0 ELSE 1 END AS ecSiembra,
+       CASE WHEN COL_LENGTH('ZonasRiego', 'tds_siembra') IS NULL THEN 0 ELSE 1 END AS tdsSiembra,
+       CASE WHEN COL_LENGTH('ZonasRiego', 'fertilizante_estimado') IS NULL THEN 0 ELSE 1 END AS fertilizanteEstimado,
+       CASE WHEN COL_LENGTH('ZonasRiego', 'abono_estimado') IS NULL THEN 0 ELSE 1 END AS abonoEstimado,
+       CASE WHEN COL_LENGTH('ZonasRiego', 'recomendacion_siembra') IS NULL THEN 0 ELSE 1 END AS recomendacionSiembra,
+       CASE WHEN COL_LENGTH('ZonasRiego', 'costo_por_mata') IS NULL THEN 0 ELSE 1 END AS costoPorMata,
+       CASE WHEN COL_LENGTH('ZonasRiego', 'precio_mercado') IS NULL THEN 0 ELSE 1 END AS precioMercado,
+       CASE WHEN COL_LENGTH('ZonasRiego', 'costo_total_matas') IS NULL THEN 0 ELSE 1 END AS costoTotalMatas,
+       CASE WHEN COL_LENGTH('ZonasRiego', 'ingreso_estimado') IS NULL THEN 0 ELSE 1 END AS ingresoEstimado,
+       CASE WHEN COL_LENGTH('ZonasRiego', 'margen_estimado') IS NULL THEN 0 ELSE 1 END AS margenEstimado,
+       CASE WHEN COL_LENGTH('ZonasRiego', 'margen_porcentaje') IS NULL THEN 0 ELSE 1 END AS margenPorcentaje`
+  )
+
+  return {
+    rendimientoPorMata: Number(rows[0]?.rendimientoPorMata) === 1,
+    unidadRendimiento: Number(rows[0]?.unidadRendimiento) === 1,
+    produccionEstimada: Number(rows[0]?.produccionEstimada) === 1,
+    aguaEstimadaLitrosDia: Number(rows[0]?.aguaEstimadaLitrosDia) === 1,
+    humedadSiembra: Number(rows[0]?.humedadSiembra) === 1,
+    temperaturaSiembra: Number(rows[0]?.temperaturaSiembra) === 1,
+    phSiembra: Number(rows[0]?.phSiembra) === 1,
+    ecSiembra: Number(rows[0]?.ecSiembra) === 1,
+    tdsSiembra: Number(rows[0]?.tdsSiembra) === 1,
+    fertilizanteEstimado: Number(rows[0]?.fertilizanteEstimado) === 1,
+    abonoEstimado: Number(rows[0]?.abonoEstimado) === 1,
+    recomendacionSiembra: Number(rows[0]?.recomendacionSiembra) === 1,
+    costoPorMata: Number(rows[0]?.costoPorMata) === 1,
+    precioMercado: Number(rows[0]?.precioMercado) === 1,
+    costoTotalMatas: Number(rows[0]?.costoTotalMatas) === 1,
+    ingresoEstimado: Number(rows[0]?.ingresoEstimado) === 1,
+    margenEstimado: Number(rows[0]?.margenEstimado) === 1,
+    margenPorcentaje: Number(rows[0]?.margenPorcentaje) === 1,
+  }
+}
+
+function parseNullableDecimal(value: unknown) {
+  if (value === null || value === undefined || value === "") return null
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+function scaleTextEstimate(value: unknown, cantidadMatas: number) {
+  const text = String(value || "").trim()
+  if (!text || cantidadMatas <= 0) return text
+  return `${text}\nEstimado para ${cantidadMatas.toLocaleString("es-DO")} matas: ajustar proporcionalmente segun dosis tecnica.`
+}
+
+async function getCatalogCropByName(nombre: string) {
+  const rows = await query<Record<string, unknown>[]>(
+    `SELECT TOP 1
+       nombre,
+       variedad,
+       umbral_humedad AS umbralHumedad,
+       umbral_temperatura AS umbralTemperatura,
+       umbral_ph AS umbralPh,
+       umbral_ec AS umbralEc,
+       umbral_tds AS umbralTds,
+       agua_litros_por_mata_dia AS aguaLitrosPorMataDia,
+       rendimiento_por_mata AS rendimientoPorMata,
+       unidad_rendimiento AS unidadRendimiento,
+       fertilizantes,
+       abonos,
+       mejores_meses AS mejoresMeses,
+       recomendacion_siembra AS recomendacionSiembra
+     FROM dbo.CatalogoCultivos
+     WHERE OBJECT_ID('dbo.CatalogoCultivos', 'U') IS NOT NULL
+       AND activo = 1
+       AND LOWER(LTRIM(RTRIM(nombre))) = LOWER(LTRIM(RTRIM(@nombre)))
+     ORDER BY id_catalogo`,
+    { nombre }
+  ).catch(() => [])
+
+  return rows[0] || null
+}
+
+async function ensureLocalCropForZone(invernaderoId: number, cropName: string) {
+  const nombre = cropName.trim()
+  if (!nombre) return null
+
+  const existing = await query<Array<{ id_cultivo: number }>>(
+    `SELECT TOP 1 id_cultivo
+     FROM dbo.Cultivos
+     WHERE id_invernadero = @invernaderoId
+       AND LOWER(LTRIM(RTRIM(nombre))) = LOWER(LTRIM(RTRIM(@nombre)))
+     ORDER BY id_cultivo DESC`,
+    { invernaderoId, nombre }
+  )
+  if (existing[0]?.id_cultivo) return Number(existing[0].id_cultivo)
+
+  const catalog = await getCatalogCropByName(nombre)
+  const inserted = await execute(
+    `INSERT INTO dbo.Cultivos (
+       nombre,
+       variedad,
+       id_invernadero,
+       umbral_humedad,
+       umbral_temperatura,
+       umbral_ph,
+       umbral_ec,
+       umbral_tds,
+       agua_litros_por_mata_dia,
+       rendimiento_por_mata,
+       unidad_rendimiento,
+       fertilizantes,
+       abonos,
+       mejores_meses,
+       recomendacion_siembra
+     )
+     OUTPUT INSERTED.id_cultivo
+     VALUES (
+       @nombre,
+       @variedad,
+       @invernaderoId,
+       @umbralHumedad,
+       @umbralTemperatura,
+       @umbralPh,
+       @umbralEc,
+       @umbralTds,
+       @aguaLitrosPorMataDia,
+       @rendimientoPorMata,
+       @unidadRendimiento,
+       @fertilizantes,
+       @abonos,
+       @mejoresMeses,
+       @recomendacionSiembra
+     )`,
+    {
+      nombre,
+      variedad: String(catalog?.variedad || ""),
+      invernaderoId,
+      umbralHumedad: catalog?.umbralHumedad ?? null,
+      umbralTemperatura: catalog?.umbralTemperatura ?? null,
+      umbralPh: catalog?.umbralPh ?? null,
+      umbralEc: catalog?.umbralEc ?? null,
+      umbralTds: catalog?.umbralTds ?? null,
+      aguaLitrosPorMataDia: catalog?.aguaLitrosPorMataDia ?? null,
+      rendimientoPorMata: catalog?.rendimientoPorMata ?? null,
+      unidadRendimiento: catalog?.unidadRendimiento ?? null,
+      fertilizantes: catalog?.fertilizantes ?? null,
+      abonos: catalog?.abonos ?? null,
+      mejoresMeses: catalog?.mejoresMeses ?? null,
+      recomendacionSiembra: catalog?.recomendacionSiembra ?? null,
+    }
+  ).catch(() => null)
+
+  return Number(inserted?.recordset?.[0]?.id_cultivo || 0) || null
 }
 
 export async function GET(req: Request) {
@@ -175,6 +308,7 @@ export async function GET(req: Request) {
     const methodStorage = await getIrrigationMethodStorage()
     const sensorZoneColumn = await getSensorZoneColumn()
     const hasCantidadCultivo = await hasZoneCropQuantityColumn()
+    const productionColumns = await getZoneProductionColumns()
     let sqlText = `
       SELECT
         z.id_zona AS id,
@@ -195,14 +329,24 @@ export async function GET(req: Request) {
         ISNULL(z.tiempo_crecimiento_dias, 0) AS tiempoCrecimientoDias,
         ISNULL(z.tiempo_cosecha_dias, 0) AS tiempoCosechaDias,
         ${hasCantidadCultivo ? "ISNULL(z.cantidad_cultivo, 0)" : "0"} AS cantidadCultivo,
-        ISNULL(z.rendimiento_estimado, 0) AS rendimientoEstimado,
-        ISNULL(z.unidad_rendimiento, '') AS unidadRendimiento,
-        ISNULL(z.agua_estimada_litros_dia, 0) AS aguaEstimadaLitrosDia,
-        z.humedad_siembra AS humedadSiembra,
-        z.temperatura_siembra AS temperaturaSiembra,
-        z.ph_siembra AS phSiembra,
-        z.ec_siembra AS ecSiembra,
-        z.tds_siembra AS tdsSiembra,
+        ${productionColumns.rendimientoPorMata ? "z.rendimiento_por_mata" : "NULL"} AS rendimientoPorMata,
+        ${productionColumns.unidadRendimiento ? "z.unidad_rendimiento" : "NULL"} AS unidadRendimiento,
+        ${productionColumns.produccionEstimada ? "z.produccion_estimada" : "NULL"} AS produccionEstimada,
+        ${productionColumns.aguaEstimadaLitrosDia ? "z.agua_estimada_litros_dia" : "NULL"} AS aguaEstimadaLitrosDia,
+        ${productionColumns.humedadSiembra ? "z.humedad_siembra" : "NULL"} AS humedadSiembra,
+        ${productionColumns.temperaturaSiembra ? "z.temperatura_siembra" : "NULL"} AS temperaturaSiembra,
+        ${productionColumns.phSiembra ? "z.ph_siembra" : "NULL"} AS phSiembra,
+        ${productionColumns.ecSiembra ? "z.ec_siembra" : "NULL"} AS ecSiembra,
+        ${productionColumns.tdsSiembra ? "z.tds_siembra" : "NULL"} AS tdsSiembra,
+        ${productionColumns.fertilizanteEstimado ? "z.fertilizante_estimado" : "NULL"} AS fertilizanteEstimado,
+        ${productionColumns.abonoEstimado ? "z.abono_estimado" : "NULL"} AS abonoEstimado,
+        ${productionColumns.recomendacionSiembra ? "z.recomendacion_siembra" : "NULL"} AS recomendacionSiembra,
+        ${productionColumns.costoPorMata ? "z.costo_por_mata" : "NULL"} AS costoPorMata,
+        ${productionColumns.precioMercado ? "z.precio_mercado" : "NULL"} AS precioMercado,
+        ${productionColumns.costoTotalMatas ? "z.costo_total_matas" : "NULL"} AS costoTotalMatas,
+        ${productionColumns.ingresoEstimado ? "z.ingreso_estimado" : "NULL"} AS ingresoEstimado,
+        ${productionColumns.margenEstimado ? "z.margen_estimado" : "NULL"} AS margenEstimado,
+        ${productionColumns.margenPorcentaje ? "z.margen_porcentaje" : "NULL"} AS margenPorcentaje,
         ISNULL(z.notas_cultivo, '') AS notasCultivo,
         ISNULL(z.observaciones, '') AS observaciones
       FROM ZonasRiego z
@@ -297,14 +441,24 @@ export async function GET(req: Request) {
           tiempoCrecimientoDias: Number(z.tiempoCrecimientoDias) || 0,
           tiempoCosechaDias: Number(z.tiempoCosechaDias) || 0,
           cantidadCultivo: Number(z.cantidadCultivo) || 0,
-          rendimientoEstimado: Number(z.rendimientoEstimado) || 0,
-          unidadRendimiento: String(z.unidadRendimiento || ""),
-          aguaEstimadaLitrosDia: Number(z.aguaEstimadaLitrosDia) || 0,
+          rendimientoPorMata: z.rendimientoPorMata != null ? Number(z.rendimientoPorMata) : null,
+          unidadRendimiento: z.unidadRendimiento ? String(z.unidadRendimiento) : "",
+          produccionEstimada: z.produccionEstimada != null ? Number(z.produccionEstimada) : null,
+          aguaEstimadaLitrosDia: z.aguaEstimadaLitrosDia != null ? Number(z.aguaEstimadaLitrosDia) : null,
           humedadSiembra: z.humedadSiembra != null ? Number(z.humedadSiembra) : null,
           temperaturaSiembra: z.temperaturaSiembra != null ? Number(z.temperaturaSiembra) : null,
           phSiembra: z.phSiembra != null ? Number(z.phSiembra) : null,
           ecSiembra: z.ecSiembra != null ? Number(z.ecSiembra) : null,
           tdsSiembra: z.tdsSiembra != null ? Number(z.tdsSiembra) : null,
+          fertilizanteEstimado: z.fertilizanteEstimado ? String(z.fertilizanteEstimado) : "",
+          abonoEstimado: z.abonoEstimado ? String(z.abonoEstimado) : "",
+          recomendacionSiembra: z.recomendacionSiembra ? String(z.recomendacionSiembra) : "",
+          costoPorMata: z.costoPorMata != null ? Number(z.costoPorMata) : null,
+          precioMercado: z.precioMercado != null ? Number(z.precioMercado) : null,
+          costoTotalMatas: z.costoTotalMatas != null ? Number(z.costoTotalMatas) : null,
+          ingresoEstimado: z.ingresoEstimado != null ? Number(z.ingresoEstimado) : null,
+          margenEstimado: z.margenEstimado != null ? Number(z.margenEstimado) : null,
+          margenPorcentaje: z.margenPorcentaje != null ? Number(z.margenPorcentaje) : null,
           notasCultivo: String(z.notasCultivo || ""),
           observaciones: z.observaciones || "",
           humedadActual: sensorReadings.humedad_suelo?.valor ?? 0,
@@ -334,9 +488,6 @@ export async function POST(req: Request) {
     const invId = Number(body.invernaderoId) || 0
     const area = parsePositiveArea(body.area_m2, 100)
     const cantidadCultivo = parseNonNegativeInteger(body.cantidadCultivo, 0)
-    const cropProduction = await getCropProductionParams(String(body.cultivoActual || ""), invId)
-    const rendimientoEstimado = parseNonNegativeNumber(body.rendimientoEstimado, cantidadCultivo * cropProduction.rendimientoPorMata)
-    const aguaEstimadaLitrosDia = parseNonNegativeNumber(body.aguaEstimadaLitrosDia, cantidadCultivo * cropProduction.aguaLitrosPorMataDia)
 
     if (!invId) {
       return NextResponse.json({ error: "Invernadero requerido" }, { status: 400 })
@@ -360,6 +511,27 @@ export async function POST(req: Request) {
 
     const methodValue = await resolveIrrigationMethodValue(body.id_metodo_riego ?? body.modoRiego)
     const hasCantidadCultivo = await hasZoneCropQuantityColumn()
+    const productionColumns = await getZoneProductionColumns()
+    const catalogCrop = await getCatalogCropByName(String(body.cultivoActual || ""))
+    const rendimientoPorMata = parseNullableDecimal(body.rendimientoPorMata)
+    const unidadRendimiento = body.unidadRendimiento ? String(body.unidadRendimiento) : null
+    const produccionEstimada = parseNullableDecimal(body.produccionEstimada)
+    const aguaPorMataDia = parseNullableDecimal(catalogCrop?.aguaLitrosPorMataDia)
+    const aguaEstimadaLitrosDia = parseNullableDecimal(body.aguaEstimadaLitrosDia) ?? (aguaPorMataDia != null ? aguaPorMataDia * cantidadCultivo : null)
+    const humedadSiembra = parseNullableDecimal(body.humedadSiembra ?? body.humedad_siembra ?? body.umbralHumedad ?? catalogCrop?.umbralHumedad)
+    const temperaturaSiembra = parseNullableDecimal(body.temperaturaSiembra ?? body.temperatura_siembra ?? catalogCrop?.umbralTemperatura)
+    const phSiembra = parseNullableDecimal(body.phSiembra ?? body.ph_siembra ?? body.umbral_ph ?? catalogCrop?.umbralPh)
+    const ecSiembra = parseNullableDecimal(body.ecSiembra ?? body.ec_siembra ?? body.umbral_ec ?? catalogCrop?.umbralEc)
+    const tdsSiembra = parseNullableDecimal(body.tdsSiembra ?? body.tds_siembra ?? body.umbral_tds ?? catalogCrop?.umbralTds)
+    const fertilizanteEstimado = String(body.fertilizanteEstimado || body.fertilizante_estimado || scaleTextEstimate(catalogCrop?.fertilizantes, cantidadCultivo) || "")
+    const abonoEstimado = String(body.abonoEstimado || body.abono_estimado || scaleTextEstimate(catalogCrop?.abonos, cantidadCultivo) || "")
+    const recomendacionSiembra = String(body.recomendacionSiembra || body.recomendacion_siembra || catalogCrop?.recomendacionSiembra || "")
+    const costoPorMata = parseNullableDecimal(body.costoPorMata)
+    const precioMercado = parseNullableDecimal(body.precioMercado)
+    const costoTotalMatas = parseNullableDecimal(body.costoTotalMatas)
+    const ingresoEstimado = parseNullableDecimal(body.ingresoEstimado)
+    const margenEstimado = parseNullableDecimal(body.margenEstimado)
+    const margenPorcentaje = parseNullableDecimal(body.margenPorcentaje)
     const methodColumn = methodValue.storage === "table" ? "id_metodo_riego" : "metodo_riego"
     const methodParam = methodValue.storage === "table" ? "@metodoId" : "@metodoRiego"
     const insertColumns = [
@@ -380,14 +552,24 @@ export async function POST(req: Request) {
       "tiempo_crecimiento_dias",
       "tiempo_cosecha_dias",
       ...(hasCantidadCultivo ? ["cantidad_cultivo"] : []),
-      "rendimiento_estimado",
-      "unidad_rendimiento",
-      "agua_estimada_litros_dia",
-      "humedad_siembra",
-      "temperatura_siembra",
-      "ph_siembra",
-      "ec_siembra",
-      "tds_siembra",
+      ...(productionColumns.rendimientoPorMata ? ["rendimiento_por_mata"] : []),
+      ...(productionColumns.unidadRendimiento ? ["unidad_rendimiento"] : []),
+      ...(productionColumns.produccionEstimada ? ["produccion_estimada"] : []),
+      ...(productionColumns.aguaEstimadaLitrosDia ? ["agua_estimada_litros_dia"] : []),
+      ...(productionColumns.humedadSiembra ? ["humedad_siembra"] : []),
+      ...(productionColumns.temperaturaSiembra ? ["temperatura_siembra"] : []),
+      ...(productionColumns.phSiembra ? ["ph_siembra"] : []),
+      ...(productionColumns.ecSiembra ? ["ec_siembra"] : []),
+      ...(productionColumns.tdsSiembra ? ["tds_siembra"] : []),
+      ...(productionColumns.fertilizanteEstimado ? ["fertilizante_estimado"] : []),
+      ...(productionColumns.abonoEstimado ? ["abono_estimado"] : []),
+      ...(productionColumns.recomendacionSiembra ? ["recomendacion_siembra"] : []),
+      ...(productionColumns.costoPorMata ? ["costo_por_mata"] : []),
+      ...(productionColumns.precioMercado ? ["precio_mercado"] : []),
+      ...(productionColumns.costoTotalMatas ? ["costo_total_matas"] : []),
+      ...(productionColumns.ingresoEstimado ? ["ingreso_estimado"] : []),
+      ...(productionColumns.margenEstimado ? ["margen_estimado"] : []),
+      ...(productionColumns.margenPorcentaje ? ["margen_porcentaje"] : []),
       "notas_cultivo",
       "observaciones",
     ]
@@ -409,14 +591,24 @@ export async function POST(req: Request) {
       "@crecimiento",
       "@cosecha",
       ...(hasCantidadCultivo ? ["@cantidadCultivo"] : []),
-      "@rendimientoEstimado",
-      "@unidadRendimiento",
-      "@aguaEstimadaLitrosDia",
-      "@humedadSiembra",
-      "@temperaturaSiembra",
-      "@phSiembra",
-      "@ecSiembra",
-      "@tdsSiembra",
+      ...(productionColumns.rendimientoPorMata ? ["@rendimientoPorMata"] : []),
+      ...(productionColumns.unidadRendimiento ? ["@unidadRendimiento"] : []),
+      ...(productionColumns.produccionEstimada ? ["@produccionEstimada"] : []),
+      ...(productionColumns.aguaEstimadaLitrosDia ? ["@aguaEstimadaLitrosDia"] : []),
+      ...(productionColumns.humedadSiembra ? ["@humedadSiembra"] : []),
+      ...(productionColumns.temperaturaSiembra ? ["@temperaturaSiembra"] : []),
+      ...(productionColumns.phSiembra ? ["@phSiembra"] : []),
+      ...(productionColumns.ecSiembra ? ["@ecSiembra"] : []),
+      ...(productionColumns.tdsSiembra ? ["@tdsSiembra"] : []),
+      ...(productionColumns.fertilizanteEstimado ? ["@fertilizanteEstimado"] : []),
+      ...(productionColumns.abonoEstimado ? ["@abonoEstimado"] : []),
+      ...(productionColumns.recomendacionSiembra ? ["@recomendacionSiembra"] : []),
+      ...(productionColumns.costoPorMata ? ["@costoPorMata"] : []),
+      ...(productionColumns.precioMercado ? ["@precioMercado"] : []),
+      ...(productionColumns.costoTotalMatas ? ["@costoTotalMatas"] : []),
+      ...(productionColumns.ingresoEstimado ? ["@ingresoEstimado"] : []),
+      ...(productionColumns.margenEstimado ? ["@margenEstimado"] : []),
+      ...(productionColumns.margenPorcentaje ? ["@margenPorcentaje"] : []),
       "@notasCultivo",
       "@obs",
     ]
@@ -442,18 +634,29 @@ export async function POST(req: Request) {
       crecimiento: body.tiempoCrecimientoDias || null,
       cosecha: body.tiempoCosechaDias || null,
       cantidadCultivo,
-      rendimientoEstimado,
-      unidadRendimiento: body.unidadRendimiento || cropProduction.unidadRendimiento,
+      rendimientoPorMata,
+      unidadRendimiento,
+      produccionEstimada,
       aguaEstimadaLitrosDia,
-      humedadSiembra: body.humedadSiembra || null,
-      temperaturaSiembra: body.temperaturaSiembra || null,
-      phSiembra: body.phSiembra || null,
-      ecSiembra: body.ecSiembra || null,
-      tdsSiembra: body.tdsSiembra || null,
+      humedadSiembra,
+      temperaturaSiembra,
+      phSiembra,
+      ecSiembra,
+      tdsSiembra,
+      fertilizanteEstimado,
+      abonoEstimado,
+      recomendacionSiembra,
+      costoPorMata,
+      precioMercado,
+      costoTotalMatas,
+      ingresoEstimado,
+      margenEstimado,
+      margenPorcentaje,
       notasCultivo: body.notasCultivo || "",
       obs: body.observaciones || "",
     })
     const newId = result.recordset?.[0]?.id_zona
+    await ensureLocalCropForZone(invId, String(body.cultivoActual || ""))
     await registrarBitacora({
       session,
       req,
@@ -485,14 +688,24 @@ export async function POST(req: Request) {
       tiempoCrecimientoDias: body.tiempoCrecimientoDias || 0,
       tiempoCosechaDias: body.tiempoCosechaDias || 0,
       cantidadCultivo,
-      rendimientoEstimado,
-      unidadRendimiento: body.unidadRendimiento || cropProduction.unidadRendimiento,
+      rendimientoPorMata,
+      unidadRendimiento: unidadRendimiento || "",
+      produccionEstimada,
       aguaEstimadaLitrosDia,
-      humedadSiembra: body.humedadSiembra ?? null,
-      temperaturaSiembra: body.temperaturaSiembra ?? null,
-      phSiembra: body.phSiembra ?? null,
-      ecSiembra: body.ecSiembra ?? null,
-      tdsSiembra: body.tdsSiembra ?? null,
+      humedadSiembra,
+      temperaturaSiembra,
+      phSiembra,
+      ecSiembra,
+      tdsSiembra,
+      fertilizanteEstimado,
+      abonoEstimado,
+      recomendacionSiembra,
+      costoPorMata,
+      precioMercado,
+      costoTotalMatas,
+      ingresoEstimado,
+      margenEstimado,
+      margenPorcentaje,
       notasCultivo: body.notasCultivo || "",
       observaciones: body.observaciones || "",
       humedadActual: 0,
@@ -521,8 +734,9 @@ export async function PATCH(req: Request) {
 
     const methodStorage = await getIrrigationMethodStorage()
     const hasCantidadCultivo = await hasZoneCropQuantityColumn()
+    const productionColumns = await getZoneProductionColumns()
     const previousRows = await query<Record<string, unknown>[]>(
-      `SELECT z.nombre, z.id_invernadero AS invernaderoId, i.superficie_m2 AS invernaderoArea, z.umbral_humedad AS umbralHumedad, z.tipo_cultivo AS cultivoActual, ${methodStorage === "table" ? "m.nombre" : "z.metodo_riego"} AS modoRiego, z.estado AS estadoRiego, z.area_m2, z.caudal_litros_min, z.umbral_ph, z.umbral_ec, z.umbral_tds, z.fecha_siembra, z.fecha_cosecha_estimada, z.tiempo_germinacion_dias, z.tiempo_crecimiento_dias, z.tiempo_cosecha_dias, ${hasCantidadCultivo ? "z.cantidad_cultivo" : "0 AS cantidad_cultivo"}, z.notas_cultivo, z.observaciones
+      `SELECT z.nombre, z.id_invernadero AS invernaderoId, i.superficie_m2 AS invernaderoArea, z.umbral_humedad AS umbralHumedad, z.tipo_cultivo AS cultivoActual, ${methodStorage === "table" ? "m.nombre" : "z.metodo_riego"} AS modoRiego, z.estado AS estadoRiego, z.area_m2, z.caudal_litros_min, z.umbral_ph, z.umbral_ec, z.umbral_tds, z.fecha_siembra, z.fecha_cosecha_estimada, z.tiempo_germinacion_dias, z.tiempo_crecimiento_dias, z.tiempo_cosecha_dias, ${hasCantidadCultivo ? "z.cantidad_cultivo" : "0 AS cantidad_cultivo"}, ${productionColumns.rendimientoPorMata ? "z.rendimiento_por_mata" : "NULL"} AS rendimiento_por_mata, ${productionColumns.unidadRendimiento ? "z.unidad_rendimiento" : "NULL"} AS unidad_rendimiento, ${productionColumns.produccionEstimada ? "z.produccion_estimada" : "NULL"} AS produccion_estimada, ${productionColumns.costoPorMata ? "z.costo_por_mata" : "NULL"} AS costo_por_mata, ${productionColumns.precioMercado ? "z.precio_mercado" : "NULL"} AS precio_mercado, ${productionColumns.costoTotalMatas ? "z.costo_total_matas" : "NULL"} AS costo_total_matas, ${productionColumns.ingresoEstimado ? "z.ingreso_estimado" : "NULL"} AS ingreso_estimado, ${productionColumns.margenEstimado ? "z.margen_estimado" : "NULL"} AS margen_estimado, ${productionColumns.margenPorcentaje ? "z.margen_porcentaje" : "NULL"} AS margen_porcentaje, z.notas_cultivo, z.observaciones
        FROM ZonasRiego z
        INNER JOIN Invernaderos i ON i.id_invernadero = z.id_invernadero
        ${methodStorage === "table" ? "LEFT JOIN MetodoRiego m ON z.id_metodo_riego = m.id_metodo_riego" : ""}
@@ -556,25 +770,47 @@ export async function PATCH(req: Request) {
     if (updates.cantidadCultivo !== undefined) {
       updates.cantidadCultivo = parseNonNegativeInteger(updates.cantidadCultivo, 0)
     }
-
-    if (
-      updates.cantidadCultivo !== undefined ||
-      updates.cultivoActual !== undefined ||
-      updates.rendimientoEstimado === undefined ||
-      updates.aguaEstimadaLitrosDia === undefined
-    ) {
-      const nextCrop = String(updates.cultivoActual ?? previousRows[0].cultivoActual ?? "")
-      const nextQty = parseNonNegativeInteger(updates.cantidadCultivo ?? previousRows[0].cantidad_cultivo, 0)
-      const production = await getCropProductionParams(nextCrop, Number(previousRows[0].invernaderoId))
-      if (updates.rendimientoEstimado === undefined) {
-        updates.rendimientoEstimado = nextQty * production.rendimientoPorMata
-      }
-      if (updates.aguaEstimadaLitrosDia === undefined) {
-        updates.aguaEstimadaLitrosDia = nextQty * production.aguaLitrosPorMataDia
-      }
-      if (updates.unidadRendimiento === undefined) {
-        updates.unidadRendimiento = production.unidadRendimiento
-      }
+    if (updates.rendimientoPorMata !== undefined) {
+      updates.rendimientoPorMata = parseNullableDecimal(updates.rendimientoPorMata)
+    }
+    if (updates.produccionEstimada !== undefined) {
+      updates.produccionEstimada = parseNullableDecimal(updates.produccionEstimada)
+    }
+    if (updates.aguaEstimadaLitrosDia !== undefined) {
+      updates.aguaEstimadaLitrosDia = parseNullableDecimal(updates.aguaEstimadaLitrosDia)
+    }
+    if (updates.humedadSiembra !== undefined) {
+      updates.humedadSiembra = parseNullableDecimal(updates.humedadSiembra)
+    }
+    if (updates.temperaturaSiembra !== undefined) {
+      updates.temperaturaSiembra = parseNullableDecimal(updates.temperaturaSiembra)
+    }
+    if (updates.phSiembra !== undefined) {
+      updates.phSiembra = parseNullableDecimal(updates.phSiembra)
+    }
+    if (updates.ecSiembra !== undefined) {
+      updates.ecSiembra = parseNullableDecimal(updates.ecSiembra)
+    }
+    if (updates.tdsSiembra !== undefined) {
+      updates.tdsSiembra = parseNullableDecimal(updates.tdsSiembra)
+    }
+    if (updates.costoPorMata !== undefined) {
+      updates.costoPorMata = parseNullableDecimal(updates.costoPorMata)
+    }
+    if (updates.precioMercado !== undefined) {
+      updates.precioMercado = parseNullableDecimal(updates.precioMercado)
+    }
+    if (updates.costoTotalMatas !== undefined) {
+      updates.costoTotalMatas = parseNullableDecimal(updates.costoTotalMatas)
+    }
+    if (updates.ingresoEstimado !== undefined) {
+      updates.ingresoEstimado = parseNullableDecimal(updates.ingresoEstimado)
+    }
+    if (updates.margenEstimado !== undefined) {
+      updates.margenEstimado = parseNullableDecimal(updates.margenEstimado)
+    }
+    if (updates.margenPorcentaje !== undefined) {
+      updates.margenPorcentaje = parseNullableDecimal(updates.margenPorcentaje)
     }
 
     const fieldMap: Record<string, string> = {
@@ -593,14 +829,24 @@ export async function PATCH(req: Request) {
       tiempoCrecimientoDias: "tiempo_crecimiento_dias",
       tiempoCosechaDias: "tiempo_cosecha_dias",
       cantidadCultivo: "cantidad_cultivo",
-      rendimientoEstimado: "rendimiento_estimado",
+      rendimientoPorMata: "rendimiento_por_mata",
       unidadRendimiento: "unidad_rendimiento",
+      produccionEstimada: "produccion_estimada",
       aguaEstimadaLitrosDia: "agua_estimada_litros_dia",
       humedadSiembra: "humedad_siembra",
       temperaturaSiembra: "temperatura_siembra",
       phSiembra: "ph_siembra",
       ecSiembra: "ec_siembra",
       tdsSiembra: "tds_siembra",
+      fertilizanteEstimado: "fertilizante_estimado",
+      abonoEstimado: "abono_estimado",
+      recomendacionSiembra: "recomendacion_siembra",
+      costoPorMata: "costo_por_mata",
+      precioMercado: "precio_mercado",
+      costoTotalMatas: "costo_total_matas",
+      ingresoEstimado: "ingreso_estimado",
+      margenEstimado: "margen_estimado",
+      margenPorcentaje: "margen_porcentaje",
       notasCultivo: "notas_cultivo",
       observaciones: "observaciones",
     }
@@ -609,6 +855,24 @@ export async function PATCH(req: Request) {
     } else {
       delete updates.cantidadCultivo
     }
+    if (!productionColumns.rendimientoPorMata) delete updates.rendimientoPorMata
+    if (!productionColumns.unidadRendimiento) delete updates.unidadRendimiento
+    if (!productionColumns.produccionEstimada) delete updates.produccionEstimada
+    if (!productionColumns.aguaEstimadaLitrosDia) delete updates.aguaEstimadaLitrosDia
+    if (!productionColumns.humedadSiembra) delete updates.humedadSiembra
+    if (!productionColumns.temperaturaSiembra) delete updates.temperaturaSiembra
+    if (!productionColumns.phSiembra) delete updates.phSiembra
+    if (!productionColumns.ecSiembra) delete updates.ecSiembra
+    if (!productionColumns.tdsSiembra) delete updates.tdsSiembra
+    if (!productionColumns.fertilizanteEstimado) delete updates.fertilizanteEstimado
+    if (!productionColumns.abonoEstimado) delete updates.abonoEstimado
+    if (!productionColumns.recomendacionSiembra) delete updates.recomendacionSiembra
+    if (!productionColumns.costoPorMata) delete updates.costoPorMata
+    if (!productionColumns.precioMercado) delete updates.precioMercado
+    if (!productionColumns.costoTotalMatas) delete updates.costoTotalMatas
+    if (!productionColumns.ingresoEstimado) delete updates.ingresoEstimado
+    if (!productionColumns.margenEstimado) delete updates.margenEstimado
+    if (!productionColumns.margenPorcentaje) delete updates.margenPorcentaje
 
     const setClauses: string[] = []
     const params: Record<string, unknown> = { id: Number(id) }
@@ -641,6 +905,10 @@ export async function PATCH(req: Request) {
           { metodoRiego: methodValue.metodo_riego, id: Number(id) }
         )
       }
+    }
+
+    if (updates.cultivoActual !== undefined) {
+      await ensureLocalCropForZone(Number(previousRows[0].invernaderoId), String(updates.cultivoActual || ""))
     }
 
     let iotCommand: Awaited<ReturnType<typeof enqueueIrrigationCommand>> = null

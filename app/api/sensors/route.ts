@@ -12,7 +12,16 @@ export async function GET(req: Request) {
     const gh = searchParams.get("greenhouse")
     const sensorZoneColumn = await getSensorZoneColumn()
 
-    let sqlText = `
+    const params: Record<string, unknown> = { empresaId: session.empresaId }
+    if (gh) {
+      params.gh = Number(gh)
+    }
+
+    const sensorScopeWhere = gh
+      ? "i.id_empresa = @empresaId AND s.id_invernadero = @gh"
+      : "i.id_empresa = @empresaId"
+
+    const sqlText = `
       SELECT
         s.id_sensor AS id,
         s.tipo,
@@ -33,49 +42,72 @@ export async function GET(req: Request) {
         s.observaciones,
         s.unidad_medida AS unidad,
         s.rango_min AS umbralMin,
-        s.rango_max AS umbralMax
+        s.rango_max AS umbralMax,
+        latest.valor AS ultimaLectura,
+        latest.unidad AS ultimaUnidad,
+        latest.fecha_hora AS ultimoReporte
         ${sensorZoneColumn ? `, s.${sensorZoneColumn} AS zonaRiegoId` : ""}
       FROM Sensores s
+      INNER JOIN Invernaderos i ON i.id_invernadero = s.id_invernadero
       LEFT JOIN Marcas ma ON ma.id_marca = s.id_marca
+      OUTER APPLY (
+        SELECT TOP 1 l.valor, l.unidad, l.fecha_hora
+        FROM LecturasSensores l
+        WHERE l.id_sensor = s.id_sensor
+        ORDER BY l.fecha_hora DESC
+      ) latest
+      WHERE ${sensorScopeWhere}
     `
-    const params: Record<string, unknown> = {}
-    if (gh) {
-      sqlText += ` WHERE s.id_invernadero = @gh
-        AND s.id_invernadero IN (
-          SELECT id_invernadero FROM Invernaderos WHERE id_empresa = @empresaId
-        )`
-      params.gh = Number(gh)
-      params.empresaId = session.empresaId
-    } else {
-      sqlText += ` WHERE s.id_invernadero IN (
-        SELECT id_invernadero FROM Invernaderos WHERE id_empresa = @empresaId
-      )`
-      params.empresaId = session.empresaId
-    }
 
     const sensors = (await query(sqlText, params)) as Record<string, unknown>[]
 
-    const result = await Promise.all(
-      sensors.map(async (s) => {
-        const latestRows = (await query(
-          `SELECT TOP 1 valor, unidad, fecha_hora
-           FROM LecturasSensores
-           WHERE id_sensor = @sensorId
-           ORDER BY fecha_hora DESC`,
-          { sensorId: s.id }
-        )) as Record<string, unknown>[]
+    const historyRows = (await query(
+      `WITH SensorScope AS (
+         SELECT s.id_sensor
+         FROM Sensores s
+         INNER JOIN Invernaderos i ON i.id_invernadero = s.id_invernadero
+         WHERE ${sensorScopeWhere}
+       ),
+       ReferenceDates AS (
+         SELECT ss.id_sensor, MAX(l.fecha_hora) AS referenceDate
+         FROM SensorScope ss
+         LEFT JOIN LecturasSensores l ON l.id_sensor = ss.id_sensor
+         GROUP BY ss.id_sensor
+       ),
+       MonthBounds AS (
+         SELECT
+           id_sensor,
+           DATEFROMPARTS(
+             YEAR(COALESCE(referenceDate, GETDATE())),
+             MONTH(COALESCE(referenceDate, GETDATE())),
+             1
+           ) AS monthStart
+         FROM ReferenceDates
+       )
+       SELECT l.id_sensor AS sensorId, l.valor, l.fecha_hora AS timestamp
+       FROM LecturasSensores l
+       INNER JOIN MonthBounds mb ON mb.id_sensor = l.id_sensor
+       WHERE l.fecha_hora >= mb.monthStart
+         AND l.fecha_hora < DATEADD(MONTH, 1, mb.monthStart)
+       ORDER BY l.id_sensor ASC, l.fecha_hora ASC`,
+      params
+    )) as Record<string, unknown>[]
 
-        const latest = latestRows[0]
+    const historyBySensor = new Map<string, Array<{ timestamp: unknown; valor: number }>>()
+    for (const row of historyRows) {
+      const sensorId = String(row.sensorId)
+      const current = historyBySensor.get(sensorId) || []
+      current.push({
+        timestamp: row.timestamp,
+        valor: Number(row.valor),
+      })
+      historyBySensor.set(sensorId, current)
+    }
 
-        const historyRows = (await query(
-          `SELECT TOP 48 valor, fecha_hora AS timestamp
-           FROM LecturasSensores
-           WHERE id_sensor = @sensorId
-           ORDER BY fecha_hora DESC`,
-          { sensorId: s.id }
-        )) as Record<string, unknown>[]
+    const result = sensors.map((s) => {
+      const sensorId = String(s.id)
 
-        return {
+      return {
           id: String(s.id),
           tipo: s.tipo,
           nombre: s.nombre,
@@ -94,24 +126,20 @@ export async function GET(req: Request) {
           ultimoCalibrado: (s.ultimoCalibrado as string) || undefined,
           observaciones: (s.observaciones as string) || undefined,
           idDispositivo: s.idDispositivo != null ? Number(s.idDispositivo) : undefined,
-          ultimaLectura: latest ? Number(latest.valor) : undefined,
-          unidad: (latest?.unidad as string) || (s.unidad as string) || "",
+          ultimaLectura: s.ultimaLectura != null ? Number(s.ultimaLectura) : undefined,
+          unidad: (s.ultimaUnidad as string) || (s.unidad as string) || "",
           umbralMin: Number(s.umbralMin) || 0,
           umbralMax: Number(s.umbralMax) || 100,
-          ultimoReporte: latest ? latest.fecha_hora : undefined,
-          history: historyRows.reverse().map((h) => ({
-            timestamp: h.timestamp,
-            valor: Number(h.valor),
-          })),
+          ultimoReporte: s.ultimoReporte || undefined,
+          history: historyBySensor.get(sensorId) || [],
         }
-      })
-    )
+    })
 
     return NextResponse.json(result)
   } catch (err: unknown) {
     console.error("[SENSORS API] GET Error:", err)
     const errorMessage = err instanceof Error ? err.message : "Unknown error"
-return NextResponse.json({ error: "No autorizado", details: errorMessage }, { status: 401 })
+    return NextResponse.json({ error: "Error al cargar sensores", details: errorMessage }, { status: 500 })
   }
 }
 

@@ -56,6 +56,15 @@ interface ReportsData {
     cosechasEstimadas: number
     rendimientoRegistrado: number
   }
+  comparativoInvernaderos?: Array<{
+    id: string
+    nombre: string
+    kgCosechados: number
+    unidadesCosechadas: number
+    ingresos: number
+    costos: number
+    ganancia: number
+  }>
 }
 
 interface ZoneOption {
@@ -132,8 +141,10 @@ export function ReportsView({ userRole, selectedGreenhouse }: ReportsViewProps) 
   const weeklyRiegoData = reportData?.resumenRiego || []
   const monthlyEfficiency = reportData?.eficiencia || []
   const nutrientUsage = reportData?.nutrientes || []
+  const greenhouseComparison = reportData?.comparativoInvernaderos || []
   const temperaturaStats = reportData?.sensores?.find((s) => s.tipo === "temperatura")
   const currentEfficiency = reportData?.eficiencia?.[reportData.eficiencia.length - 1]?.eficiencia || 0
+  const bestGreenhouse = greenhouseComparison[0]
 
   const totalWater = useMemo(
     () => weeklyWater.reduce((acc, e) => acc + e.litros, 0),
@@ -407,6 +418,53 @@ export function ReportsView({ userRole, selectedGreenhouse }: ReportsViewProps) 
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm font-medium text-foreground">
+            Comparativo por Invernadero
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {greenhouseComparison.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No hay cosechas, ventas o costos suficientes para comparar.</p>
+          ) : (
+            <div className="space-y-3">
+              {bestGreenhouse && (
+                <div className="rounded-md border bg-muted/30 p-3 text-sm">
+                  <span className="text-muted-foreground">Mas rentable: </span>
+                  <span className="font-medium text-foreground">{bestGreenhouse.nombre}</span>
+                  <span className={bestGreenhouse.ganancia >= 0 ? "ml-2 font-medium text-emerald-500" : "ml-2 font-medium text-red-500"}>
+                    RD$ {bestGreenhouse.ganancia.toLocaleString("es-DO", { maximumFractionDigits: 2 })}
+                  </span>
+                </div>
+              )}
+              <div className="overflow-x-auto">
+                <div className="min-w-[620px] rounded-md border">
+                  <div className="grid grid-cols-[1.4fr_1fr_1fr_1fr_1fr] gap-3 border-b px-3 py-2 text-xs font-medium text-muted-foreground">
+                    <span>Invernadero</span>
+                    <span>Produccion</span>
+                    <span>Ingresos</span>
+                    <span>Costos</span>
+                    <span>Ganancia</span>
+                  </div>
+                  {greenhouseComparison.map((item) => (
+                    <div key={item.id} className="grid grid-cols-[1.4fr_1fr_1fr_1fr_1fr] gap-3 border-b px-3 py-2 text-xs last:border-b-0">
+                      <span className="font-medium text-foreground">{item.nombre}</span>
+                      <span>{item.kgCosechados.toLocaleString("es-DO", { maximumFractionDigits: 2 })} kg</span>
+                      <span>RD$ {item.ingresos.toLocaleString("es-DO", { maximumFractionDigits: 2 })}</span>
+                      <span>RD$ {item.costos.toLocaleString("es-DO", { maximumFractionDigits: 2 })}</span>
+                      <span className={item.ganancia >= 0 ? "font-medium text-emerald-500" : "font-medium text-red-500"}>
+                        RD$ {item.ganancia.toLocaleString("es-DO", { maximumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>

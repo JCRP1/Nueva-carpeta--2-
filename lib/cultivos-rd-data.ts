@@ -678,6 +678,12 @@ export type EtapaCultivoRD = "germinacion" | "crecimiento" | "cosecha"
 export interface PerfilAgronomicoCultivo {
   densidadPlantasM2: string
   sustratoSuelo: string
+  aguaAproximada: string
+  fertilizantes: string[]
+  abonos: string[]
+  rendimientoPorMata: string
+  plagas: string[]
+  mesesRecomendados: string[]
   fertilizacion: Record<EtapaCultivoRD, string>
   sanidad: string[]
   manejo: Record<EtapaCultivoRD, string>
@@ -687,6 +693,12 @@ const perfilBasePorCategoria: Record<string, PerfilAgronomicoCultivo> = {
   Cereales: {
     densidadPlantasM2: "Variable por marco de siembra; validar población por tarea o hectárea.",
     sustratoSuelo: "Suelo franco a franco-arcilloso, bien nivelado y con buen manejo de humedad.",
+    aguaAproximada: "4-8 L/m2/dia segun etapa, textura del suelo y clima.",
+    fertilizantes: ["NPK balanceado", "Fuente de nitrogeno fraccionada", "Fuente de potasio"],
+    abonos: ["Compost maduro", "Estiercol bien curado antes de siembra"],
+    rendimientoPorMata: "Variable por cultivo; usar rendimiento por m2 y densidad real para estimar por planta.",
+    plagas: ["Gusano cogollero", "Gusanos cortadores", "Chinches", "Hongos foliares"],
+    mesesRecomendados: ["Abril", "Mayo", "Junio", "Octubre", "Noviembre"],
     fertilizacion: {
       germinacion: "Arranque suave con fósforo y materia orgánica bien incorporada.",
       crecimiento: "Aporte fraccionado de nitrógeno y potasio según vigor y análisis de suelo.",
@@ -702,6 +714,12 @@ const perfilBasePorCategoria: Record<string, PerfilAgronomicoCultivo> = {
   Oleaginosas: {
     densidadPlantasM2: "Variable por especie; priorizar buena aireación entre plantas.",
     sustratoSuelo: "Suelo franco, profundo, con drenaje y buen contenido de materia orgánica.",
+    aguaAproximada: "3-6 L/m2/dia; evitar estres hidrico en floracion y llenado.",
+    fertilizantes: ["Fosforo de arranque", "Potasio", "Calcio", "Magnesio"],
+    abonos: ["Compost", "Humus de lombriz", "Materia organica incorporada"],
+    rendimientoPorMata: "Variable; calcular segun marco de siembra y rendimiento por m2.",
+    plagas: ["Acaros", "Trips", "Gusanos defoliadores", "Hongos de raiz"],
+    mesesRecomendados: ["Marzo", "Abril", "Mayo", "Septiembre", "Octubre"],
     fertilizacion: {
       germinacion: "Fósforo moderado para raíces y establecimiento.",
       crecimiento: "Potasio y calcio para estructura, floración y llenado.",
@@ -717,6 +735,12 @@ const perfilBasePorCategoria: Record<string, PerfilAgronomicoCultivo> = {
   Leguminosas: {
     densidadPlantasM2: "8-15 plantas/m² según variedad y conducción.",
     sustratoSuelo: "Suelo franco, drenado, pH cercano a neutro y baja salinidad.",
+    aguaAproximada: "2-5 L/m2/dia; sostener humedad en floracion y llenado de vainas.",
+    fertilizantes: ["Fosforo", "Potasio", "Calcio", "Micronutrientes", "Inoculante si aplica"],
+    abonos: ["Compost bajo en nitrogeno", "Humus de lombriz"],
+    rendimientoPorMata: "0.03-0.12 kg/planta segun variedad, manejo y cosecha.",
+    plagas: ["Mosca blanca", "Afidos", "Trips", "Minadores", "Roya", "Antracnosis"],
+    mesesRecomendados: ["Noviembre", "Diciembre", "Enero", "Febrero", "Marzo"],
     fertilizacion: {
       germinacion: "Arranque bajo en nitrógeno; favorecer raíces y nodulación.",
       crecimiento: "Fósforo, potasio y micronutrientes; evitar exceso de nitrógeno.",
@@ -732,6 +756,12 @@ const perfilBasePorCategoria: Record<string, PerfilAgronomicoCultivo> = {
   "Raíces y Tubérculos": {
     densidadPlantasM2: "3-8 plantas/m² según especie y tamaño de raíz esperado.",
     sustratoSuelo: "Suelo suelto, profundo, sin compactación y con drenaje alto.",
+    aguaAproximada: "3-7 L/m2/dia; evitar encharcamiento y reducir antes de cosecha.",
+    fertilizantes: ["Fosforo", "Potasio alto", "Calcio", "Magnesio"],
+    abonos: ["Compost maduro", "Bocashi bien estabilizado", "Materia organica descompuesta"],
+    rendimientoPorMata: "0.4-2.5 kg/planta segun cultivo, variedad y ciclo.",
+    plagas: ["Nematodos", "Gusanos de suelo", "Pudriciones", "Barrenadores"],
+    mesesRecomendados: ["Marzo", "Abril", "Mayo", "Junio", "Septiembre", "Octubre"],
     fertilizacion: {
       germinacion: "Fósforo y materia orgánica madura para emisión de raíces.",
       crecimiento: "Potasio alto; nitrógeno moderado para evitar exceso de follaje.",
@@ -747,6 +777,12 @@ const perfilBasePorCategoria: Record<string, PerfilAgronomicoCultivo> = {
   Musáceas: {
     densidadPlantasM2: "0.2-0.5 plantas/m² según marco de plantación.",
     sustratoSuelo: "Suelo profundo, fértil, húmedo y bien drenado.",
+    aguaAproximada: "8-15 L/planta/dia en establecimiento; mayor demanda en crecimiento y llenado.",
+    fertilizantes: ["NPK alto en potasio", "Magnesio", "Calcio", "Micronutrientes"],
+    abonos: ["Compost", "Estiercol curado", "Cobertura organica"],
+    rendimientoPorMata: "12-30 kg/planta segun variedad, racimo y manejo.",
+    plagas: ["Picudo negro", "Sigatoka", "Nematodos", "Cochinillas"],
+    mesesRecomendados: ["Marzo", "Abril", "Mayo", "Septiembre", "Octubre", "Noviembre"],
     fertilizacion: {
       germinacion: "Enraizador con fósforo, materia orgánica y calcio.",
       crecimiento: "Alta demanda de potasio, nitrógeno y magnesio.",
@@ -762,6 +798,12 @@ const perfilBasePorCategoria: Record<string, PerfilAgronomicoCultivo> = {
   Hortalizas: {
     densidadPlantasM2: "2-10 plantas/m² según cultivo, variedad y conducción.",
     sustratoSuelo: "Sustrato o suelo franco, drenado, con pH 5.8-6.8 y baja salinidad.",
+    aguaAproximada: "1-4 L/planta/dia o 3-8 L/m2/dia segun cultivo, etapa y clima.",
+    fertilizantes: ["NPK soluble", "Nitrato de calcio", "Sulfato de magnesio", "Micronutrientes"],
+    abonos: ["Compost maduro", "Humus de lombriz", "Bocashi estabilizado"],
+    rendimientoPorMata: "0.25-6 kg/planta segun especie, variedad y manejo.",
+    plagas: ["Mosca blanca", "Trips", "Acaros", "Afidos", "Minadores", "Botrytis", "Mildiu"],
+    mesesRecomendados: ["Octubre", "Noviembre", "Diciembre", "Enero", "Febrero", "Marzo"],
     fertilizacion: {
       germinacion: "Solución suave, fósforo para raíces y EC baja.",
       crecimiento: "Nitrógeno balanceado con calcio, magnesio y micronutrientes.",
@@ -777,6 +819,12 @@ const perfilBasePorCategoria: Record<string, PerfilAgronomicoCultivo> = {
   Frutales: {
     densidadPlantasM2: "Variable; manejar por marco de plantación y tamaño adulto.",
     sustratoSuelo: "Suelo profundo, drenado, con materia orgánica y baja compactación.",
+    aguaAproximada: "10-60 L/planta/dia segun edad, especie, copa y clima.",
+    fertilizantes: ["NPK segun etapa", "Potasio", "Calcio", "Magnesio", "Micronutrientes"],
+    abonos: ["Compost", "Estiercol curado", "Mulch organico"],
+    rendimientoPorMata: "Variable por edad y especie; registrar por planta o por lote.",
+    plagas: ["Acaros", "Cochinillas", "Mosca de la fruta", "Antracnosis", "Trips"],
+    mesesRecomendados: ["Marzo", "Abril", "Mayo", "Septiembre", "Octubre"],
     fertilizacion: {
       germinacion: "Fósforo, materia orgánica y bioestimulación radicular.",
       crecimiento: "Nitrógeno moderado, potasio, calcio y magnesio.",
@@ -794,23 +842,53 @@ const perfilBasePorCategoria: Record<string, PerfilAgronomicoCultivo> = {
 const perfilPorCultivo: Record<string, Partial<PerfilAgronomicoCultivo>> = {
   "Tomate de ensalada": {
     densidadPlantasM2: "2-3 plantas/m² en invernadero con tutorado.",
+    aguaAproximada: "1.5-3.0 L/planta/dia; subir en floracion y llenado.",
+    fertilizantes: ["Nitrato de calcio", "NPK 15-5-30 o similar", "Sulfato de magnesio", "Micronutrientes"],
+    abonos: ["Compost maduro", "Humus de lombriz"],
+    rendimientoPorMata: "3-6 kg/planta en invernadero bien manejado.",
+    plagas: ["Mosca blanca", "Tuta absoluta", "Trips", "Acaros", "Botrytis"],
+    mesesRecomendados: ["Noviembre", "Diciembre", "Enero", "Febrero", "Marzo"],
     sanidad: ["Mosca blanca", "Tuta absoluta", "Trips", "Botrytis por humedad alta"],
   },
   Pepino: {
     densidadPlantasM2: "1.5-2.5 plantas/m² con tutorado.",
+    aguaAproximada: "2-4 L/planta/dia; mantener humedad estable en cosecha.",
+    fertilizantes: ["NPK soluble", "Nitrato de calcio", "Potasio", "Magnesio"],
+    abonos: ["Compost maduro", "Humus de lombriz"],
+    rendimientoPorMata: "4-8 kg/planta segun variedad y cortes.",
+    plagas: ["Trips", "Acaros", "Mosca blanca", "Mildiu", "Oidio"],
+    mesesRecomendados: ["Octubre", "Noviembre", "Diciembre", "Enero", "Febrero", "Marzo"],
     sanidad: ["Mildiu", "Oídio", "Ácaros", "Trips"],
   },
   Lechuga: {
     densidadPlantasM2: "10-16 plantas/m² según tamaño comercial.",
     sustratoSuelo: "Sustrato fresco, drenado y con EC baja.",
+    aguaAproximada: "0.2-0.6 L/planta/dia; evitar exceso de calor y salinidad.",
+    fertilizantes: ["NPK suave", "Calcio", "Magnesio", "Micronutrientes"],
+    abonos: ["Compost fino y maduro", "Humus de lombriz"],
+    rendimientoPorMata: "0.2-0.5 kg/planta segun tipo y tamano.",
+    plagas: ["Mildiu", "Afidos", "Trips", "Babosas", "Pudricion basal"],
+    mesesRecomendados: ["Noviembre", "Diciembre", "Enero", "Febrero", "Marzo"],
     sanidad: ["Pudrición basal", "Mildiu", "Babosas si hay humedad excesiva"],
   },
   Ajíes: {
     densidadPlantasM2: "2-4 plantas/m² según variedad y poda.",
+    aguaAproximada: "1-2.5 L/planta/dia; evitar estres en floracion.",
+    fertilizantes: ["NPK balanceado", "Calcio", "Potasio", "Magnesio"],
+    abonos: ["Compost maduro", "Bocashi estabilizado"],
+    rendimientoPorMata: "1-4 kg/planta segun variedad y ciclo.",
+    plagas: ["Trips", "Acaros", "Mosca blanca", "Afidos", "Antracnosis"],
+    mesesRecomendados: ["Octubre", "Noviembre", "Diciembre", "Enero", "Febrero", "Marzo"],
     sanidad: ["Trips", "Ácaros", "Antracnosis", "Mosca blanca"],
   },
   Berenjena: {
     densidadPlantasM2: "1.5-2.5 plantas/m² con buena ventilación.",
+    aguaAproximada: "1.5-3 L/planta/dia; subir durante floracion y cosecha.",
+    fertilizantes: ["NPK balanceado", "Potasio", "Calcio", "Magnesio"],
+    abonos: ["Compost maduro", "Humus de lombriz"],
+    rendimientoPorMata: "3-7 kg/planta segun manejo y cortes.",
+    plagas: ["Acaros", "Mosca blanca", "Trips", "Minadores", "Marchitez bacteriana"],
+    mesesRecomendados: ["Octubre", "Noviembre", "Diciembre", "Enero", "Febrero", "Marzo"],
     sanidad: ["Ácaros", "Mosca blanca", "Marchitez bacteriana"],
   },
 }
@@ -833,6 +911,10 @@ export function getPerfilAgronomico(cropName: string): PerfilAgronomicoCultivo |
   return {
     ...base,
     ...override,
+    fertilizantes: override.fertilizantes || base.fertilizantes,
+    abonos: override.abonos || base.abonos,
+    plagas: override.plagas || base.plagas,
+    mesesRecomendados: override.mesesRecomendados || base.mesesRecomendados,
     fertilizacion: {
       ...base.fertilizacion,
       ...(override.fertilizacion || {}),

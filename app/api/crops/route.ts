@@ -3,68 +3,316 @@ import { requireAuth } from "@/lib/auth"
 import { query } from "@/lib/db"
 import { registrarBitacora } from "@/lib/bitacora"
 
-async function syncCommonCropCatalog(body: Record<string, unknown>) {
-  const nombre = String(body.nombre || "").trim()
-  if (!nombre) return
+type PerfilAgronomicoPayload = {
+  aguaAproximada: string
+  fertilizantes: string[]
+  abonos: string[]
+  rendimientoPorMata: string
+  plagas: string[]
+  mesesRecomendados: string[]
+}
+
+type CropCatalogPayload = {
+  nombre: string
+  variedad?: string
+  umbralHumedad?: number | null
+  umbralTemperatura?: number | null
+  umbralPh?: number | null
+  umbralEc?: number | null
+  umbralTds?: number | null
+  perfilAgronomico?: unknown
+}
+
+function normalizeList(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item).trim()).filter(Boolean)
+  }
+
+  return String(value || "")
+    .split(/[\n,;]+/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+}
+
+function normalizePerfilAgronomico(value: unknown): PerfilAgronomicoPayload {
+  const source = (value && typeof value === "object" ? value : {}) as Record<string, unknown>
+
+  return {
+    aguaAproximada: String(source.aguaAproximada || "").trim(),
+    fertilizantes: normalizeList(source.fertilizantes),
+    abonos: normalizeList(source.abonos),
+    rendimientoPorMata: String(source.rendimientoPorMata || "").trim(),
+    plagas: normalizeList(source.plagas),
+    mesesRecomendados: normalizeList(source.mesesRecomendados),
+  }
+}
+
+function hasPerfilAgronomicoData(perfil: PerfilAgronomicoPayload): boolean {
+  return Boolean(
+    perfil.aguaAproximada ||
+      perfil.rendimientoPorMata ||
+      perfil.fertilizantes.length ||
+      perfil.abonos.length ||
+      perfil.plagas.length ||
+      perfil.mesesRecomendados.length
+  )
+}
+
+function parsePerfilAgronomico(value: unknown): PerfilAgronomicoPayload | null {
+  if (!value) return null
+
+  try {
+    const parsed = typeof value === "object" ? value : JSON.parse(String(value))
+    const perfil = normalizePerfilAgronomico(parsed)
+    return hasPerfilAgronomicoData(perfil) ? perfil : null
+  } catch {
+    return null
+  }
+}
+
+function parseNullableDecimal(value: unknown) {
+  if (value === null || value === undefined || value === "") return null
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+async function getCropColumns() {
+  const rows = await query<Array<{
+    umbralTemperatura: number
+    aguaLitrosPorMataDia: number
+    rendimientoPorMata: number
+    unidadRendimiento: number
+    fertilizantes: number
+    abonos: number
+    plagasComunes: number
+    tratamientoRecomendado: number
+    mejoresMeses: number
+    recomendacionSiembra: number
+  }>>(
+    `SELECT
+       CASE WHEN COL_LENGTH('dbo.Cultivos', 'umbral_temperatura') IS NULL THEN 0 ELSE 1 END AS umbralTemperatura,
+       CASE WHEN COL_LENGTH('dbo.Cultivos', 'agua_litros_por_mata_dia') IS NULL THEN 0 ELSE 1 END AS aguaLitrosPorMataDia,
+       CASE WHEN COL_LENGTH('dbo.Cultivos', 'rendimiento_por_mata') IS NULL THEN 0 ELSE 1 END AS rendimientoPorMata,
+       CASE WHEN COL_LENGTH('dbo.Cultivos', 'unidad_rendimiento') IS NULL THEN 0 ELSE 1 END AS unidadRendimiento,
+       CASE WHEN COL_LENGTH('dbo.Cultivos', 'fertilizantes') IS NULL THEN 0 ELSE 1 END AS fertilizantes,
+       CASE WHEN COL_LENGTH('dbo.Cultivos', 'abonos') IS NULL THEN 0 ELSE 1 END AS abonos,
+       CASE WHEN COL_LENGTH('dbo.Cultivos', 'plagas_comunes') IS NULL THEN 0 ELSE 1 END AS plagasComunes,
+       CASE WHEN COL_LENGTH('dbo.Cultivos', 'tratamiento_recomendado') IS NULL THEN 0 ELSE 1 END AS tratamientoRecomendado,
+       CASE WHEN COL_LENGTH('dbo.Cultivos', 'mejores_meses') IS NULL THEN 0 ELSE 1 END AS mejoresMeses,
+       CASE WHEN COL_LENGTH('dbo.Cultivos', 'recomendacion_siembra') IS NULL THEN 0 ELSE 1 END AS recomendacionSiembra`
+  )
+  const row = rows[0]
+  return {
+    umbralTemperatura: Number(row?.umbralTemperatura || 0) === 1,
+    aguaLitrosPorMataDia: Number(row?.aguaLitrosPorMataDia || 0) === 1,
+    rendimientoPorMata: Number(row?.rendimientoPorMata || 0) === 1,
+    unidadRendimiento: Number(row?.unidadRendimiento || 0) === 1,
+    fertilizantes: Number(row?.fertilizantes || 0) === 1,
+    abonos: Number(row?.abonos || 0) === 1,
+    plagasComunes: Number(row?.plagasComunes || 0) === 1,
+    tratamientoRecomendado: Number(row?.tratamientoRecomendado || 0) === 1,
+    mejoresMeses: Number(row?.mejoresMeses || 0) === 1,
+    recomendacionSiembra: Number(row?.recomendacionSiembra || 0) === 1,
+  }
+}
+
+async function hasCatalogTable() {
+  const rows = await query<Array<{ existsFlag: number }>>(
+    `SELECT CASE WHEN OBJECT_ID('dbo.CatalogoCultivos', 'U') IS NULL THEN 0 ELSE 1 END AS existsFlag`
+  )
+  return Number(rows[0]?.existsFlag || 0) === 1
+}
+
+function getCatalogDataFromPerfil(value: unknown) {
+  const perfil = normalizePerfilAgronomico(value)
+  const waterNumbers = perfil.aguaAproximada
+    .match(/\d+(?:[.,]\d+)?/g)
+    ?.map((item) => Number(item.replace(",", ".")))
+    .filter((item) => Number.isFinite(item) && item > 0) || []
+  const rendimientoNumbers = perfil.rendimientoPorMata
+    .match(/\d+(?:[.,]\d+)?/g)
+    ?.map((item) => Number(item.replace(",", ".")))
+    .filter((item) => Number.isFinite(item) && item > 0) || []
+
+  return {
+    aguaLitrosPorMataDia: waterNumbers.length >= 2 ? (waterNumbers[0] + waterNumbers[1]) / 2 : waterNumbers[0] ?? null,
+    rendimientoPorMata: rendimientoNumbers.length >= 2 ? (rendimientoNumbers[0] + rendimientoNumbers[1]) / 2 : rendimientoNumbers[0] ?? null,
+    unidadRendimiento: perfil.rendimientoPorMata.toLowerCase().includes("lb") ? "lb" : "unidad",
+    fertilizantes: perfil.fertilizantes.join("\n") || null,
+    abonos: perfil.abonos.join("\n") || null,
+    plagasComunes: perfil.plagas.join("\n") || null,
+    mejoresMeses: perfil.mesesRecomendados.join(", ") || null,
+  }
+}
+
+async function upsertCatalogCrop(payload: CropCatalogPayload) {
+  if (!payload.nombre || !(await hasCatalogTable())) return
+  const catalogData = getCatalogDataFromPerfil(payload.perfilAgronomico)
 
   await query(
-    `IF OBJECT_ID('dbo.CatalogoCultivos', 'U') IS NOT NULL
-     BEGIN
-       MERGE dbo.CatalogoCultivos AS target
-       USING (
-         SELECT
-           @nombre AS nombre,
-           @variedad AS variedad
-       ) AS src
-       ON LOWER(LTRIM(RTRIM(target.nombre))) = LOWER(LTRIM(RTRIM(src.nombre)))
-          AND LOWER(LTRIM(RTRIM(ISNULL(target.variedad, '')))) = LOWER(LTRIM(RTRIM(ISNULL(src.variedad, ''))))
-       WHEN MATCHED THEN
-         UPDATE SET
-           umbral_humedad = @umbralHumedad,
-           umbral_temperatura = @umbralTemperatura,
-           umbral_ph = @umbralPh,
-           umbral_ec = @umbralEc,
-           umbral_tds = @umbralTds,
-           agua_litros_por_mata_dia = @aguaLitrosPorMataDia,
-           rendimiento_por_mata = @rendimientoPorMata,
-           unidad_rendimiento = @unidadRendimiento,
+    `MERGE dbo.CatalogoCultivos AS target
+     USING (SELECT @nombre AS nombre, @variedad AS variedad) AS src
+     ON LOWER(LTRIM(RTRIM(target.nombre))) = LOWER(LTRIM(RTRIM(src.nombre)))
+        AND LOWER(LTRIM(RTRIM(ISNULL(target.variedad, '')))) = LOWER(LTRIM(RTRIM(ISNULL(src.variedad, ''))))
+     WHEN MATCHED THEN
+       UPDATE SET
+         umbral_humedad = @umbralHumedad,
+         umbral_temperatura = @umbralTemperatura,
+         umbral_ph = @umbralPh,
+         umbral_ec = @umbralEc,
+         umbral_tds = @umbralTds,
+         agua_litros_por_mata_dia = @aguaLitrosPorMataDia,
+         rendimiento_por_mata = @rendimientoPorMata,
+         unidad_rendimiento = @unidadRendimiento,
+         fertilizantes = @fertilizantes,
+         abonos = @abonos,
+         plagas_comunes = @plagasComunes,
+         mejores_meses = @mejoresMeses,
+         activo = 1,
+         fecha_actualizacion = GETDATE()
+     WHEN NOT MATCHED THEN
+       INSERT (
+         nombre, variedad, umbral_humedad, umbral_temperatura, umbral_ph, umbral_ec, umbral_tds,
+         agua_litros_por_mata_dia, rendimiento_por_mata, unidad_rendimiento,
+         fertilizantes, abonos, plagas_comunes, mejores_meses, activo
+       )
+       VALUES (
+         @nombre, @variedad, @umbralHumedad, @umbralTemperatura, @umbralPh, @umbralEc, @umbralTds,
+         @aguaLitrosPorMataDia, @rendimientoPorMata, @unidadRendimiento,
+         @fertilizantes, @abonos, @plagasComunes, @mejoresMeses, 1
+       );`,
+    {
+      nombre: payload.nombre,
+      variedad: payload.variedad || "",
+      umbralHumedad: payload.umbralHumedad,
+      umbralTemperatura: payload.umbralTemperatura,
+      umbralPh: payload.umbralPh,
+      umbralEc: payload.umbralEc,
+      umbralTds: payload.umbralTds,
+      ...catalogData,
+    }
+  )
+}
+
+async function hasPerfilExtraColumns() {
+  const rows = await query<Array<{ ready: number }>>(
+    `SELECT CASE
+      WHEN COL_LENGTH('dbo.CultivoPerfilAgronomico', 'agua_aproximada') IS NOT NULL
+       AND COL_LENGTH('dbo.CultivoPerfilAgronomico', 'fertilizantes') IS NOT NULL
+       AND COL_LENGTH('dbo.CultivoPerfilAgronomico', 'abonos') IS NOT NULL
+       AND COL_LENGTH('dbo.CultivoPerfilAgronomico', 'rendimiento_por_mata') IS NOT NULL
+       AND COL_LENGTH('dbo.CultivoPerfilAgronomico', 'plagas') IS NOT NULL
+       AND COL_LENGTH('dbo.CultivoPerfilAgronomico', 'meses_recomendados') IS NOT NULL
+      THEN 1 ELSE 0 END AS ready`
+  )
+  return Number(rows[0]?.ready || 0) === 1
+}
+
+async function savePerfilAgronomico(cultivoId: number | string | undefined, value: unknown) {
+  if (!cultivoId) return
+
+  const perfil = normalizePerfilAgronomico(value)
+  if (!hasPerfilAgronomicoData(perfil)) return
+  const hasExtraColumns = await hasPerfilExtraColumns()
+
+  const existing = await query<Array<{ id_perfil: number }>>(
+    `SELECT TOP 1 id_perfil
+     FROM CultivoPerfilAgronomico
+     WHERE id_cultivo = @cultivoId
+     ORDER BY fecha_actualizacion DESC, fecha_creacion DESC, id_perfil DESC`,
+    { cultivoId: Number(cultivoId) }
+  )
+
+  const perfilParams = {
+    aguaAproximada: perfil.aguaAproximada || null,
+    fertilizantes: perfil.fertilizantes.join("\n") || null,
+    abonos: perfil.abonos.join("\n") || null,
+    rendimientoPorMata: perfil.rendimientoPorMata || null,
+    plagas: perfil.plagas.join("\n") || null,
+    mesesRecomendados: perfil.mesesRecomendados.join("\n") || null,
+    perfilJson: JSON.stringify(perfil),
+  }
+
+  if (!hasExtraColumns) {
+    if (existing[0]?.id_perfil) {
+      await query(
+        `UPDATE CultivoPerfilAgronomico
+         SET observaciones = @perfilJson,
+             fecha_actualizacion = GETDATE()
+         WHERE id_perfil = @idPerfil`,
+        { idPerfil: existing[0].id_perfil, perfilJson: perfilParams.perfilJson }
+      )
+      return
+    }
+
+    await query(
+      `INSERT INTO CultivoPerfilAgronomico (
+         id_cultivo,
+         densidad_plantas_m2,
+         sustrato_suelo,
+         observaciones,
+         fecha_creacion,
+         fecha_actualizacion
+       )
+       VALUES (
+         @cultivoId,
+         NULL,
+         NULL,
+         @perfilJson,
+         GETDATE(),
+         GETDATE()
+       )`,
+      { cultivoId: Number(cultivoId), perfilJson: perfilParams.perfilJson }
+    )
+    return
+  }
+
+  if (existing[0]?.id_perfil) {
+    await query(
+      `UPDATE CultivoPerfilAgronomico
+       SET agua_aproximada = @aguaAproximada,
            fertilizantes = @fertilizantes,
            abonos = @abonos,
-           plagas_comunes = @plagasComunes,
-           tratamiento_recomendado = @tratamientoRecomendado,
-           mejores_meses = @mejoresMeses,
-           recomendacion_siembra = @recomendacionSiembra,
+           rendimiento_por_mata = @rendimientoPorMata,
+           plagas = @plagas,
+           meses_recomendados = @mesesRecomendados,
            fecha_actualizacion = GETDATE()
-       WHEN NOT MATCHED THEN
-         INSERT (
-           nombre, variedad, umbral_humedad, umbral_temperatura, umbral_ph, umbral_ec, umbral_tds,
-           agua_litros_por_mata_dia, rendimiento_por_mata, unidad_rendimiento,
-           fertilizantes, abonos, plagas_comunes, tratamiento_recomendado, mejores_meses, recomendacion_siembra
-         )
-         VALUES (
-           @nombre, @variedad, @umbralHumedad, @umbralTemperatura, @umbralPh, @umbralEc, @umbralTds,
-           @aguaLitrosPorMataDia, @rendimientoPorMata, @unidadRendimiento,
-           @fertilizantes, @abonos, @plagasComunes, @tratamientoRecomendado, @mejoresMeses, @recomendacionSiembra
-         );
-     END`,
-    {
-      nombre,
-      variedad: String(body.variedad || ""),
-      umbralHumedad: body.umbral_humedad ?? null,
-      umbralTemperatura: body.umbral_temperatura ?? null,
-      umbralPh: body.umbral_ph ?? null,
-      umbralEc: body.umbral_ec ?? null,
-      umbralTds: body.umbral_tds ?? null,
-      aguaLitrosPorMataDia: body.agua_litros_por_mata_dia ?? null,
-      rendimientoPorMata: body.rendimiento_por_mata ?? null,
-      unidadRendimiento: body.unidad_rendimiento || null,
-      fertilizantes: body.fertilizantes || null,
-      abonos: body.abonos || null,
-      plagasComunes: body.plagas_comunes || null,
-      tratamientoRecomendado: body.tratamiento_recomendado || null,
-      mejoresMeses: body.mejores_meses || null,
-      recomendacionSiembra: body.recomendacion_siembra || null,
-    }
+       WHERE id_perfil = @idPerfil`,
+      { idPerfil: existing[0].id_perfil, ...perfilParams }
+    )
+    return
+  }
+
+  await query(
+    `INSERT INTO CultivoPerfilAgronomico (
+       id_cultivo,
+       densidad_plantas_m2,
+       sustrato_suelo,
+       observaciones,
+       agua_aproximada,
+       fertilizantes,
+       abonos,
+       rendimiento_por_mata,
+       plagas,
+       meses_recomendados,
+       fecha_creacion,
+       fecha_actualizacion
+     )
+     VALUES (
+       @cultivoId,
+       NULL,
+       NULL,
+       NULL,
+       @aguaAproximada,
+       @fertilizantes,
+       @abonos,
+       @rendimientoPorMata,
+       @plagas,
+       @mesesRecomendados,
+       GETDATE(),
+       GETDATE()
+     )`,
+    { cultivoId: Number(cultivoId), ...perfilParams }
   )
 }
 
@@ -86,57 +334,80 @@ export async function POST(req: Request) {
       umbral_ph,
       umbral_ec,
       umbral_tds,
-      agua_litros_por_mata_dia,
-      rendimiento_por_mata,
-      unidad_rendimiento,
-      fertilizantes,
-      abonos,
-      plagas_comunes,
-      tratamiento_recomendado,
-      mejores_meses,
-      recomendacion_siembra,
+      perfilAgronomico,
     } = body
 
     if (!nombre || !invernaderoId) {
       return NextResponse.json({ error: "Nombre e invernadero requeridos" }, { status: 400 })
     }
 
+    const cropColumns = await getCropColumns()
+    const catalogData = getCatalogDataFromPerfil(perfilAgronomico)
+    const insertColumns = [
+      "nombre",
+      "variedad",
+      "id_invernadero",
+      "umbral_humedad",
+      ...(cropColumns.umbralTemperatura ? ["umbral_temperatura"] : []),
+      "umbral_ph",
+      "umbral_ec",
+      "umbral_tds",
+      ...(cropColumns.aguaLitrosPorMataDia ? ["agua_litros_por_mata_dia"] : []),
+      ...(cropColumns.rendimientoPorMata ? ["rendimiento_por_mata"] : []),
+      ...(cropColumns.unidadRendimiento ? ["unidad_rendimiento"] : []),
+      ...(cropColumns.fertilizantes ? ["fertilizantes"] : []),
+      ...(cropColumns.abonos ? ["abonos"] : []),
+      ...(cropColumns.plagasComunes ? ["plagas_comunes"] : []),
+      ...(cropColumns.mejoresMeses ? ["mejores_meses"] : []),
+    ]
+    const insertValues = [
+      "@nombre",
+      "@variedad",
+      "@invernaderoId",
+      "@umbralHumedad",
+      ...(cropColumns.umbralTemperatura ? ["@umbralTemperatura"] : []),
+      "@umbralPh",
+      "@umbralEc",
+      "@umbralTds",
+      ...(cropColumns.aguaLitrosPorMataDia ? ["@aguaLitrosPorMataDia"] : []),
+      ...(cropColumns.rendimientoPorMata ? ["@rendimientoPorMata"] : []),
+      ...(cropColumns.unidadRendimiento ? ["@unidadRendimiento"] : []),
+      ...(cropColumns.fertilizantes ? ["@fertilizantes"] : []),
+      ...(cropColumns.abonos ? ["@abonos"] : []),
+      ...(cropColumns.plagasComunes ? ["@plagasComunes"] : []),
+      ...(cropColumns.mejoresMeses ? ["@mejoresMeses"] : []),
+    ]
+
     const result = await query<{ id_cultivo: number }[]>(
-      `INSERT INTO Cultivos (
-         nombre, variedad, id_invernadero, umbral_humedad, umbral_temperatura, umbral_ph, umbral_ec, umbral_tds,
-         agua_litros_por_mata_dia, rendimiento_por_mata, unidad_rendimiento,
-         fertilizantes, abonos, plagas_comunes, tratamiento_recomendado, mejores_meses, recomendacion_siembra
-       )
+      `INSERT INTO Cultivos (${insertColumns.join(", ")})
        OUTPUT INSERTED.id_cultivo
-       VALUES (
-         @nombre, @variedad, @invernaderoId, @umbralHumedad, @umbralTemperatura, @umbralPh, @umbralEc, @umbralTds,
-         @aguaLitrosPorMataDia, @rendimientoPorMata, @unidadRendimiento,
-         @fertilizantes, @abonos, @plagasComunes, @tratamientoRecomendado, @mejoresMeses, @recomendacionSiembra
-       );
+       VALUES (${insertValues.join(", ")});
        SELECT SCOPE_IDENTITY() AS id_cultivo`,
       {
         nombre,
         variedad: variedad || "",
         invernaderoId: Number(invernaderoId),
-        umbralHumedad: umbral_humedad || null,
-        umbralTemperatura: umbral_temperatura || null,
-        umbralPh: umbral_ph || null,
-        umbralEc: umbral_ec || null,
-        umbralTds: umbral_tds || null,
-        aguaLitrosPorMataDia: agua_litros_por_mata_dia || null,
-        rendimientoPorMata: rendimiento_por_mata || null,
-        unidadRendimiento: unidad_rendimiento || null,
-        fertilizantes: fertilizantes || null,
-        abonos: abonos || null,
-        plagasComunes: plagas_comunes || null,
-        tratamientoRecomendado: tratamiento_recomendado || null,
-        mejoresMeses: mejores_meses || null,
-        recomendacionSiembra: recomendacion_siembra || null,
+        umbralHumedad: parseNullableDecimal(umbral_humedad),
+        umbralTemperatura: parseNullableDecimal(umbral_temperatura),
+        umbralPh: parseNullableDecimal(umbral_ph),
+        umbralEc: parseNullableDecimal(umbral_ec),
+        umbralTds: parseNullableDecimal(umbral_tds),
+        ...catalogData,
       }
     )
 
     const cultivoId = result[0]?.id_cultivo
-    await syncCommonCropCatalog(body)
+    await savePerfilAgronomico(cultivoId, perfilAgronomico)
+    await upsertCatalogCrop({
+      nombre,
+      variedad,
+      umbralHumedad: parseNullableDecimal(umbral_humedad),
+      umbralTemperatura: parseNullableDecimal(umbral_temperatura),
+      umbralPh: parseNullableDecimal(umbral_ph),
+      umbralEc: parseNullableDecimal(umbral_ec),
+      umbralTds: parseNullableDecimal(umbral_tds),
+      perfilAgronomico,
+    })
 
     await registrarBitacora({
       session,
@@ -169,32 +440,54 @@ export async function GET(req: Request) {
     await requireAuth()
     const { searchParams } = new URL(req.url)
     const greenhouseId = searchParams.get("greenhouse")
+    const hasExtraColumns = await hasPerfilExtraColumns()
+    const cropColumns = await getCropColumns()
+    const includeCatalog = searchParams.get("includeCatalog") !== "false"
 
     console.log("[CROPS API] GreenhouseId param:", greenhouseId)
 
     let sqlText = `
       SELECT
-        CONVERT(nvarchar(30), c.id_cultivo) AS id,
+        c.id_cultivo AS id,
         c.nombre,
         c.variedad,
         c.id_invernadero AS invernaderoId,
         CONVERT(char(10), c.fecha_siembra, 23) AS fechaSiembra,
         c.umbral_humedad AS umbralHumedad,
-        c.umbral_temperatura AS umbralTemperatura,
+        ${cropColumns.umbralTemperatura ? "c.umbral_temperatura" : "NULL"} AS umbralTemperatura,
         c.umbral_ph AS umbralPh,
         c.umbral_ec AS umbralEc,
         c.umbral_tds AS umbralTds,
-        c.agua_litros_por_mata_dia AS aguaLitrosPorMataDia,
-        c.rendimiento_por_mata AS rendimientoPorMata,
-        c.unidad_rendimiento AS unidadRendimiento,
-        c.fertilizantes,
-        c.abonos,
-        c.plagas_comunes AS plagasComunes,
-        c.tratamiento_recomendado AS tratamientoRecomendado,
-        c.mejores_meses AS mejoresMeses,
-        c.recomendacion_siembra AS recomendacionSiembra,
-        CAST(0 AS bit) AS esCatalogo
+        ${cropColumns.aguaLitrosPorMataDia ? "c.agua_litros_por_mata_dia" : "NULL"} AS aguaLitrosPorMataDia,
+        ${cropColumns.rendimientoPorMata ? "c.rendimiento_por_mata" : "NULL"} AS cropRendimientoPorMata,
+        ${cropColumns.unidadRendimiento ? "c.unidad_rendimiento" : "NULL"} AS unidadRendimiento,
+        ${cropColumns.fertilizantes ? "c.fertilizantes" : "NULL"} AS cropFertilizantes,
+        ${cropColumns.abonos ? "c.abonos" : "NULL"} AS cropAbonos,
+        ${cropColumns.plagasComunes ? "c.plagas_comunes" : "NULL"} AS plagasComunes,
+        ${cropColumns.tratamientoRecomendado ? "c.tratamiento_recomendado" : "NULL"} AS tratamientoRecomendado,
+        ${cropColumns.mejoresMeses ? "c.mejores_meses" : "NULL"} AS mejoresMeses,
+        ${cropColumns.recomendacionSiembra ? "c.recomendacion_siembra" : "NULL"} AS recomendacionSiembra,
+        perfil.observaciones AS perfilObservaciones,
+        ${hasExtraColumns ? "perfil.agua_aproximada" : "NULL"} AS aguaAproximada,
+        ${hasExtraColumns ? "perfil.fertilizantes" : "NULL"} AS fertilizantes,
+        ${hasExtraColumns ? "perfil.abonos" : "NULL"} AS abonos,
+        ${hasExtraColumns ? "perfil.rendimiento_por_mata" : "NULL"} AS rendimientoPorMata,
+        ${hasExtraColumns ? "perfil.plagas" : "NULL"} AS plagas,
+        ${hasExtraColumns ? "perfil.meses_recomendados" : "NULL"} AS mesesRecomendados
       FROM Cultivos c
+      OUTER APPLY (
+        SELECT TOP 1
+          p.observaciones,
+          ${hasExtraColumns ? "p.agua_aproximada" : "NULL AS agua_aproximada"},
+          ${hasExtraColumns ? "p.fertilizantes" : "NULL AS fertilizantes"},
+          ${hasExtraColumns ? "p.abonos" : "NULL AS abonos"},
+          ${hasExtraColumns ? "p.rendimiento_por_mata" : "NULL AS rendimiento_por_mata"},
+          ${hasExtraColumns ? "p.plagas" : "NULL AS plagas"},
+          ${hasExtraColumns ? "p.meses_recomendados" : "NULL AS meses_recomendados"}
+        FROM CultivoPerfilAgronomico p
+        WHERE p.id_cultivo = c.id_cultivo
+        ORDER BY p.fecha_actualizacion DESC, p.fecha_creacion DESC, p.id_perfil DESC
+      ) perfil
     `
     const params: Record<string, unknown> = {}
 
@@ -203,43 +496,7 @@ export async function GET(req: Request) {
       params.greenhouseId = Number(greenhouseId)
     }
 
-    if (greenhouseId) {
-      sqlText += `
-        UNION ALL
-        SELECT
-          CONCAT('catalog:', cc.id_catalogo) AS id,
-          cc.nombre,
-          cc.variedad,
-          @greenhouseId AS invernaderoId,
-          NULL AS fechaSiembra,
-          cc.umbral_humedad AS umbralHumedad,
-          cc.umbral_temperatura AS umbralTemperatura,
-          cc.umbral_ph AS umbralPh,
-          cc.umbral_ec AS umbralEc,
-          cc.umbral_tds AS umbralTds,
-          cc.agua_litros_por_mata_dia AS aguaLitrosPorMataDia,
-          cc.rendimiento_por_mata AS rendimientoPorMata,
-          cc.unidad_rendimiento AS unidadRendimiento,
-          cc.fertilizantes,
-          cc.abonos,
-          cc.plagas_comunes AS plagasComunes,
-          cc.tratamiento_recomendado AS tratamientoRecomendado,
-          cc.mejores_meses AS mejoresMeses,
-          cc.recomendacion_siembra AS recomendacionSiembra,
-          CAST(1 AS bit) AS esCatalogo
-        FROM CatalogoCultivos cc
-        WHERE cc.activo = 1
-          AND NOT EXISTS (
-            SELECT 1
-            FROM Cultivos existing
-            WHERE existing.id_invernadero = @greenhouseId
-              AND LOWER(LTRIM(RTRIM(existing.nombre))) = LOWER(LTRIM(RTRIM(cc.nombre)))
-              AND LOWER(LTRIM(RTRIM(ISNULL(existing.variedad, '')))) = LOWER(LTRIM(RTRIM(ISNULL(cc.variedad, ''))))
-          )
-      `
-    }
-
-    sqlText += " ORDER BY esCatalogo ASC, nombre ASC"
+    sqlText += " ORDER BY c.id_cultivo DESC"
 
     console.log("[CROPS API] SQL:", sqlText)
     console.log("[CROPS API] Params:", params)
@@ -265,15 +522,88 @@ export async function GET(req: Request) {
           umbralEc: row.umbralEc != null ? Number(row.umbralEc) : undefined,
           umbralTds: row.umbralTds != null ? Number(row.umbralTds) : undefined,
           aguaLitrosPorMataDia: row.aguaLitrosPorMataDia != null ? Number(row.aguaLitrosPorMataDia) : undefined,
+          rendimientoPorMata: row.cropRendimientoPorMata != null ? Number(row.cropRendimientoPorMata) : undefined,
+          unidadRendimiento: row.unidadRendimiento ? String(row.unidadRendimiento) : undefined,
+          fertilizantes: row.cropFertilizantes ? String(row.cropFertilizantes) : undefined,
+          abonos: row.cropAbonos ? String(row.cropAbonos) : undefined,
+          plagasComunes: row.plagasComunes ? String(row.plagasComunes) : undefined,
+          tratamientoRecomendado: row.tratamientoRecomendado ? String(row.tratamientoRecomendado) : undefined,
+          mejoresMeses: row.mejoresMeses ? String(row.mejoresMeses) : undefined,
+          recomendacionSiembra: row.recomendacionSiembra ? String(row.recomendacionSiembra) : undefined,
+          esCatalogo: false,
+          perfilAgronomico: parsePerfilAgronomico({
+            aguaAproximada: row.aguaAproximada,
+            fertilizantes: row.fertilizantes,
+            abonos: row.abonos,
+            rendimientoPorMata: row.rendimientoPorMata,
+            plagas: row.plagas,
+            mesesRecomendados: row.mesesRecomendados,
+          }) || parsePerfilAgronomico(row.perfilObservaciones),
+        })
+      }
+    }
+
+    if (includeCatalog && await hasCatalogTable()) {
+      const catalogRows = await query<Record<string, unknown>[]>(
+        `SELECT
+           id_catalogo AS id,
+           nombre,
+           variedad,
+           umbral_humedad AS umbralHumedad,
+           umbral_temperatura AS umbralTemperatura,
+           umbral_ph AS umbralPh,
+           umbral_ec AS umbralEc,
+           umbral_tds AS umbralTds,
+           agua_litros_por_mata_dia AS aguaLitrosPorMataDia,
+           rendimiento_por_mata AS rendimientoPorMata,
+           unidad_rendimiento AS unidadRendimiento,
+           fertilizantes,
+           abonos,
+           plagas_comunes AS plagasComunes,
+           tratamiento_recomendado AS tratamientoRecomendado,
+           mejores_meses AS mejoresMeses,
+           recomendacion_siembra AS recomendacionSiembra
+         FROM dbo.CatalogoCultivos
+         WHERE activo = 1
+         ORDER BY nombre ASC, variedad ASC`
+      )
+
+      for (const row of catalogRows) {
+        const alreadyLocal = Array.from(cropsMap.values()).some((crop) =>
+          String(crop.nombre || "").toLowerCase() === String(row.nombre || "").toLowerCase() &&
+          String(crop.variedad || "").toLowerCase() === String(row.variedad || "").toLowerCase()
+        )
+        if (alreadyLocal) continue
+
+        cropsMap.set(`catalog:${row.id}`, {
+          id: `catalog:${row.id}`,
+          nombre: String(row.nombre || ""),
+          variedad: String(row.variedad || ""),
+          invernaderoId: greenhouseId || "",
+          fechaSiembra: "",
+          umbralHumedad: row.umbralHumedad != null ? Number(row.umbralHumedad) : undefined,
+          umbralTemperatura: row.umbralTemperatura != null ? Number(row.umbralTemperatura) : undefined,
+          umbralPh: row.umbralPh != null ? Number(row.umbralPh) : undefined,
+          umbralEc: row.umbralEc != null ? Number(row.umbralEc) : undefined,
+          umbralTds: row.umbralTds != null ? Number(row.umbralTds) : undefined,
+          aguaLitrosPorMataDia: row.aguaLitrosPorMataDia != null ? Number(row.aguaLitrosPorMataDia) : undefined,
           rendimientoPorMata: row.rendimientoPorMata != null ? Number(row.rendimientoPorMata) : undefined,
-          unidadRendimiento: String(row.unidadRendimiento || ""),
-          fertilizantes: String(row.fertilizantes || ""),
-          abonos: String(row.abonos || ""),
-          plagasComunes: String(row.plagasComunes || ""),
-          tratamientoRecomendado: String(row.tratamientoRecomendado || ""),
-          mejoresMeses: String(row.mejoresMeses || ""),
-          recomendacionSiembra: String(row.recomendacionSiembra || ""),
-          esCatalogo: Boolean(row.esCatalogo),
+          unidadRendimiento: row.unidadRendimiento ? String(row.unidadRendimiento) : undefined,
+          fertilizantes: row.fertilizantes ? String(row.fertilizantes) : undefined,
+          abonos: row.abonos ? String(row.abonos) : undefined,
+          plagasComunes: row.plagasComunes ? String(row.plagasComunes) : undefined,
+          tratamientoRecomendado: row.tratamientoRecomendado ? String(row.tratamientoRecomendado) : undefined,
+          mejoresMeses: row.mejoresMeses ? String(row.mejoresMeses) : undefined,
+          recomendacionSiembra: row.recomendacionSiembra ? String(row.recomendacionSiembra) : undefined,
+          esCatalogo: true,
+          perfilAgronomico: parsePerfilAgronomico({
+            aguaAproximada: row.aguaLitrosPorMataDia ? `${row.aguaLitrosPorMataDia} L por mata/dia` : "",
+            fertilizantes: row.fertilizantes,
+            abonos: row.abonos,
+            rendimientoPorMata: row.rendimientoPorMata ? `${row.rendimientoPorMata} ${row.unidadRendimiento || "unidad"} por mata` : "",
+            plagas: row.plagasComunes,
+            mesesRecomendados: row.mejoresMeses,
+          }),
         })
       }
     }
@@ -308,70 +638,69 @@ export async function PUT(req: Request) {
       umbral_ph,
       umbral_ec,
       umbral_tds,
-      agua_litros_por_mata_dia,
-      rendimiento_por_mata,
-      unidad_rendimiento,
-      fertilizantes,
-      abonos,
-      plagas_comunes,
-      tratamiento_recomendado,
-      mejores_meses,
-      recomendacion_siembra
+      perfilAgronomico
     } = body
 
     if (!id) {
       return NextResponse.json({ error: "ID requerido" }, { status: 400 })
     }
 
+    const cropColumns = await getCropColumns()
     const previousRows = await query<Record<string, unknown>[]>(
-      `SELECT nombre, variedad, id_invernadero AS invernaderoId, fecha_siembra AS fechaSiembra, umbral_humedad AS umbralHumedad, umbral_ph AS umbralPh, umbral_ec AS umbralEc, umbral_tds AS umbralTds
+      `SELECT nombre, variedad, id_invernadero AS invernaderoId, fecha_siembra AS fechaSiembra, umbral_humedad AS umbralHumedad, ${cropColumns.umbralTemperatura ? "umbral_temperatura" : "NULL"} AS umbralTemperatura, umbral_ph AS umbralPh, umbral_ec AS umbralEc, umbral_tds AS umbralTds
        FROM Cultivos
        WHERE id_cultivo = @id`,
       { id }
     )
 
+    const catalogData = getCatalogDataFromPerfil(perfilAgronomico)
+    const updateSet = [
+      "nombre = @nombre",
+      "variedad = @variedad",
+      "id_invernadero = @invernaderoId",
+      "umbral_humedad = @umbralHumedad",
+      ...(cropColumns.umbralTemperatura ? ["umbral_temperatura = @umbralTemperatura"] : []),
+      "umbral_ph = @umbralPh",
+      "umbral_ec = @umbralEc",
+      "umbral_tds = @umbralTds",
+      ...(cropColumns.aguaLitrosPorMataDia ? ["agua_litros_por_mata_dia = @aguaLitrosPorMataDia"] : []),
+      ...(cropColumns.rendimientoPorMata ? ["rendimiento_por_mata = @rendimientoPorMata"] : []),
+      ...(cropColumns.unidadRendimiento ? ["unidad_rendimiento = @unidadRendimiento"] : []),
+      ...(cropColumns.fertilizantes ? ["fertilizantes = @fertilizantes"] : []),
+      ...(cropColumns.abonos ? ["abonos = @abonos"] : []),
+      ...(cropColumns.plagasComunes ? ["plagas_comunes = @plagasComunes"] : []),
+      ...(cropColumns.mejoresMeses ? ["mejores_meses = @mejoresMeses"] : []),
+    ]
+
     await query(
       `UPDATE Cultivos
-       SET nombre = @nombre,
-           variedad = @variedad,
-           id_invernadero = @invernaderoId,
-           umbral_humedad = @umbralHumedad,
-           umbral_temperatura = @umbralTemperatura,
-           umbral_ph = @umbralPh,
-           umbral_ec = @umbralEc,
-           umbral_tds = @umbralTds,
-           agua_litros_por_mata_dia = @aguaLitrosPorMataDia,
-           rendimiento_por_mata = @rendimientoPorMata,
-           unidad_rendimiento = @unidadRendimiento,
-           fertilizantes = @fertilizantes,
-           abonos = @abonos,
-           plagas_comunes = @plagasComunes,
-           tratamiento_recomendado = @tratamientoRecomendado,
-           mejores_meses = @mejoresMeses,
-           recomendacion_siembra = @recomendacionSiembra
+       SET ${updateSet.join(", ")}
        WHERE id_cultivo = @id`,
       {
         id,
         nombre,
         variedad: variedad || "",
         invernaderoId: Number(invernaderoId),
-        umbralHumedad: umbral_humedad || null,
-        umbralTemperatura: umbral_temperatura || null,
-        umbralPh: umbral_ph || null,
-        umbralEc: umbral_ec || null,
-        umbralTds: umbral_tds || null,
-        aguaLitrosPorMataDia: agua_litros_por_mata_dia || null,
-        rendimientoPorMata: rendimiento_por_mata || null,
-        unidadRendimiento: unidad_rendimiento || null,
-        fertilizantes: fertilizantes || null,
-        abonos: abonos || null,
-        plagasComunes: plagas_comunes || null,
-        tratamientoRecomendado: tratamiento_recomendado || null,
-        mejoresMeses: mejores_meses || null,
-        recomendacionSiembra: recomendacion_siembra || null,
+        umbralHumedad: parseNullableDecimal(umbral_humedad),
+        umbralTemperatura: parseNullableDecimal(umbral_temperatura),
+        umbralPh: parseNullableDecimal(umbral_ph),
+        umbralEc: parseNullableDecimal(umbral_ec),
+        umbralTds: parseNullableDecimal(umbral_tds),
+        ...catalogData,
       }
     )
-    await syncCommonCropCatalog(body)
+
+    await savePerfilAgronomico(id, perfilAgronomico)
+    await upsertCatalogCrop({
+      nombre,
+      variedad,
+      umbralHumedad: parseNullableDecimal(umbral_humedad),
+      umbralTemperatura: parseNullableDecimal(umbral_temperatura),
+      umbralPh: parseNullableDecimal(umbral_ph),
+      umbralEc: parseNullableDecimal(umbral_ec),
+      umbralTds: parseNullableDecimal(umbral_tds),
+      perfilAgronomico,
+    })
 
     await registrarBitacora({
       session,
@@ -419,6 +748,32 @@ export async function DELETE(req: Request) {
 
     // Eliminar detalle primero (FK)
     await query("DELETE FROM CultivoDetalle WHERE id_cultivo = @id", { id })
+
+    await query(
+      `DELETE f
+       FROM CultivoFertilizacionEtapa f
+       INNER JOIN CultivoPerfilAgronomico p ON p.id_perfil = f.id_perfil
+       WHERE p.id_cultivo = @id`,
+      { id }
+    )
+
+    await query(
+      `DELETE m
+       FROM CultivoManejoEtapa m
+       INNER JOIN CultivoPerfilAgronomico p ON p.id_perfil = m.id_perfil
+       WHERE p.id_cultivo = @id`,
+      { id }
+    )
+
+    await query(
+      `DELETE s
+       FROM CultivoPlagasEnfermedades s
+       INNER JOIN CultivoPerfilAgronomico p ON p.id_perfil = s.id_perfil
+       WHERE p.id_cultivo = @id`,
+      { id }
+    )
+
+    await query("DELETE FROM CultivoPerfilAgronomico WHERE id_cultivo = @id", { id })
 
     // Eliminar cultivo
     await query(

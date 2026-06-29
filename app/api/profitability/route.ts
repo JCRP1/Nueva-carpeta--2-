@@ -31,16 +31,26 @@ export async function GET(req: Request) {
           c.id_cultivo AS idCultivo,
           c.nombre AS cultivoNombre,
           i.nombre AS invernaderoNombre,
+          ${hasZona ? "MAX(ISNULL(z.produccion_estimada, 0))" : "0"} AS produccionEstimada,
+          ${hasZona ? "MAX(ISNULL(z.unidad_rendimiento, 'kg'))" : "'kg'"} AS unidadRendimiento,
+          ${hasZona ? "MAX(ISNULL(z.ingreso_estimado, 0))" : "0"} AS ingresoEstimado,
           SUM(ISNULL(co.cantidad_cosechada_kg, 0)) AS kgCosechados,
           SUM(ISNULL(co.perdida_kg, 0)) AS kgPerdidos,
-          SUM(ISNULL(v.ingreso_total, 0)) AS ingresos,
+          SUM(ISNULL(ventas.kgVendidos, 0)) AS kgVendidos,
+          SUM(ISNULL(ventas.ingresoTotal, 0)) AS ingresoTotal,
           ISNULL(costos.totalCostos, 0) AS costos
         FROM dbo.Cosechas co
         INNER JOIN dbo.CultivoDetalle cd ON cd.id_detalle = co.id_detalle
         INNER JOIN dbo.Cultivos c ON c.id_cultivo = cd.id_cultivo
         ${hasZona ? "LEFT JOIN dbo.ZonasRiego z ON z.id_zona = co.id_zona" : ""}
         INNER JOIN dbo.Invernaderos i ON i.id_invernadero = c.id_invernadero
-        LEFT JOIN dbo.VentasCosecha v ON v.id_cosecha = co.id_cosecha
+        OUTER APPLY (
+          SELECT
+            SUM(v.cantidad_kg) AS kgVendidos,
+            SUM(v.ingreso_total) AS ingresoTotal
+          FROM dbo.VentasCosecha v
+          WHERE v.id_cosecha = co.id_cosecha
+        ) ventas
         OUTER APPLY (
           SELECT SUM(cc.monto) AS totalCostos
           FROM dbo.CostosCultivo cc
@@ -49,24 +59,38 @@ export async function GET(req: Request) {
         ) costos
         ${where}
         GROUP BY ${hasZona ? "z.id_zona, z.nombre," : ""} c.id_cultivo, c.nombre, i.nombre, costos.totalCostos
-        ORDER BY ingresos - ISNULL(costos.totalCostos, 0) DESC
+        ORDER BY SUM(ISNULL(v.ingreso_total, 0)) - ISNULL(costos.totalCostos, 0) DESC
       `,
       params
     )
 
     return NextResponse.json(rows.map((row) => {
-      const ingresos = Number(row.ingresos) || 0
+      const ingresos = Number(row.ingresoTotal) || 0
       const costos = Number(row.costos) || 0
       const kg = Number(row.kgCosechados) || 0
+      const produccionEstimada = Number(row.produccionEstimada) || 0
+      const kgVendidos = Number(row.kgVendidos) || 0
+      const ingresoEstimado = Number(row.ingresoEstimado) || 0
+      const diferenciaProduccion = kg - produccionEstimada
+      const diferenciaIngresos = ingresos - ingresoEstimado
       return {
         idZona: row.idZona != null ? String(row.idZona) : "",
         zonaNombre: String(row.zonaNombre || "Sin zona"),
         idCultivo: String(row.idCultivo || ""),
         cultivoNombre: String(row.cultivoNombre || ""),
         invernaderoNombre: String(row.invernaderoNombre || ""),
+        produccionEstimada,
+        unidadRendimiento: String(row.unidadRendimiento || "kg"),
         kgCosechados: kg,
+        kgVendidos,
+        kgDisponible: Math.max(0, kg - kgVendidos),
+        cumplimientoProduccion: produccionEstimada > 0 ? (kg / produccionEstimada) * 100 : 0,
+        diferenciaProduccion,
         kgPerdidos: Number(row.kgPerdidos) || 0,
+        ingresoEstimado,
         ingresos,
+        diferenciaIngresos,
+        cumplimientoIngresos: ingresoEstimado > 0 ? (ingresos / ingresoEstimado) * 100 : 0,
         costos,
         ganancia: ingresos - costos,
         costoPorKg: kg > 0 ? costos / kg : 0,

@@ -107,6 +107,13 @@ interface LecturaHistorial {
   valor: number
 }
 
+interface ChartPoint {
+  timestamp: string
+  valor: number | null
+  time: string
+  date: string
+}
+
 interface Alerta {
   id: string
   tipo_alerta: string
@@ -271,7 +278,7 @@ export function SensorDetailView({ sensor, onBack, userRole, historialPreload }:
     return gh?.nombre || sensor.invernaderoId
   }, [greenhouses, sensor.invernaderoId])
 
-  const chartData = useMemo(() => {
+  const chartData = useMemo<ChartPoint[]>(() => {
     if (historialData && historialData.length > 0) {
       return historialData.map((h) => ({
         ...h,
@@ -288,9 +295,33 @@ export function SensorDetailView({ sensor, onBack, userRole, historialPreload }:
     return []
   }, [historialData])
 
+  const emptyMonthChartData = useMemo<ChartPoint[]>(() => {
+    const now = new Date()
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
+
+    return [startOfMonth, now].map((date) => ({
+      timestamp: date.toISOString(),
+      valor: null,
+      time: date.toLocaleDateString("es-DO", {
+        month: "short",
+        day: "numeric",
+      }),
+      date: date.toLocaleDateString("es-DO", {
+        month: "short",
+        day: "numeric",
+      }),
+    }))
+  }, [])
+
+  const visibleChartData = chartData.length > 0 ? chartData : emptyMonthChartData
+  const yAxisDomain = chartData.length > 0
+    ? ["auto", "auto"]
+    : [sensor.umbralMin ?? sensor.rangoMin ?? 0, sensor.umbralMax ?? sensor.rangoMax ?? 100]
+
   const stats = useMemo(() => {
     if (!chartData || chartData.length === 0) return null
-    const values = chartData.map((h) => h.valor)
+    const values = chartData.map((h) => h.valor).filter((value): value is number => value != null)
+    if (values.length === 0) return null
     const min = Math.min(...values)
     const max = Math.max(...values)
     const avg = values.reduce((a, b) => a + b, 0) / values.length
@@ -425,7 +456,7 @@ export function SensorDetailView({ sensor, onBack, userRole, historialPreload }:
               <CardTitle className="text-base font-medium">Historial de Lecturas</CardTitle>
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <Clock className="h-3 w-3" />
-                Ultimas 48 horas
+                Mes con lecturas
               </div>
             </div>
           </CardHeader>
@@ -434,14 +465,10 @@ export function SensorDetailView({ sensor, onBack, userRole, historialPreload }:
               <div className="flex h-[300px] items-center justify-center">
                 <Loader2 className="h-8 w-8 animate-spin text-primary" />
               </div>
-            ) : chartData.length === 0 ? (
-              <div className="flex h-[300px] items-center justify-center rounded-md border border-dashed text-sm text-muted-foreground">
-                Sin lecturas guardadas para este sensor
-              </div>
             ) : (
-              <div className="h-[300px]">
+              <div className="relative h-[300px]">
                 <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                  <AreaChart data={visibleChartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                     <defs>
                       <linearGradient id="colorValor" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="5%" stopColor={CHART_COLORS.primary} stopOpacity={0.3} />
@@ -458,17 +485,19 @@ export function SensorDetailView({ sensor, onBack, userRole, historialPreload }:
                     <YAxis
                       tick={{ fontSize: 10 }}
                       className="text-muted-foreground"
-                      domain={["auto", "auto"]}
+                      domain={yAxisDomain}
                     />
-                    <Tooltip
-                      contentStyle={{
-                        backgroundColor: "hsl(var(--card))",
-                        border: "1px solid hsl(var(--border))",
-                        borderRadius: "8px",
-                        fontSize: "12px",
-                      }}
-                      labelStyle={{ color: "hsl(var(--foreground))" }}
-                    />
+                    {chartData.length > 0 && (
+                      <Tooltip
+                        contentStyle={{
+                          backgroundColor: "hsl(var(--card))",
+                          border: "1px solid hsl(var(--border))",
+                          borderRadius: "8px",
+                          fontSize: "12px",
+                        }}
+                        labelStyle={{ color: "hsl(var(--foreground))" }}
+                      />
+                    )}
                     {sensor.umbralMin !== undefined && (
                       <ReferenceLine
                         y={sensor.umbralMin}
@@ -495,6 +524,13 @@ export function SensorDetailView({ sensor, onBack, userRole, historialPreload }:
                     />
                   </AreaChart>
                 </ResponsiveContainer>
+                {chartData.length === 0 && (
+                  <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                    <div className="rounded-md border bg-card/90 px-3 py-2 text-sm text-muted-foreground shadow-sm">
+                      Sin lecturas para graficar
+                    </div>
+                  </div>
+                )}
               </div>
             )}
             <div className="mt-4 flex items-center justify-center gap-6 text-xs text-muted-foreground">

@@ -11,13 +11,25 @@ export async function GET(
     const { id } = await params
 
     const rows = (await query(
-      `SELECT l.valor, l.fecha_hora AS timestamp
+      `DECLARE @referenceDate DATETIME = (
+         SELECT MAX(fecha_hora)
+         FROM LecturasSensores
+         WHERE id_sensor = @sensorId
+       );
+       DECLARE @monthStart DATE = DATEFROMPARTS(
+         YEAR(COALESCE(@referenceDate, GETDATE())),
+         MONTH(COALESCE(@referenceDate, GETDATE())),
+         1
+       );
+
+       SELECT l.valor, l.fecha_hora AS timestamp
        FROM LecturasSensores l
        INNER JOIN Sensores s ON l.id_sensor = s.id_sensor
        INNER JOIN Invernaderos i ON s.id_invernadero = i.id_invernadero
        WHERE l.id_sensor = @sensorId
          AND i.id_empresa = @empresaId
-         AND l.fecha_hora >= DATEADD(HOUR, -48, GETDATE())
+         AND l.fecha_hora >= @monthStart
+         AND l.fecha_hora < DATEADD(MONTH, 1, @monthStart)
        ORDER BY l.fecha_hora ASC`,
       { sensorId: Number(id), empresaId: session.empresaId }
     )) as Record<string, unknown>[]

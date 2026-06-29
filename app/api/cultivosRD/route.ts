@@ -14,6 +14,13 @@ type PerfilBase = {
   densidadPlantasM2?: string | null
   sustratoSuelo?: string | null
   observaciones?: string | null
+  aguaAproximada?: string | null
+  fertilizantes?: string | string[]
+  abonos?: string | string[]
+  rendimientoPorMata?: string | null
+  plagas?: string | string[]
+  plagasTexto?: string | string[]
+  mesesRecomendados?: string | string[]
 }
 
 type FertilizacionRow = {
@@ -57,6 +64,43 @@ function emptyEtapas<T>() {
   } as Record<EtapaCultivo, T | null>
 }
 
+function normalizeTextList(value: unknown): string[] {
+  if (Array.isArray(value)) return value.map((item) => String(item).trim()).filter(Boolean)
+  return String(value || "")
+    .split(/[\n,;]+/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+}
+
+function parsePerfilObservaciones(value?: string | null) {
+  if (!value) return {}
+
+  try {
+    const parsed = JSON.parse(value) as Record<string, unknown>
+    return {
+      aguaAproximada: String(parsed.aguaAproximada || "").trim() || null,
+      fertilizantes: normalizeTextList(parsed.fertilizantes),
+      abonos: normalizeTextList(parsed.abonos),
+      rendimientoPorMata: String(parsed.rendimientoPorMata || "").trim() || null,
+      plagasTexto: normalizeTextList(parsed.plagas),
+      mesesRecomendados: normalizeTextList(parsed.mesesRecomendados),
+    }
+  } catch {
+    return {}
+  }
+}
+
+function parsePerfilColumnas(perfil: PerfilBase) {
+  return {
+    aguaAproximada: String(perfil.aguaAproximada || "").trim() || null,
+    fertilizantes: normalizeTextList(perfil.fertilizantes),
+    abonos: normalizeTextList(perfil.abonos),
+    rendimientoPorMata: String(perfil.rendimientoPorMata || "").trim() || null,
+    plagasTexto: normalizeTextList(perfil.plagas),
+    mesesRecomendados: normalizeTextList(perfil.mesesRecomendados),
+  }
+}
+
 function getLocalPerfil(nombre: string) {
   const perfil = getPerfilAgronomico(nombre)
   if (!perfil) return null
@@ -66,10 +110,15 @@ function getLocalPerfil(nombre: string) {
     cultivoNombre: nombre,
     densidadPlantasM2: perfil.densidadPlantasM2,
     sustratoSuelo: perfil.sustratoSuelo,
+    aguaAproximada: perfil.aguaAproximada,
+    fertilizantes: perfil.fertilizantes,
+    abonos: perfil.abonos,
+    rendimientoPorMata: perfil.rendimientoPorMata,
+    mesesRecomendados: perfil.mesesRecomendados,
     fertilizacion: perfil.fertilizacion,
     manejo: perfil.manejo,
     sanidad: perfil.sanidad,
-    plagas: perfil.sanidad.map((nombrePlaga) => ({
+    plagas: perfil.plagas.map((nombrePlaga) => ({
       nombre: nombrePlaga,
       tipo: "referencia",
       nivelRiesgo: null,
@@ -87,7 +136,13 @@ async function getDbPerfil(nombre: string) {
         c.variedad,
         p.densidad_plantas_m2 AS densidadPlantasM2,
         p.sustrato_suelo AS sustratoSuelo,
-        p.observaciones
+        p.observaciones,
+        p.agua_aproximada AS aguaAproximada,
+        p.fertilizantes,
+        p.abonos,
+        p.rendimiento_por_mata AS rendimientoPorMata,
+        p.plagas,
+        p.meses_recomendados AS mesesRecomendados
       FROM dbo.CultivoPerfilAgronomico p
       INNER JOIN dbo.Cultivos c ON c.id_cultivo = p.id_cultivo
       WHERE LOWER(LTRIM(RTRIM(c.nombre))) = LOWER(LTRIM(RTRIM(@nombre)))
@@ -101,6 +156,22 @@ async function getDbPerfil(nombre: string) {
 
   const perfil = perfiles[0]
   if (!perfil?.idPerfil) return null
+  const perfilExtraColumnas = parsePerfilColumnas(perfil)
+  const perfilExtraAnterior = parsePerfilObservaciones(perfil.observaciones)
+  const perfilExtra = {
+    aguaAproximada: perfilExtraColumnas.aguaAproximada || perfilExtraAnterior.aguaAproximada,
+    fertilizantes: perfilExtraColumnas.fertilizantes.length
+      ? perfilExtraColumnas.fertilizantes
+      : perfilExtraAnterior.fertilizantes || [],
+    abonos: perfilExtraColumnas.abonos.length ? perfilExtraColumnas.abonos : perfilExtraAnterior.abonos || [],
+    rendimientoPorMata: perfilExtraColumnas.rendimientoPorMata || perfilExtraAnterior.rendimientoPorMata,
+    plagasTexto: perfilExtraColumnas.plagasTexto.length
+      ? perfilExtraColumnas.plagasTexto
+      : perfilExtraAnterior.plagasTexto || [],
+    mesesRecomendados: perfilExtraColumnas.mesesRecomendados.length
+      ? perfilExtraColumnas.mesesRecomendados
+      : perfilExtraAnterior.mesesRecomendados || [],
+  }
 
   const [fertilizacionRows, manejoRows, sanidadRows] = await Promise.all([
     query<FertilizacionRow[]>(
@@ -178,22 +249,41 @@ async function getDbPerfil(nombre: string) {
   return {
     fuente: "base_datos",
     ...perfil,
+    ...perfilExtra,
     fertilizacion,
     manejo,
     sanidad: sanidadRows.map((row) => row.nombre),
-    plagas: sanidadRows,
+    plagas: sanidadRows.length
+      ? sanidadRows
+      : normalizeTextList(perfilExtra.plagasTexto).map((nombrePlaga) => ({
+          nombre: nombrePlaga,
+          tipo: "manual",
+          nivelRiesgo: null,
+        })) || [],
   }
 }
 
 async function resolvePerfil(nombre: string) {
+  const perfilLocal = getLocalPerfil(nombre)
   try {
     const perfilDb = await getDbPerfil(nombre)
-    if (perfilDb) return perfilDb
+    if (perfilDb) {
+      return {
+        ...perfilLocal,
+        ...perfilDb,
+        aguaAproximada: perfilDb.aguaAproximada || perfilLocal?.aguaAproximada || null,
+        fertilizantes: perfilDb.fertilizantes?.length ? perfilDb.fertilizantes : perfilLocal?.fertilizantes || [],
+        abonos: perfilDb.abonos?.length ? perfilDb.abonos : perfilLocal?.abonos || [],
+        rendimientoPorMata: perfilDb.rendimientoPorMata || perfilLocal?.rendimientoPorMata || null,
+        mesesRecomendados: perfilDb.mesesRecomendados?.length ? perfilDb.mesesRecomendados : perfilLocal?.mesesRecomendados || [],
+        plagas: perfilDb.plagas?.length ? perfilDb.plagas : perfilLocal?.plagas || [],
+      }
+    }
   } catch (error) {
     console.warn("[cultivosRD] Perfil SQL no disponible, usando catalogo local:", error)
   }
 
-  return getLocalPerfil(nombre)
+  return perfilLocal
 }
 
 export async function GET(request: Request) {
