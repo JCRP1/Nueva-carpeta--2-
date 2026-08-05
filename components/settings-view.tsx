@@ -58,10 +58,8 @@ interface SettingsState {
   connectionTimeout: number;
   retries: number;
   emailAlerts: boolean;
-  smsAlerts: boolean;
   criticalOnly: boolean;
   alertEmail: string;
-  alertPhone: string;
   jwtDuration: number;
   refreshDuration: number;
   maxLoginAttempts: number;
@@ -86,10 +84,8 @@ const defaultSettings: SettingsState = {
   connectionTimeout: 30,
   retries: 3,
   emailAlerts: true,
-  smsAlerts: false,
   criticalOnly: false,
   alertEmail: "alertas@greensense.io",
-  alertPhone: "+1 809 555 1234",
   jwtDuration: 24,
   refreshDuration: 30,
   maxLoginAttempts: 5,
@@ -195,10 +191,8 @@ export function SettingsView() {
         connectionTimeout:
           parseSettingNumber(serverSettings.connectionTimeout, prev.connectionTimeout),
         emailAlerts: parseSettingBool(serverSettings.notifEmail, prev.emailAlerts),
-        smsAlerts: parseSettingBool(serverSettings.notifSms, prev.smsAlerts),
         criticalOnly: parseSettingBool(serverSettings.alertaCritica, prev.criticalOnly),
         alertEmail: (serverSettings.alertEmail as string) || prev.alertEmail,
-        alertPhone: (serverSettings.alertPhone as string) || prev.alertPhone,
         jwtDuration: parseSettingNumber(serverSettings.sesionTimeout, prev.jwtDuration * 60) / 60,
         refreshDuration: parseSettingNumber(serverSettings.refreshDuration, prev.refreshDuration),
         maxLoginAttempts: parseSettingNumber(serverSettings.maxLoginAttempts, prev.maxLoginAttempts),
@@ -244,10 +238,8 @@ export function SettingsView() {
         connectionTimeout: settings.connectionTimeout,
         autoIrrigation: settings.autoIrrigation,
         notifEmail: settings.emailAlerts,
-        notifSms: settings.smsAlerts,
         alertaCritica: settings.criticalOnly,
         alertEmail: settings.alertEmail,
-        alertPhone: settings.alertPhone,
         sesionTimeout: settings.jwtDuration * 60,
         refreshDuration: settings.refreshDuration,
         maxLoginAttempts: settings.maxLoginAttempts,
@@ -283,10 +275,8 @@ export function SettingsView() {
         connectionTimeout: settings.connectionTimeout,
         autoIrrigation: settings.autoIrrigation,
         notifEmail: settings.emailAlerts,
-        notifSms: settings.smsAlerts,
         alertaCritica: settings.criticalOnly,
         alertEmail: settings.alertEmail,
-        alertPhone: settings.alertPhone,
         sesionTimeout: settings.jwtDuration * 60,
         refreshDuration: settings.refreshDuration,
         maxLoginAttempts: settings.maxLoginAttempts,
@@ -1119,25 +1109,6 @@ export function SettingsView() {
               </div>
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-foreground">Alertas por SMS</p>
-                  <p className="text-xs text-muted-foreground">
-                    Recibir notificaciones por mensaje de texto
-                  </p>
-                </div>
-                <Switch
-                  checked={settings.smsAlerts}
-                  onCheckedChange={(v) => {
-                    update("smsAlerts", v);
-                    toast(
-                      v
-                        ? "Alertas por SMS activadas"
-                        : "Alertas por SMS desactivadas",
-                    );
-                  }}
-                />
-              </div>
-              <div className="flex items-center justify-between">
-                <div>
                   <p className="text-sm text-foreground">
                     Solo Alertas Criticas
                   </p>
@@ -1163,14 +1134,6 @@ export function SettingsView() {
                   type="email"
                   value={settings.alertEmail}
                   onChange={(e) => update("alertEmail", e.target.value)}
-                />
-              </div>
-              <div className="flex flex-col gap-2">
-                <Label>Telefono SMS</Label>
-                <Input
-                  type="tel"
-                  value={settings.alertPhone}
-                  onChange={(e) => update("alertPhone", e.target.value)}
                 />
               </div>
               <Button

@@ -2,6 +2,21 @@ import { NextResponse } from "next/server"
 import { requireAuth } from "@/lib/auth"
 import { execute, query } from "@/lib/db"
 
+async function resolveCropIdFromZone(zoneId: number) {
+  if (!zoneId) return 0
+  const rows = await query<Array<{ idCultivo: number }>>(
+    `SELECT TOP 1 c.id_cultivo AS idCultivo
+     FROM dbo.ZonasRiego z
+     INNER JOIN dbo.Cultivos c ON c.id_invernadero = z.id_invernadero
+       AND LTRIM(RTRIM(LOWER(c.nombre))) = LTRIM(RTRIM(LOWER(z.tipo_cultivo)))
+     WHERE z.id_zona = @zoneId
+     ORDER BY c.id_cultivo DESC`,
+    { zoneId }
+  )
+
+  return Number(rows[0]?.idCultivo || 0)
+}
+
 export async function GET(req: Request) {
   try {
     const session = await requireAuth()
@@ -77,6 +92,8 @@ export async function POST(req: Request) {
     const unidadPrecioMercado = String(body.unidadPrecioMercado ?? body.unidad_precio_mercado ?? "").trim()
     const monto = Number(body.monto) || costoMata * cantidadMatas
     const fecha = String(body.fecha || "")
+    const idZona = body.idZona ? Number(body.idZona) : null
+    const idCultivo = body.idCultivo ? Number(body.idCultivo) : (idZona ? await resolveCropIdFromZone(idZona) : null)
     if (!concepto || monto < 0 || !fecha) {
       return NextResponse.json({ error: "Concepto, monto y fecha son requeridos" }, { status: 400 })
     }
@@ -94,8 +111,8 @@ export async function POST(req: Request) {
         )
       `,
       {
-        idZona: body.idZona ? Number(body.idZona) : null,
-        idCultivo: body.idCultivo ? Number(body.idCultivo) : null,
+        idZona,
+        idCultivo,
         concepto,
         monto,
         costoMata,
@@ -125,6 +142,8 @@ export async function PUT(req: Request) {
     const precioMercado = Number(body.precioMercado ?? body.precio_mercado) || 0
     const unidadPrecioMercado = String(body.unidadPrecioMercado ?? body.unidad_precio_mercado ?? "").trim()
     const monto = Number(body.monto) || costoMata * cantidadMatas
+    const idZona = body.idZona ? Number(body.idZona) : null
+    const idCultivo = body.idCultivo ? Number(body.idCultivo) : (idZona ? await resolveCropIdFromZone(idZona) : null)
 
     await execute(
       `
@@ -143,8 +162,8 @@ export async function PUT(req: Request) {
       `,
       {
         id,
-        idZona: body.idZona ? Number(body.idZona) : null,
-        idCultivo: body.idCultivo ? Number(body.idCultivo) : null,
+        idZona,
+        idCultivo,
         concepto: String(body.concepto || ""),
         monto,
         costoMata,

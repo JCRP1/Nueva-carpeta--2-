@@ -2,9 +2,19 @@ import { SignJWT, jwtVerify } from "jose"
 import { cookies } from "next/headers"
 import { query } from "./db"
 
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || "greensense-secret-key-change-in-production-2026"
-)
+const JWT_ISSUER = "greensense"
+const JWT_AUDIENCE = "greensense-web"
+
+function getJwtSecret() {
+  const configured = process.env.JWT_SECRET?.trim()
+  if (!configured || configured.length < 32) {
+    if (process.env.NODE_ENV === "production") {
+      throw new Error("JWT_SECRET must contain at least 32 characters in production")
+    }
+    return new TextEncoder().encode("greensense-development-only-secret-key")
+  }
+  return new TextEncoder().encode(configured)
+}
 const COOKIE_NAME = "gs_session"
 
 export interface DbUser {
@@ -64,9 +74,11 @@ export async function createSession(user: DbUser) {
     empresaId,
   })
     .setProtectedHeader({ alg: "HS256" })
+    .setIssuer(JWT_ISSUER)
+    .setAudience(JWT_AUDIENCE)
     .setIssuedAt()
     .setExpirationTime(`${durationSeconds}s`)
-    .sign(JWT_SECRET)
+    .sign(getJwtSecret())
 
   const cookieStore = await cookies()
   cookieStore.set(COOKIE_NAME, token, {
@@ -98,7 +110,18 @@ export async function getSession(): Promise<SessionPayload | null> {
   const token = cookieStore.get(COOKIE_NAME)?.value
   if (!token) return null
   try {
-    const { payload } = await jwtVerify(token, JWT_SECRET)
+    const { payload } = await jwtVerify(token, getJwtSecret(), {
+      algorithms: ["HS256"],
+      issuer: JWT_ISSUER,
+      audience: JWT_AUDIENCE,
+    })
+    if (
+      typeof payload.userId !== "number" ||
+      typeof payload.email !== "string" ||
+      typeof payload.rol !== "string" ||
+      typeof payload.nombre !== "string" ||
+      typeof payload.empresaId !== "number"
+    ) return null
     const session = payload as unknown as SessionPayload
     if (session.empresaId == null || Number.isNaN(Number(session.empresaId))) {
       session.empresaId = await resolveDefaultEmpresaId()
@@ -118,6 +141,31 @@ export async function requireAuth(): Promise<SessionPayload> {
 export async function requireAdmin(): Promise<SessionPayload> {
   const session = await requireAuth()
   if (session.rol !== "administrador") throw new Error("FORBIDDEN")
+  return session
+}
+
+export async function hasPermission(session: SessionPayload, permission: string): Promise<boolean> {
+  if (session.rol === "administrador") return true
+
+  const rows = await query<Array<{ Permisos: string | null }>>(
+    `SELECT TOP 1 Permisos
+     FROM Roles
+     WHERE LOWER(Nombre) = LOWER(@rol)
+       AND Activo = 1`,
+    { rol: session.rol }
+  )
+
+  try {
+    const permisos = JSON.parse(rows[0]?.Permisos || "[]")
+    return Array.isArray(permisos) && permisos.map(String).includes(permission)
+  } catch {
+    return false
+  }
+}
+
+export async function requirePermission(permission: string): Promise<SessionPayload> {
+  const session = await requireAuth()
+  if (!(await hasPermission(session, permission))) throw new Error("FORBIDDEN")
   return session
 }
 
@@ -173,6 +221,50 @@ export async function getUserByEmail(email: string, empresaId?: number | null): 
        @empresaId = @empresaId;`,
     { email, empresaId: empresaId ?? null }
   )
+  return rows[0]
+}
+
+export async function findEmailCompanyAssignment(
+  email: string,
+  excludeUserId?: number | null
+): Promise<{ id_usuario: number; id_empresa: number | null } | undefined> {
+  const rows = await query<Array<{ id_usuario: number; id_empresa: number | null }>>(
+    `DECLARE @empresaColumn SYSNAME;
+     DECLARE @empresaSelect NVARCHAR(MAX);
+     DECLARE @excludeFilter NVARCHAR(MAX) = N'';
+     DECLARE @sql NVARCHAR(MAX);
+
+     SELECT TOP 1 @empresaColumn = name
+     FROM sys.columns
+     WHERE object_id = OBJECT_ID('Usuarios')
+       AND name = 'id_empresa';
+
+     SET @empresaSelect = CASE
+       WHEN @empresaColumn IS NOT NULL THEN N'u.id_empresa'
+       ELSE N'NULL'
+     END;
+
+     IF @excludeUserId IS NOT NULL
+     BEGIN
+       SET @excludeFilter = N' AND u.id_usuario <> @excludeUserId';
+     END
+
+     SET @sql = N'
+       SELECT TOP 1
+         u.id_usuario,
+         ' + @empresaSelect + N' AS id_empresa
+       FROM Usuarios u
+       WHERE LOWER(LTRIM(RTRIM(u.correo))) = LOWER(LTRIM(RTRIM(@email)))' + @excludeFilter + N'
+       ORDER BY u.id_usuario';
+
+     EXEC sp_executesql
+       @sql,
+       N'@email NVARCHAR(255), @excludeUserId INT',
+       @email = @email,
+       @excludeUserId = @excludeUserId;`,
+    { email, excludeUserId: excludeUserId ?? null }
+  )
+
   return rows[0]
 }
 

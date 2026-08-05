@@ -693,8 +693,10 @@ User accounts for system access, linked to a person record.
 | Column | Data Type | Nullable | Default | Description |
 |--------|-----------|----------|---------|-------------|
 | `id_usuario` | `int` IDENTITY(1,1) | NO | | Primary key, auto-incremented user identifier. |
+| `id_empresa` | `int` | YES | | Foreign key referencing `Empresas.id_empresa`. Company this user belongs to. |
 | `nombre` | `nvarchar(100)` | NO | | Display name or username. |
 | `correo` | `nvarchar(100)` | NO | | Unique email address for login. |
+| `correo_normalizado` | computed | YES | | Normalized email used to enforce global uniqueness. |
 | `contraseña` | `nvarchar(255)` | NO | | Hashed password. |
 | `rol` | `nvarchar(20)` | NO | | User role (e.g., 'Admin', 'Operador', 'Consulta'). |
 | `fecha_registro` | `datetime` | NO | `GETDATE()` | Account creation date. |
@@ -702,7 +704,7 @@ User accounts for system access, linked to a person record.
 | `activo` | `bit` | YES | `1` | Whether the account is active. |
 
 **Primary Key:** `id_usuario`  
-**Unique Constraint:** `UQ_Usuarios_Correo` on `correo`  
+**Unique Constraint:** `UX_Usuarios_Correo_Normalizado_Global` on `correo_normalizado`  
 **Foreign Keys:** `FK_Usuarios_Personas` → `Personas(id_persona)`
 
 ---

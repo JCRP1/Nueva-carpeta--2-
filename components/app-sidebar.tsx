@@ -29,6 +29,8 @@ import {
   ReceiptText,
   Sprout,
   TrendingUp,
+  FlaskConical,
+  Shovel,
 } from "lucide-react"
 import {
   Sidebar,
@@ -83,26 +85,15 @@ interface AppSidebarProps {
   currentUser: UserType
   empresaNombre?: string
   empresaRNC?: string
-}
-
-const roleAccess: Record<string, string[]> = {
-  administrador: ["dashboard", "zonas", "cultivos", "cosechas", "ventas", "costos", "rentabilidad", "plan-agronomico", "aplicaciones", "calendario", "inventario", "sensores", "alertas", "invernaderos", "reportes", "personal", "usuarios", "roles", "empresas", "dispositivos", "configuracion"],
-  tecnico: ["dashboard", "zonas", "cultivos", "cosechas", "plan-agronomico", "aplicaciones", "calendario", "inventario", "alertas", "invernaderos", "reportes"],
-  agricultor: ["dashboard", "zonas", "cultivos", "cosechas", "costos", "rentabilidad", "plan-agronomico", "aplicaciones", "calendario", "inventario", "alertas", "invernaderos", "reportes"],
-}
-
-function resolveAccessRole(rol: string) {
-  const normalized = rol.trim().toLowerCase()
-  if (normalized === "administrador" || normalized === "tecnico" || normalized === "agricultor") {
-    return normalized
-  }
-  return "agricultor"
+  allowedViews: string[]
 }
 
 const allNavItems = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
   { id: "zonas", label: "Zonas de Riego", icon: Droplets },
   { id: "cultivos", label: "Cultivos", icon: Leaf },
+  { id: "siembra", label: "Siembra", icon: Shovel },
+  { id: "preparacion-fertilizante", label: "Preparacion", icon: FlaskConical },
   { id: "cosechas", label: "Cosechas", icon: Wheat },
   { id: "costos", label: "Costos", icon: ReceiptText },
   { id: "rentabilidad", label: "Rentabilidad", icon: TrendingUp },
@@ -134,7 +125,7 @@ function formatRNC(value: string): string {
   return clean
 }
 
-export function AppSidebar({ activeView, onViewChange, onLogout, currentUser, empresaNombre, empresaRNC }: AppSidebarProps) {
+export function AppSidebar({ activeView, onViewChange, onLogout, currentUser, empresaNombre, empresaRNC, allowedViews }: AppSidebarProps) {
   const { theme, setTheme } = useTheme()
   const [profileOpen, setProfileOpen] = useState(false)
   const [profileName, setProfileName] = useState(currentUser.nombre)
@@ -145,8 +136,8 @@ export function AppSidebar({ activeView, onViewChange, onLogout, currentUser, em
     refreshInterval: 3000,
   })
 
-  const accessRole = resolveAccessRole(currentUser.rol)
-  const isAdmin = accessRole === "administrador"
+  const isAdmin = allowedViews.includes("usuarios") || allowedViews.includes("roles") || allowedViews.includes("configuracion")
+  const allowedAdminItems = adminItems.filter((item) => allowedViews.includes(item.id))
   const alertsStorageKey = `greensense:alerts:last-seen:${currentUser.id}`
 
   useEffect(() => {
@@ -221,7 +212,7 @@ export function AppSidebar({ activeView, onViewChange, onLogout, currentUser, em
             <SidebarGroupContent>
               <SidebarMenu>
                 {allNavItems
-                  .filter((item) => roleAccess[accessRole]?.includes(item.id))
+                  .filter((item) => allowedViews.includes(item.id))
                   .map((item) => (
                     <SidebarMenuItem key={item.id}>
                       <SidebarMenuButton
@@ -243,12 +234,12 @@ export function AppSidebar({ activeView, onViewChange, onLogout, currentUser, em
             </SidebarGroupContent>
           </SidebarGroup>
 
-          {isAdmin && (
+          {allowedAdminItems.length > 0 && (
             <SidebarGroup>
               <SidebarGroupLabel>Administracion</SidebarGroupLabel>
               <SidebarGroupContent>
                 <SidebarMenu>
-                  {adminItems.map((item) => (
+                  {allowedAdminItems.map((item) => (
                     <SidebarMenuItem key={item.id}>
                       <SidebarMenuButton
                         isActive={activeView === item.id}

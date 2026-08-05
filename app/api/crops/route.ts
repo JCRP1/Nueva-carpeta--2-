@@ -3,9 +3,15 @@ import { requireAuth } from "@/lib/auth"
 import { query } from "@/lib/db"
 import { registrarBitacora } from "@/lib/bitacora"
 
+type FertilizantePayload = {
+  nombre: string
+  dosis: number | null
+  unidad: string
+}
+
 type PerfilAgronomicoPayload = {
   aguaAproximada: string
-  fertilizantes: string[]
+  fertilizantes: FertilizantePayload[]
   abonos: string[]
   rendimientoPorMata: string
   plagas: string[]
@@ -34,12 +40,59 @@ function normalizeList(value: unknown): string[] {
     .filter(Boolean)
 }
 
+function tryParseJson(value: string): unknown {
+  const trimmed = value.trim()
+  if (!trimmed.startsWith("[") && !trimmed.startsWith("{")) return value
+
+  try {
+    return JSON.parse(trimmed)
+  } catch {
+    return value
+  }
+}
+
+function normalizeFertilizantes(value: unknown): FertilizantePayload[] {
+  const source = typeof value === "string" ? tryParseJson(value) : value
+  const items = Array.isArray(source) ? source : normalizeList(source)
+
+  return items
+    .map((item) => {
+      if (item && typeof item === "object") {
+        const row = item as Record<string, unknown>
+        const dosis = parseNullableDecimal(row.dosis)
+        return {
+          nombre: String(row.nombre || row.name || "").trim(),
+          dosis,
+          unidad: String(row.unidad || row.unit || "g/1000 L").trim() || "g/1000 L",
+        }
+      }
+
+      return {
+        nombre: String(item || "").trim(),
+        dosis: null,
+        unidad: "g/1000 L",
+      }
+    })
+    .filter((item) => item.nombre || item.dosis != null)
+}
+
+function formatFertilizantesForText(fertilizantes: FertilizantePayload[]): string {
+  return fertilizantes
+    .map((fertilizante) => {
+      const dosis = fertilizante.dosis != null ? ` - ${fertilizante.dosis} ${fertilizante.unidad || "g/1000 L"}` : ""
+      return `${fertilizante.nombre}${dosis}`.trim()
+    })
+    .filter(Boolean)
+    .join("\n")
+}
+
 function normalizePerfilAgronomico(value: unknown): PerfilAgronomicoPayload {
-  const source = (value && typeof value === "object" ? value : {}) as Record<string, unknown>
+  const parsedValue = typeof value === "string" ? tryParseJson(value) : value
+  const source = (parsedValue && typeof parsedValue === "object" ? parsedValue : {}) as Record<string, unknown>
 
   return {
     aguaAproximada: String(source.aguaAproximada || "").trim(),
-    fertilizantes: normalizeList(source.fertilizantes),
+    fertilizantes: normalizeFertilizantes(source.fertilizantes),
     abonos: normalizeList(source.abonos),
     rendimientoPorMata: String(source.rendimientoPorMata || "").trim(),
     plagas: normalizeList(source.plagas),
@@ -138,7 +191,7 @@ function getCatalogDataFromPerfil(value: unknown) {
     aguaLitrosPorMataDia: waterNumbers.length >= 2 ? (waterNumbers[0] + waterNumbers[1]) / 2 : waterNumbers[0] ?? null,
     rendimientoPorMata: rendimientoNumbers.length >= 2 ? (rendimientoNumbers[0] + rendimientoNumbers[1]) / 2 : rendimientoNumbers[0] ?? null,
     unidadRendimiento: perfil.rendimientoPorMata.toLowerCase().includes("lb") ? "lb" : "unidad",
-    fertilizantes: perfil.fertilizantes.join("\n") || null,
+    fertilizantes: formatFertilizantesForText(perfil.fertilizantes) || null,
     abonos: perfil.abonos.join("\n") || null,
     plagasComunes: perfil.plagas.join("\n") || null,
     mejoresMeses: perfil.mesesRecomendados.join(", ") || null,
@@ -225,7 +278,7 @@ async function savePerfilAgronomico(cultivoId: number | string | undefined, valu
 
   const perfilParams = {
     aguaAproximada: perfil.aguaAproximada || null,
-    fertilizantes: perfil.fertilizantes.join("\n") || null,
+    fertilizantes: perfil.fertilizantes.length ? JSON.stringify(perfil.fertilizantes) : null,
     abonos: perfil.abonos.join("\n") || null,
     rendimientoPorMata: perfil.rendimientoPorMata || null,
     plagas: perfil.plagas.join("\n") || null,

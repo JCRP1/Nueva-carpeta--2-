@@ -3,6 +3,7 @@ import { registrarBitacora } from "@/lib/bitacora"
 import { buildVirtualDeviceCodeExpression, hasPhysicalDeviceCodeColumn } from "@/lib/device-code"
 import { getSensorAlertSettings } from "@/lib/alert-config"
 import { getSensorZoneColumn } from "@/lib/sensor-zone-column"
+import { dispatchAlertNotification } from "@/lib/notifications"
 
 function buildAlertType(tipo: string, value: number, min: number | null, max: number | null) {
   if (min != null && value < min) return `${tipo}_baja`
@@ -473,11 +474,12 @@ export async function processIotReading(body: IotReadingPayload, source: "http" 
           }
         )
       } else {
-        await execute(
+        const inserted = (await query(
           `INSERT INTO Alertas
             (id_sensor, tipo_alerta, valor_detectado, fecha_hora, estado, umbral_min, umbral_max, nivel, accion_recomendada)
            VALUES
-            (@sensorId, @tipoAlerta, @valor, @fechaHora, 'Pendiente', @umbralMin, @umbralMax, @nivel, @accion)`,
+            (@sensorId, @tipoAlerta, @valor, @fechaHora, 'Pendiente', @umbralMin, @umbralMax, @nivel, @accion);
+           SELECT SCOPE_IDENTITY() AS id;`,
           {
             sensorId,
             tipoAlerta,
@@ -488,8 +490,18 @@ export async function processIotReading(body: IotReadingPayload, source: "http" 
             nivel,
             accion,
           }
-        )
+        )) as Array<{ id: number }>
         alertCreated = true
+        if (empresaId) {
+          await dispatchAlertNotification({
+            empresaId,
+            alertId: Number(inserted[0]?.id) || null,
+            title: nivel === "critico" ? "Alerta crítica de sensor" : "Alerta de sensor",
+            message: `${tipoAlerta.replace(/_/g, " ")}: ${rawValue}${unidad ? ` ${unidad}` : ""}. ${accion}`,
+            level: nivel,
+            url: "/?view=alertas",
+          })
+        }
       }
     }
   } else {

@@ -1,16 +1,31 @@
 import * as sql from "mssql"
 
+function parseSqlServerHost(value?: string) {
+  const host = (value || "localhost").trim()
+  const [server, instanceName] = host.split("\\")
+  return {
+    server: server || "localhost",
+    instanceName: instanceName?.trim() || undefined,
+  }
+}
+
+const sqlHost = parseSqlServerHost(process.env.MSSQL_HOST)
+const sqlPort = Number(process.env.MSSQL_PORT)
+
 // Connection config from environment variables
 const config: sql.config = {
-  server: process.env.MSSQL_HOST || "localhost",
-  port: Number(process.env.MSSQL_PORT) || 1433,
+  server: sqlHost.server,
+  ...(sqlHost.instanceName ? {} : { port: Number.isFinite(sqlPort) && sqlPort > 0 ? sqlPort : 1433 }),
   database: process.env.MSSQL_DATABASE || "GreenSenseDB",
   user: process.env.MSSQL_USER || "sa",
   password: process.env.MSSQL_PASSWORD || "",
   options: {
+    ...(sqlHost.instanceName ? { instanceName: sqlHost.instanceName } : {}),
     encrypt: process.env.MSSQL_ENCRYPT === "true",
     trustServerCertificate: process.env.MSSQL_TRUST_CERT !== "false",
   },
+  connectionTimeout: Number(process.env.MSSQL_CONNECT_TIMEOUT_MS) || 15000,
+  requestTimeout: Number(process.env.MSSQL_REQUEST_TIMEOUT_MS) || 30000,
   pool: {
     max: 10,
     min: 0,

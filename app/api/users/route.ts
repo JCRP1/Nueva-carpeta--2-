@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import { hashSync } from "bcryptjs"
-import { requireAdmin } from "@/lib/auth"
+import { findEmailCompanyAssignment, requirePermission } from "@/lib/auth"
 import { query, execute } from "@/lib/db"
 import { registrarBitacora } from "@/lib/bitacora"
 
@@ -10,11 +10,11 @@ const mapUser = (row: any): any => ({
   nombre: row.nombre || "",
   email: row.correo || row.email || "",
   correo: row.correo || "",
-  contraseña: row.contraseña || "",
   rol: normalizeRole(row.rol),
   empresaId: String(row.id_empresa ?? ""),
   activo: row.activo !== 0 && row.activo !== false && row.activo !== "false",
   ultimoAcceso: row.fecha_registro?.toString() || new Date().toISOString(),
+  fechaCreacion: row.fecha_registro?.toString() || new Date().toISOString(),
   fecha_registro: row.fecha_registro?.toString() || new Date().toISOString(),
 })
 
@@ -37,9 +37,28 @@ function handleAuthError(e: any): NextResponse | null {
   return null
 }
 
+async function ensureEmailAvailableForCompany(
+  email: string,
+  empresaId: number,
+  excludeUserId?: number | null
+): Promise<NextResponse | null> {
+  const assigned = await findEmailCompanyAssignment(email, excludeUserId)
+  if (!assigned) return null
+
+  const assignedCompanyId = assigned.id_empresa == null ? null : Number(assigned.id_empresa)
+  if (assignedCompanyId === Number(empresaId)) {
+    return NextResponse.json({ error: "El email ya existe en esta empresa" }, { status: 400 })
+  }
+
+  return NextResponse.json(
+    { error: "Este correo ya esta asignado a otra empresa. Use un correo diferente." },
+    { status: 400 }
+  )
+}
+
 export async function GET() {
   try {
-    const session = await requireAdmin()
+    const session = await requirePermission("usuarios")
 
     const result = await query<Record<string, unknown>[]>(
       `SELECT 
@@ -47,7 +66,6 @@ export async function GET() {
         u.id_empresa,
         u.nombre,
         u.correo,
-        u.contraseña,
         u.rol,
         u.activo,
         u.fecha_registro
@@ -69,7 +87,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const session = await requireAdmin()
+    const session = await requirePermission("usuarios")
     const data = await request.json()
 
     if (!data.email || !data.password) {
@@ -95,8 +113,11 @@ export async function POST(request: Request) {
         const personaResult = await query<Array<{ nombre: string }>>(
           `SELECT TOP 1 nombre
            FROM Personas
-           WHERE id_persona = @id`,
-          { id: personaId }
+           WHERE id_persona = @id
+             AND (id_empresa = @empresaId OR id_invernadero IN (
+               SELECT id_invernadero FROM Invernaderos WHERE id_empresa = @empresaId
+             ))`,
+          { id: personaId, empresaId: session.empresaId }
         )
         if (personaResult[0]?.nombre) {
           nombre = String(personaResult[0].nombre).trim()
@@ -112,6 +133,10 @@ export async function POST(request: Request) {
     }
 
     const hashedPassword = hashSync(String(data.password), 10)
+    const correo = String(data.email).trim()
+
+    const emailError = await ensureEmailAvailableForCompany(correo, session.empresaId)
+    if (emailError) return emailError
 
     const result = await execute(
       `INSERT INTO Usuarios (id_empresa, nombre, correo, [contraseña], rol, activo, fecha_registro)
@@ -120,7 +145,7 @@ export async function POST(request: Request) {
       {
         empresaId: session.empresaId,
         nombre,
-        correo: String(data.email).trim(),
+        correo,
         password: hashedPassword,
         rol: normalizeRole(data.rol),
       }
@@ -134,7 +159,6 @@ export async function POST(request: Request) {
         u.id_empresa,
         u.nombre,
         u.correo,
-        u.contraseña,
         u.rol,
         u.activo,
         u.fecha_registro
@@ -153,7 +177,7 @@ export async function POST(request: Request) {
       accion: "CREATE",
       valorNuevo: {
         nombre,
-        email: String(data.email).trim(),
+        email: correo,
         rol: normalizeRole(data.rol),
         personaId: data.personaId ?? data.idPersona ?? null,
       },
@@ -180,7 +204,7 @@ export async function POST(request: Request) {
 
 export async function PATCH(req: Request) {
   try {
-    const session = await requireAdmin()
+    const session = await requirePermission("usuarios")
     const body = await req.json()
     const { id, activo, nombre, rol, email } = body
 
@@ -204,8 +228,14 @@ export async function PATCH(req: Request) {
       params.rol = rol
     }
     if (email !== undefined) {
+      const nextEmail = String(email).trim()
+      if (!nextEmail) {
+        return NextResponse.json({ error: "Email es obligatorio" }, { status: 400 })
+      }
+      const emailError = await ensureEmailAvailableForCompany(nextEmail, session.empresaId, Number(id))
+      if (emailError) return emailError
       updates.push("correo = @email")
-      params.email = email
+      params.email = nextEmail
     }
 
     if (updates.length === 0) {

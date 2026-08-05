@@ -59,7 +59,7 @@ export async function GET(req: Request) {
         ) costos
         ${where}
         GROUP BY ${hasZona ? "z.id_zona, z.nombre," : ""} c.id_cultivo, c.nombre, i.nombre, costos.totalCostos
-        ORDER BY SUM(ISNULL(v.ingreso_total, 0)) - ISNULL(costos.totalCostos, 0) DESC
+        ORDER BY SUM(ISNULL(ventas.ingresoTotal, 0)) - ISNULL(costos.totalCostos, 0) DESC
       `,
       params
     )

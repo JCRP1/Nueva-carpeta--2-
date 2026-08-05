@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import { compareSync } from "bcryptjs"
-import { getUserByEmail, createSession, sanitizeUser } from "@/lib/auth"
+import { createSession, getUserByEmail, sanitizeUser } from "@/lib/auth"
 import { registrarBitacora } from "@/lib/bitacora"
 import { normalizeCompanyCode } from "@/lib/company-code"
 import { query } from "@/lib/db"
@@ -69,29 +69,52 @@ async function getEmpresaByCode(code: string) {
   return rows[0]
 }
 
+async function getEmpresaById(idEmpresa: number) {
+  const rows = await query<EmpresaLoginRow[]>(
+    `SELECT TOP 1
+       id_empresa,
+       codigo_empresa,
+       nombre,
+       COALESCE(estado, 'Activa') AS estado
+     FROM Empresas
+     WHERE id_empresa = @idEmpresa`,
+    { idEmpresa }
+  )
+
+  return rows[0]
+}
+
 export async function POST(req: Request) {
   try {
     const { email, password, empresaCodigo, companyCode } = await req.json()
     const rawCompanyCode = String(empresaCodigo || companyCode || "").trim()
 
-    if (!rawCompanyCode) {
-      return NextResponse.json({ error: "Codigo de empresa requerido" }, { status: 400 })
-    }
-
     if (!email || !password) {
       return NextResponse.json({ error: "Email y contrasena requeridos" }, { status: 400 })
     }
 
-    const empresa = await getEmpresaByCode(rawCompanyCode)
+    const normalizedEmail = String(email).trim()
+    const user = await getUserByEmail(normalizedEmail)
+    if (!user?.id_empresa) {
+      return NextResponse.json({ error: "Credenciales invalidas" }, { status: 401 })
+    }
+
+    const empresa = await getEmpresaById(Number(user.id_empresa))
     if (!empresa) {
-      return NextResponse.json({ error: "Codigo de empresa no encontrado" }, { status: 404 })
+      return NextResponse.json({ error: "Empresa del usuario no encontrada" }, { status: 404 })
     }
 
     if (String(empresa.estado || "").toLowerCase() === "inactiva") {
       return NextResponse.json({ error: "La empresa esta inactiva" }, { status: 403 })
     }
 
-    const normalizedEmail = String(email).trim()
+    if (rawCompanyCode) {
+      const empresaByCode = await getEmpresaByCode(rawCompanyCode)
+      if (!empresaByCode || Number(empresaByCode.id_empresa) !== Number(empresa.id_empresa)) {
+        return NextResponse.json({ error: "El codigo de empresa no coincide con este usuario" }, { status: 403 })
+      }
+    }
+
     const securitySettings = await getSecuritySettings(Number(empresa.id_empresa))
     const attemptKey = getAttemptKey(Number(empresa.id_empresa), normalizedEmail)
     if (isLoginLocked(attemptKey)) {
@@ -99,12 +122,6 @@ export async function POST(req: Request) {
         { error: `Cuenta bloqueada temporalmente. Intente nuevamente en ${securitySettings.lockoutMinutes} minutos.` },
         { status: 429 }
       )
-    }
-
-    const user = await getUserByEmail(normalizedEmail, Number(empresa.id_empresa))
-    if (!user) {
-      registerFailedLogin(attemptKey, securitySettings.maxLoginAttempts, securitySettings.lockoutMinutes)
-      return NextResponse.json({ error: "Credenciales invalidas" }, { status: 401 })
     }
 
     if (!compareSync(password, user.passwordHash)) {

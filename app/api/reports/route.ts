@@ -211,8 +211,8 @@ export async function GET(req: Request) {
     const resumenRows = (await query(
       `SELECT
          CONCAT('Sem ', DATEPART(WEEK, r.fecha_inicio)) AS semana,
-         SUM(CASE WHEN LOWER(ISNULL(r.tipo, '')) = 'automatico' THEN 1 ELSE 0 END) AS riegoAuto,
-         SUM(CASE WHEN LOWER(ISNULL(r.tipo, '')) <> 'automatico' THEN 1 ELSE 0 END) AS riegoManual,
+         SUM(CASE WHEN LOWER(LTRIM(RTRIM(ISNULL(r.tipo, '')))) IN ('automatico', 'auto') THEN 1 ELSE 0 END) AS riegoAuto,
+         SUM(CASE WHEN LOWER(LTRIM(RTRIM(ISNULL(r.tipo, '')))) IN ('manual', '') THEN 1 ELSE 0 END) AS riegoManual,
          SUM(ISNULL(r.volumen_litros, 0)) AS aguaTotal,
          COUNT(*) AS eventos
        FROM Riegos r
@@ -294,19 +294,36 @@ export async function GET(req: Request) {
       `SELECT
          i.id_invernadero AS id,
          i.nombre,
-         SUM(ISNULL(co.cantidad_cosechada_kg, 0)) AS kgCosechados,
-         SUM(ISNULL(co.cantidad_unidades, 0)) AS unidadesCosechadas,
-         SUM(ISNULL(v.ingreso_total, 0)) AS ingresos,
-         SUM(ISNULL(costos.totalCostos, 0)) AS costos
+         ISNULL(produccion.kgCosechados, 0) AS kgCosechados,
+         ISNULL(produccion.unidadesCosechadas, 0) AS unidadesCosechadas,
+         ISNULL(ventas.ingresos, 0) AS ingresos,
+         ISNULL(costos.totalCostos, 0) AS costos
        FROM dbo.Invernaderos i
-       LEFT JOIN dbo.Cultivos c ON c.id_invernadero = i.id_invernadero
-       LEFT JOIN dbo.CultivoDetalle cd ON cd.id_cultivo = c.id_cultivo
-       LEFT JOIN dbo.Cosechas co ON co.id_detalle = cd.id_detalle
-       LEFT JOIN dbo.VentasCosecha v ON v.id_cosecha = co.id_cosecha
        OUTER APPLY (
-         SELECT SUM(cc.monto) AS totalCostos
+         SELECT
+           SUM(ISNULL(co.cantidad_cosechada_kg, 0)) AS kgCosechados,
+           SUM(ISNULL(co.cantidad_unidades, 0)) AS unidadesCosechadas
+         FROM dbo.Cultivos c
+         LEFT JOIN dbo.CultivoDetalle cd ON cd.id_cultivo = c.id_cultivo
+         LEFT JOIN dbo.Cosechas co ON co.id_detalle = cd.id_detalle
+         WHERE c.id_invernadero = i.id_invernadero
+       ) produccion
+       OUTER APPLY (
+         SELECT SUM(ISNULL(v.ingreso_total, 0)) AS ingresos
+         FROM dbo.Cultivos c
+         LEFT JOIN dbo.CultivoDetalle cd ON cd.id_cultivo = c.id_cultivo
+         LEFT JOIN dbo.Cosechas co ON co.id_detalle = cd.id_detalle
+         LEFT JOIN dbo.VentasCosecha v ON v.id_cosecha = co.id_cosecha
+         WHERE c.id_invernadero = i.id_invernadero
+       ) ventas
+       OUTER APPLY (
+         SELECT SUM(ISNULL(cc.monto, 0)) AS totalCostos
          FROM dbo.CostosCultivo cc
-         WHERE cc.id_cultivo = c.id_cultivo
+         WHERE cc.id_cultivo IN (
+             SELECT c2.id_cultivo
+             FROM dbo.Cultivos c2
+             WHERE c2.id_invernadero = i.id_invernadero
+           )
             OR cc.id_zona IN (
               SELECT z.id_zona
               FROM dbo.ZonasRiego z
@@ -314,8 +331,7 @@ export async function GET(req: Request) {
             )
        ) costos
        WHERE i.id_empresa = @empresaId
-       GROUP BY i.id_invernadero, i.nombre
-       ORDER BY SUM(ISNULL(v.ingreso_total, 0)) - SUM(ISNULL(costos.totalCostos, 0)) DESC`,
+       ORDER BY ISNULL(ventas.ingresos, 0) - ISNULL(costos.totalCostos, 0) DESC`,
       { empresaId: session.empresaId }
     ).catch(() => [])) as Record<string, unknown>[]
 

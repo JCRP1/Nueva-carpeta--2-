@@ -8,13 +8,13 @@ function safeEqual(a: string, b: string): boolean {
 }
 
 export function isValidIotKey(req: Request): boolean {
-  const configured = process.env.IOT_API_KEY || process.env.JWT_SECRET || "greensense-dev-iot-key"
+  const configured = process.env.IOT_API_KEY?.trim()
   const headerKey =
     req.headers.get("x-iot-key") ||
     req.headers.get("x-api-key") ||
     req.headers.get("authorization")?.replace(/^Bearer\s+/i, "").trim() ||
     ""
 
-  if (!headerKey) return false
+  if (!configured || configured.length < 24 || !headerKey) return false
   return safeEqual(headerKey, configured)
 }

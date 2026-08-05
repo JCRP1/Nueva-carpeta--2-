@@ -11,6 +11,8 @@ import { AlertsView } from "@/components/alerts-view"
 import { ReportsView } from "@/components/reports-view"
 import { GreenhousesView } from "@/components/greenhouses-view"
 import { CropsView } from "@/components/crops-view"
+import { FertilizerPreparationView } from "@/components/fertilizer-preparation-view"
+import { PlantingView } from "@/components/planting-view"
 import { HarvestsView } from "@/components/harvests-view"
 import { UsersView } from "@/components/users-view"
 import { RolesView } from "@/components/roles-view"
@@ -61,10 +63,18 @@ type MqttStatus = {
   lastMessageAt: string | null
 }
 
+type RoleRecord = {
+  Nombre: string
+  Permisos?: string
+  Activo: number
+}
+
 const viewLabels: Record<string, string> = {
   dashboard: "Dashboard",
   zonas: "Zonas de Riego",
   cultivos: "Cultivos",
+  siembra: "Siembra",
+  "preparacion-fertilizante": "Preparacion de Fertilizante",
   cosechas: "Cosechas",
   ventas: "Ventas",
   costos: "Costos",
@@ -86,9 +96,9 @@ const viewLabels: Record<string, string> = {
 }
 
 const roleAccess: Record<UserRole, string[]> = {
-  administrador: ["dashboard", "zonas", "cultivos", "cosechas", "ventas", "costos", "rentabilidad", "plan-agronomico", "aplicaciones", "calendario", "inventario", "sensores", "alertas", "personal", "invernaderos", "reportes", "usuarios", "roles", "empresas", "dispositivos", "configuracion"],
-  tecnico: ["dashboard", "zonas", "cultivos", "cosechas", "plan-agronomico", "aplicaciones", "calendario", "inventario", "alertas", "invernaderos", "reportes"],
-  agricultor: ["dashboard", "zonas", "cultivos", "cosechas", "costos", "rentabilidad", "plan-agronomico", "aplicaciones", "calendario", "inventario", "alertas", "invernaderos", "reportes"],
+  administrador: ["dashboard", "zonas", "cultivos", "siembra", "preparacion-fertilizante", "cosechas", "ventas", "costos", "rentabilidad", "plan-agronomico", "aplicaciones", "calendario", "inventario", "sensores", "alertas", "personal", "invernaderos", "reportes", "usuarios", "roles", "empresas", "dispositivos", "configuracion"],
+  tecnico: ["dashboard", "zonas", "cultivos", "siembra", "preparacion-fertilizante", "cosechas", "plan-agronomico", "aplicaciones", "calendario", "inventario", "alertas", "invernaderos", "reportes"],
+  agricultor: ["dashboard", "zonas", "cultivos", "siembra", "preparacion-fertilizante", "cosechas", "costos", "rentabilidad", "plan-agronomico", "aplicaciones", "calendario", "inventario", "alertas", "invernaderos", "reportes"],
 }
 
 function resolveAccessRole(rol: string): UserRole {
@@ -99,6 +109,39 @@ function resolveAccessRole(rol: string): UserRole {
   return "agricultor"
 }
 
+function normalizeRoleName(value: string) {
+  return value.trim().toLowerCase()
+}
+
+function parseRolePermissions(value?: string) {
+  try {
+    const parsed = JSON.parse(value || "[]")
+    return Array.isArray(parsed) ? parsed.map(String) : []
+  } catch {
+    return []
+  }
+}
+
+function getAllowedViewsForRole(rol: string, roles?: RoleRecord[]) {
+  const normalized = normalizeRoleName(rol)
+  const role = (roles || []).find((item) => normalizeRoleName(item.Nombre) === normalized && Number(item.Activo) === 1)
+  const configuredPermissions = parseRolePermissions(role?.Permisos)
+  if (configuredPermissions.length > 0) {
+    const permissions = new Set(configuredPermissions)
+    if ((permissions.has("cultivos") || permissions.has("zonas")) && !permissions.has("preparacion-fertilizante")) {
+      permissions.add("preparacion-fertilizante")
+    }
+    if ((permissions.has("cultivos") || permissions.has("zonas")) && !permissions.has("siembra")) {
+      permissions.add("siembra")
+    }
+    return Array.from(permissions)
+  }
+  if (normalized === "visualizador") {
+    return ["dashboard", "zonas", "cultivos", "siembra", "preparacion-fertilizante", "cosechas", "rentabilidad", "calendario", "inventario", "alertas", "invernaderos", "reportes"]
+  }
+  return roleAccess[resolveAccessRole(rol)] || ["dashboard"]
+}
+
 export default function Page() {
   const [currentUser, setCurrentUser] = useState<User | null>(null)
   const [activeView, setActiveView] = useState("dashboard")
@@ -106,16 +149,17 @@ export default function Page() {
   const [currentTime, setCurrentTime] = useState(new Date())
   const [checkingSession, setCheckingSession] = useState(true)
   const [mounted, setMounted] = useState(false)
+  const sessionScope = currentUser?.empresaId || currentUser?.id || ""
 
   // Fetch greenhouses from API (only when logged in)
   const { data: greenhouses } = useSWR<Invernadero[]>(
-    currentUser ? "/api/greenhouses" : null,
+    currentUser ? `/api/greenhouses?scope=${encodeURIComponent(String(sessionScope))}` : null,
     fetcher
   )
 
   // Fetch empresa
   const { data: empresas } = useSWR<Array<{ id: string; nombre: string; rnc?: string }>>(
-    currentUser ? "/api/empresas" : null,
+    currentUser ? `/api/empresas?scope=${encodeURIComponent(String(sessionScope))}` : null,
     fetcher
   )
   const currentEmpresa = empresas?.[0]
@@ -124,10 +168,22 @@ export default function Page() {
     fetcher,
     { refreshInterval: 5000 }
   )
+  const { data: roles } = useSWR<RoleRecord[]>(
+    currentUser ? `/api/roles?scope=${encodeURIComponent(String(sessionScope))}` : null,
+    fetcher
+  )
 
-  // Auto-select first greenhouse when greenhouses load
+  // Keep the selected greenhouse inside the current company's greenhouse list.
   useEffect(() => {
-    if (greenhouses && greenhouses.length > 0 && !selectedGreenhouse) {
+    if (!greenhouses) return
+
+    if (greenhouses.length === 0) {
+      if (selectedGreenhouse) setSelectedGreenhouse("")
+      return
+    }
+
+    const selectedStillExists = greenhouses.some((greenhouse) => greenhouse.id === selectedGreenhouse)
+    if (!selectedStillExists) {
       setSelectedGreenhouse(greenhouses[0].id)
     }
   }, [greenhouses, selectedGreenhouse])
@@ -173,12 +229,13 @@ export default function Page() {
     }
     setCurrentUser(null)
     setActiveView("dashboard")
+    setSelectedGreenhouse("")
     toast.info("Sesion cerrada", { description: "Ha cerrado sesion exitosamente" })
   }
 
   function handleViewChange(view: string) {
     if (!currentUser) return
-    const allowed = roleAccess[resolveAccessRole(currentUser.rol)]
+    const allowed = getAllowedViewsForRole(currentUser.rol, roles)
     if (!allowed.includes(view)) {
       toast.error("Acceso denegado", {
         description: "No tiene permisos para acceder a esta seccion",
@@ -211,8 +268,9 @@ export default function Page() {
   }
 
   const accessRole = resolveAccessRole(currentUser.rol)
-  const isAdmin = accessRole === "administrador"
-  const isReadOnly = accessRole === "agricultor"
+  const allowedViews = getAllowedViewsForRole(currentUser.rol, roles)
+  const isAdmin = allowedViews.includes("usuarios") || allowedViews.includes("roles") || allowedViews.includes("configuracion")
+  const isReadOnly = !allowedViews.some((view) => ["ventas", "costos", "aplicaciones", "usuarios", "roles", "configuracion", "sensores", "zonas", "siembra", "cosechas", "inventario", "preparacion-fertilizante"].includes(view))
   const ghList = greenhouses || []
   const mqttConnected = mqttStatus?.connected === true
   const mqttConnecting = mqttStatus?.connecting === true
@@ -235,6 +293,10 @@ function renderView() {
         return <ZonesView selectedGreenhouse={selectedGreenhouse} userRole={accessRole} />
       case "cultivos":
         return <CropsView selectedGreenhouse={selectedGreenhouse} userRole={accessRole} />
+      case "siembra":
+        return <PlantingView selectedGreenhouse={selectedGreenhouse} userRole={accessRole} />
+      case "preparacion-fertilizante":
+        return <FertilizerPreparationView selectedGreenhouse={selectedGreenhouse} userRole={accessRole} />
       case "cosechas":
         return <HarvestsView selectedGreenhouse={selectedGreenhouse} userRole={accessRole} />
       case "ventas":
@@ -260,7 +322,7 @@ function renderView() {
       case "reportes":
         return <ReportsView userRole={accessRole} selectedGreenhouse={selectedGreenhouse} />
       case "personal":
-        if (!isAdmin) {
+        if (!allowedViews.includes("personal")) {
           return (
             <div className="flex flex-col items-center justify-center gap-4 py-20">
               <ShieldAlert className="h-12 w-12 text-destructive" />
@@ -271,7 +333,7 @@ function renderView() {
         }
         return <PersonalView />
       case "usuarios":
-        if (!isAdmin) {
+        if (!allowedViews.includes("usuarios")) {
           return (
             <div className="flex flex-col items-center justify-center gap-4 py-20">
               <ShieldAlert className="h-12 w-12 text-destructive" />
@@ -282,7 +344,7 @@ function renderView() {
         }
         return <UsersView />
       case "roles":
-        if (!isAdmin) {
+        if (!allowedViews.includes("roles")) {
           return (
             <div className="flex flex-col items-center justify-center gap-4 py-20">
               <ShieldAlert className="h-12 w-12 text-destructive" />
@@ -293,7 +355,7 @@ function renderView() {
         }
         return <RolesView />
       case "empresas":
-        if (!isAdmin) {
+        if (!allowedViews.includes("empresas")) {
           return (
             <div className="flex flex-col items-center justify-center gap-4 py-20">
               <ShieldAlert className="h-12 w-12 text-destructive" />
@@ -304,7 +366,7 @@ function renderView() {
         }
         return <EnterprisesView />
       case "configuracion":
-        if (!isAdmin) {
+        if (!allowedViews.includes("configuracion")) {
           return (
             <div className="flex flex-col items-center justify-center gap-4 py-20">
               <ShieldAlert className="h-12 w-12 text-destructive" />
@@ -330,6 +392,7 @@ function renderView() {
         currentUser={currentUser}
         empresaNombre={currentEmpresa?.nombre}
         empresaRNC={currentEmpresa?.rnc}
+        allowedViews={allowedViews}
       />
        <SidebarInset>
           <header className="flex h-12 items-center gap-4 border-b px-4">

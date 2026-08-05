@@ -13,14 +13,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { Building2, Leaf, Eye, EyeOff, Loader2, Shield, Wrench, Sprout } from "lucide-react"
+import { Leaf, Eye, EyeOff, Loader2, Shield, Wrench, Sprout } from "lucide-react"
 import type { User } from "@/lib/greensense-data"
 import { api } from "@/lib/api-client"
 
 const quickAccess = [
-  { empresaCodigo: "EMP-0001", email: "carlos@greensense.io", password: "admin123", nombre: "Carlos Martinez", rol: "administrador" as const },
-  { empresaCodigo: "EMP-0001", email: "maria@greensense.io", password: "tecnico123", nombre: "Maria Lopez", rol: "tecnico" as const },
-  { empresaCodigo: "EMP-0001", email: "juan@greensense.io", password: "agri123", nombre: "Juan Perez", rol: "agricultor" as const },
+  { email: "carlos@greensense.io", password: "admin123", nombre: "Carlos Martinez", rol: "administrador" as const },
+  { email: "maria@greensense.io", password: "tecnico123", nombre: "Maria Lopez", rol: "tecnico" as const },
+  { email: "juan@greensense.io", password: "agri123", nombre: "Juan Perez", rol: "agricultor" as const },
 ]
 
 interface LoginViewProps {
@@ -40,7 +40,6 @@ interface SuperEmpresa {
 export function LoginView({ onLogin, initialView = "login" }: LoginViewProps) {
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
-  const [empresaCodigo, setEmpresaCodigo] = useState("")
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [error, setError] = useState("")
@@ -70,13 +69,13 @@ export function LoginView({ onLogin, initialView = "login" }: LoginViewProps) {
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault()
     setError("")
-    if (!empresaCodigo || !email || !password) {
+    if (!email || !password) {
       setError("Complete todos los campos")
       return
     }
     setLoading(true)
     try {
-      const res = await api.login(email, password, empresaCodigo)
+      const res = await api.login(email, password)
       const msg = res.message || ""
       onLogin(res.user as unknown as User, msg)
     } catch (err: unknown) {
@@ -86,13 +85,12 @@ export function LoginView({ onLogin, initialView = "login" }: LoginViewProps) {
   }
 
   async function handleQuickLogin(cred: typeof quickAccess[number]) {
-    setEmpresaCodigo(cred.empresaCodigo)
     setEmail(cred.email)
     setPassword(cred.password)
     setLoading(true)
     setError("")
     try {
-      const res = await api.login(cred.email, cred.password, cred.empresaCodigo)
+      const res = await api.login(cred.email, cred.password)
       onLogin(res.user as unknown as User, "")
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Error al iniciar sesion. Ejecute npm run db:seed primero.")
@@ -219,7 +217,6 @@ export function LoginView({ onLogin, initialView = "login" }: LoginViewProps) {
       const code = String(res.empresa?.codigo_empresa || res.empresa?.codigo || "")
       setCompanyCreated(code)
       await refreshSuperCompanies()
-      setEmpresaCodigo(code)
       setEmail(companyForm.userEmail)
       setPassword("")
       setCompanyForm({
@@ -264,26 +261,11 @@ export function LoginView({ onLogin, initialView = "login" }: LoginViewProps) {
             <CardHeader className="pb-4">
               <h2 className="text-lg font-semibold text-card-foreground">Acceso de Usuarios</h2>
               <p className="text-sm text-muted-foreground">
-                Ingrese el codigo de empresa y sus credenciales
+                Ingrese sus credenciales
               </p>
             </CardHeader>
             <CardContent>
               <form onSubmit={handleLogin} className="flex flex-col gap-4">
-                <div className="flex flex-col gap-2">
-                  <Label htmlFor="empresaCodigo">Codigo de Empresa</Label>
-                  <div className="relative">
-                    <Input
-                      id="empresaCodigo"
-                      type="text"
-                      placeholder="EMP-0001"
-                      value={empresaCodigo}
-                      onChange={(e) => setEmpresaCodigo(e.target.value.toUpperCase())}
-                      autoComplete="organization"
-                      className="pl-10"
-                    />
-                    <Building2 className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                  </div>
-                </div>
                 <div className="flex flex-col gap-2">
                   <Label htmlFor="email">Correo Electronico</Label>
                   <Input

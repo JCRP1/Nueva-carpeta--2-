@@ -216,12 +216,20 @@ export async function GET(req: Request) {
            z.id_zona AS id,
            z.nombre,
            z.tipo_cultivo AS cultivoActual,
+           c.id_cultivo AS idCultivo,
            i.nombre AS invernaderoNombre,
            ISNULL(z.area_m2, 0) AS areaM2,
            CONVERT(char(10), z.fecha_siembra, 23) AS fechaSiembra,
            CONVERT(char(10), z.fecha_cosecha_estimada, 23) AS fechaCosechaEstimada
          FROM ZonasRiego z
          INNER JOIN Invernaderos i ON i.id_invernadero = z.id_invernadero
+         OUTER APPLY (
+           SELECT TOP 1 crop.id_cultivo
+           FROM Cultivos crop
+           WHERE crop.id_invernadero = z.id_invernadero
+             AND LTRIM(RTRIM(LOWER(crop.nombre))) = LTRIM(RTRIM(LOWER(z.tipo_cultivo)))
+           ORDER BY crop.id_cultivo DESC
+         ) c
          ${where}
          ORDER BY z.nombre ASC`,
         params
@@ -235,6 +243,7 @@ export async function GET(req: Request) {
           id: String(zone.id),
           nombre: String(zone.nombre || ""),
           cultivoActual: String(zone.cultivoActual || ""),
+          idCultivo: zone.idCultivo != null ? String(zone.idCultivo) : "",
           invernaderoNombre: String(zone.invernaderoNombre || ""),
           areaM2,
           rendimientoIdealM2,

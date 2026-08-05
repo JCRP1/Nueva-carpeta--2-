@@ -18,7 +18,7 @@ export const api = {
   login: (email: string, password: string, empresaCodigo?: string) =>
     request<{ user: Record<string, unknown>; empresa?: Record<string, unknown>; message?: string }>("/auth/login", {
       method: "POST",
-      body: JSON.stringify({ email, password, empresaCodigo }),
+      body: JSON.stringify({ email, password, ...(empresaCodigo ? { empresaCodigo } : {}) }),
     }),
 
   createPublicCompany: (data: Record<string, unknown>) =>

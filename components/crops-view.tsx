@@ -40,7 +40,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { api, fetcher } from "@/lib/api-client"
-import type { Cultivo, Invernadero, UserRole } from "@/lib/greensense-data"
+import type { Cultivo, UserRole } from "@/lib/greensense-data"
 import { toast } from "sonner"
 import {
   Tooltip,
@@ -66,11 +66,18 @@ interface CultivoDetalle {
 
 interface PerfilAgronomicoForm {
   aguaAproximada: string
-  fertilizantes: string
+  fertilizantes: FertilizanteForm[]
   abonos: string
   rendimientoPorMata: string
   plagas: string
   mesesRecomendados: string
+}
+
+interface FertilizanteForm {
+  id: string
+  nombre: string
+  dosis: string
+  unidad: string
 }
 
 type CultivoRD = ReturnType<typeof getAllCultivos>[number]
@@ -79,14 +86,25 @@ type CultivoConPerfil = Cultivo & {
   perfilAgronomico?: Partial<Record<keyof PerfilAgronomicoForm, unknown>>
 }
 
+let fertilizerRowId = 0
+
 function emptyPerfilAgronomico(): PerfilAgronomicoForm {
   return {
     aguaAproximada: "",
-    fertilizantes: "",
+    fertilizantes: [createEmptyFertilizante()],
     abonos: "",
     rendimientoPorMata: "",
     plagas: "",
     mesesRecomendados: "",
+  }
+}
+
+function createEmptyFertilizante(): FertilizanteForm {
+  return {
+    id: `fert-${fertilizerRowId++}`,
+    nombre: "",
+    dosis: "",
+    unidad: "g/1000 L",
   }
 }
 
@@ -95,13 +113,59 @@ function valueToText(value: unknown): string {
   return String(value || "")
 }
 
+function valueToFertilizantes(value: unknown): FertilizanteForm[] {
+  let source = value
+
+  if (typeof value === "string") {
+    const trimmed = value.trim()
+    if (trimmed.startsWith("[") || trimmed.startsWith("{")) {
+      try {
+        source = JSON.parse(trimmed)
+      } catch {
+        source = value
+      }
+    }
+  }
+
+  const rows = Array.isArray(source)
+    ? source.map((item) => {
+        if (item && typeof item === "object") {
+          const row = item as Record<string, unknown>
+          return {
+            id: createEmptyFertilizante().id,
+            nombre: String(row.nombre || row.name || "").trim(),
+            dosis: row.dosis != null ? String(row.dosis) : "",
+            unidad: String(row.unidad || row.unit || "g/1000 L"),
+          }
+        }
+
+        return {
+          id: createEmptyFertilizante().id,
+          nombre: String(item || "").trim(),
+          dosis: "",
+          unidad: "g/1000 L",
+        }
+      })
+    : String(source || "")
+        .split(/[\n;]+/)
+        .map((line) => ({
+          id: createEmptyFertilizante().id,
+          nombre: line.trim(),
+          dosis: "",
+          unidad: "g/1000 L",
+        }))
+
+  const filtered = rows.filter((row) => row.nombre || row.dosis)
+  return filtered.length > 0 ? filtered : [createEmptyFertilizante()]
+}
+
 function getPerfilAgronomicoForm(nombre: string, fallback?: Partial<Record<keyof PerfilAgronomicoForm, unknown>>): PerfilAgronomicoForm {
   const perfil = getPerfilAgronomico(nombre)
   const base = emptyPerfilAgronomico()
 
   return {
     aguaAproximada: valueToText(fallback?.aguaAproximada ?? perfil?.aguaAproximada ?? base.aguaAproximada),
-    fertilizantes: valueToText(fallback?.fertilizantes ?? perfil?.fertilizantes ?? base.fertilizantes),
+    fertilizantes: valueToFertilizantes(fallback?.fertilizantes ?? perfil?.fertilizantes ?? base.fertilizantes),
     abonos: valueToText(fallback?.abonos ?? perfil?.abonos ?? base.abonos),
     rendimientoPorMata: valueToText(fallback?.rendimientoPorMata ?? perfil?.rendimientoPorMata ?? base.rendimientoPorMata),
     plagas: valueToText(fallback?.plagas ?? perfil?.plagas ?? base.plagas),
@@ -138,7 +202,6 @@ export function CropsView({ userRole, selectedGreenhouse }: CropsViewProps) {
     "/api/crops",
     fetcher
   )
-  const { data: greenhouses } = useSWR<Invernadero[]>("/api/greenhouses", fetcher)
   const [searchQuery, setSearchQuery] = useState("")
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingCrop, setEditingCrop] = useState<Cultivo | null>(null)
@@ -181,7 +244,7 @@ export function CropsView({ userRole, selectedGreenhouse }: CropsViewProps) {
     return () => document.removeEventListener("mousedown", handleClickOutside)
   }, [])
 
-  const cropTableColumnCount = isReadOnly ? 4 : 5
+  const cropTableColumnCount = isReadOnly ? 3 : 4
 
   const filteredCrops = (crops || []).filter((crop) =>
     crop.nombre.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -243,24 +306,68 @@ export function CropsView({ userRole, selectedGreenhouse }: CropsViewProps) {
     setShowSuggestions(false)
   }
 
+  function updateFertilizante(index: number, field: keyof Omit<FertilizanteForm, "id">, value: string) {
+    const fertilizantes = formData.perfilAgronomico.fertilizantes.map((row, rowIndex) =>
+      rowIndex === index ? { ...row, [field]: value } : row
+    )
+    setFormData({
+      ...formData,
+      perfilAgronomico: { ...formData.perfilAgronomico, fertilizantes },
+    })
+  }
+
+  function addFertilizante() {
+    setFormData({
+      ...formData,
+      perfilAgronomico: {
+        ...formData.perfilAgronomico,
+        fertilizantes: [...formData.perfilAgronomico.fertilizantes, createEmptyFertilizante()],
+      },
+    })
+  }
+
+  function removeFertilizante(index: number) {
+    const fertilizantes = formData.perfilAgronomico.fertilizantes.filter((_, rowIndex) => rowIndex !== index)
+    setFormData({
+      ...formData,
+      perfilAgronomico: {
+        ...formData.perfilAgronomico,
+        fertilizantes: fertilizantes.length > 0 ? fertilizantes : [createEmptyFertilizante()],
+      },
+    })
+  }
+
   async function handleSave() {
-    if (!formData.nombre || !formData.invernaderoId) {
+    const invernaderoId = formData.invernaderoId || selectedGreenhouse
+
+    if (!formData.nombre || !invernaderoId) {
       toast.error("Error", { description: "Por favor complete los campos requeridos" })
       return
     }
 
     setSaving(true)
     try {
+      const perfilAgronomico = {
+        ...formData.perfilAgronomico,
+        fertilizantes: formData.perfilAgronomico.fertilizantes
+          .map((fertilizante) => ({
+            nombre: fertilizante.nombre.trim(),
+            dosis: fertilizante.dosis ? Number(fertilizante.dosis) : null,
+            unidad: fertilizante.unidad || "g/1000 L",
+          }))
+          .filter((fertilizante) => fertilizante.nombre || fertilizante.dosis != null),
+      }
+
       const payload = {
         nombre: formData.nombre,
         variedad: formData.variedad,
-        invernaderoId: formData.invernaderoId,
+        invernaderoId,
         umbral_humedad: formData.detalle.umbral_humedad ? Number(formData.detalle.umbral_humedad) : null,
         umbral_temperatura: formData.detalle.umbral_temperatura ? Number(formData.detalle.umbral_temperatura) : null,
         umbral_ph: formData.detalle.umbral_ph ? Number(formData.detalle.umbral_ph) : null,
         umbral_ec: formData.detalle.umbral_ec ? Number(formData.detalle.umbral_ec) : null,
         umbral_tds: formData.detalle.umbral_tds ? Number(formData.detalle.umbral_tds) : null,
-        perfilAgronomico: formData.perfilAgronomico,
+        perfilAgronomico,
       }
 
       if (editingCrop) {
@@ -288,12 +395,6 @@ export function CropsView({ userRole, selectedGreenhouse }: CropsViewProps) {
     } catch {
       toast.error("Error", { description: "No se pudo eliminar el cultivo" })
     }
-  }
-
-  function getGreenhouseName(invId: string | number) {
-    const id = String(invId)
-    const inv = greenhouses?.find((i) => String(i.id) === id)
-    return inv?.nombre || `Invernadero ${id}`
   }
 
   if (isLoading) {
@@ -383,25 +484,6 @@ export function CropsView({ userRole, selectedGreenhouse }: CropsViewProps) {
                      />
                    </div>
                  </div>
-                <div className="grid grid-cols-1 gap-4">
-                  <div className="grid gap-2">
-                    <Label htmlFor="invernadero">Invernadero *</Label>
-                    <select
-                      id="invernadero"
-                      aria-label="Invernadero"
-                      value={formData.invernaderoId}
-                      onChange={(e) => setFormData({ ...formData, invernaderoId: e.target.value })}
-                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background"
-                    >
-                      <option value="">Seleccionar invernadero</option>
-                      {(greenhouses || []).map((inv) => (
-                        <option key={inv.id} value={inv.id}>
-                          {inv.nombre}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
                 <div className="border-t pt-4 mt-2">
                   <h3 className="mb-3 text-sm font-medium">Perfil agronomico</h3>
                   <div className="grid grid-cols-2 gap-4">
@@ -431,18 +513,64 @@ export function CropsView({ userRole, selectedGreenhouse }: CropsViewProps) {
                     </div>
                   </div>
                   <div className="mt-4 grid grid-cols-2 gap-4">
-                    <div className="grid gap-2">
-                      <Label htmlFor="fertilizantes">Fertilizantes</Label>
-                      <Textarea
-                        id="fertilizantes"
-                        value={formData.perfilAgronomico.fertilizantes}
-                        onChange={(e) => setFormData({
-                          ...formData,
-                          perfilAgronomico: { ...formData.perfilAgronomico, fertilizantes: e.target.value },
-                        })}
-                        placeholder="Uno por linea"
-                        rows={3}
-                      />
+                    <div className="col-span-2 grid gap-2">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <Label>Fertilizantes</Label>
+                          <p className="text-xs text-muted-foreground">
+                            Dosis por cada 1000 litros de agua, igual que la referencia de TDS.
+                          </p>
+                        </div>
+                        <Button type="button" variant="outline" size="sm" onClick={addFertilizante}>
+                          <Plus className="mr-2 h-4 w-4" />
+                          Agregar
+                        </Button>
+                      </div>
+                      <div className="rounded-md border">
+                        <div className="grid grid-cols-[minmax(0,1fr)_140px_120px_40px] gap-2 border-b px-3 py-2 text-xs font-medium text-muted-foreground">
+                          <span>Fertilizante</span>
+                          <span>Dosis</span>
+                          <span>Unidad</span>
+                          <span className="sr-only">Acciones</span>
+                        </div>
+                        <div className="grid gap-2 p-3">
+                          {formData.perfilAgronomico.fertilizantes.map((fertilizante, index) => (
+                            <div
+                              key={fertilizante.id}
+                              className="grid grid-cols-[minmax(0,1fr)_140px_120px_40px] items-center gap-2"
+                            >
+                              <Input
+                                value={fertilizante.nombre}
+                                onChange={(e) => updateFertilizante(index, "nombre", e.target.value)}
+                                placeholder="Ej: NPK, potasio, calcio"
+                              />
+                              <Input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={fertilizante.dosis}
+                                onChange={(e) => updateFertilizante(index, "dosis", e.target.value)}
+                                placeholder="0"
+                              />
+                              <Input
+                                value={fertilizante.unidad}
+                                onChange={(e) => updateFertilizante(index, "unidad", e.target.value)}
+                                placeholder="g/1000 L"
+                              />
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="h-9 w-9 text-muted-foreground"
+                                onClick={() => removeFertilizante(index)}
+                                aria-label="Quitar fertilizante"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
                     </div>
                     <div className="grid gap-2">
                       <Label htmlFor="abonos">Abonos</Label>
@@ -606,7 +734,6 @@ export function CropsView({ userRole, selectedGreenhouse }: CropsViewProps) {
               <TableRow>
                 <TableHead>Nombre</TableHead>
                 <TableHead>Variedad</TableHead>
-                <TableHead>Invernadero</TableHead>
                 <TableHead>Umbrales</TableHead>
                 {!isReadOnly && <TableHead className="text-right">Acciones</TableHead>}
               </TableRow>
@@ -628,7 +755,6 @@ export function CropsView({ userRole, selectedGreenhouse }: CropsViewProps) {
                       </div>
                     </TableCell>
                     <TableCell>{crop.variedad || "-"}</TableCell>
-                    <TableCell>{getGreenhouseName(crop.invernaderoId)}</TableCell>
                     <TableCell>
                       <TooltipProvider>
                         <Tooltip>

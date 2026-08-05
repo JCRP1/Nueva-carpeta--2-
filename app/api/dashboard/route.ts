@@ -8,10 +8,32 @@ export async function GET(req: Request) {
     const { searchParams } = new URL(req.url)
     const gh = searchParams.get("greenhouse")
 
-    // If greenhouse is specified, use it; otherwise get the first one
+    // If greenhouse is specified, verify it belongs to the current company.
     let invernaderoId: number
     if (gh) {
-      invernaderoId = Number(gh)
+      const requestedGreenhouseRows = (await query(
+        `SELECT TOP 1 id_invernadero
+         FROM Invernaderos
+         WHERE id_invernadero = @idInvernadero
+           AND id_empresa = @empresaId`,
+        { idInvernadero: Number(gh), empresaId: session.empresaId }
+      )) as Record<string, unknown>[]
+
+      if (!requestedGreenhouseRows[0]) {
+        return NextResponse.json(
+          {
+            sensors: [],
+            zones: [],
+            activeAlerts: 0,
+            activeIrrigation: 0,
+            recentEvents: [],
+            consumoAgua: [],
+            greenhouse: null,
+          }
+        )
+      }
+
+      invernaderoId = Number(requestedGreenhouseRows[0].id_invernadero)
     } else {
       const firstGh = (await query(
         "SELECT TOP 1 id_invernadero FROM Invernaderos WHERE id_empresa = @empresaId",
@@ -33,8 +55,10 @@ export async function GET(req: Request) {
         (SELECT TOP 1 valor FROM LecturasSensores WHERE id_sensor = s.id_sensor ORDER BY fecha_hora DESC) AS ultimaLectura,
         (SELECT TOP 1 fecha_hora FROM LecturasSensores WHERE id_sensor = s.id_sensor ORDER BY fecha_hora DESC) AS ultimaActualizacion
       FROM Sensores s
-      WHERE s.id_invernadero = @invId`,
-      { invId: invernaderoId }
+      INNER JOIN Invernaderos i ON i.id_invernadero = s.id_invernadero
+      WHERE s.id_invernadero = @invId
+        AND i.id_empresa = @empresaId`,
+      { invId: invernaderoId, empresaId: session.empresaId }
     )) as Record<string, unknown>[]
 
     const sensors = sensorsRows.map((s) => ({
@@ -55,7 +79,7 @@ export async function GET(req: Request) {
     const zonesRows = (await query(
       `SELECT id_zona AS id, nombre, estado, tipo_cultivo AS cultivoActual, umbral_humedad AS umbralHumedad
        FROM ZonasRiego WHERE id_invernadero = @invId`,
-      { invId: invernaderoId }
+      { invId: invernaderoId, empresaId: session.empresaId }
     )) as Record<string, unknown>[]
 
     const zones = zonesRows.map((z) => ({
@@ -71,8 +95,14 @@ export async function GET(req: Request) {
     const alertCountRows = (await query(
       `SELECT COUNT(*) AS cnt FROM Alertas
        WHERE estado != 'Resuelta'
-       AND id_sensor IN (SELECT id_sensor FROM Sensores WHERE id_invernadero = @invId)`,
-      { invId: invernaderoId }
+       AND id_sensor IN (
+         SELECT s.id_sensor
+         FROM Sensores s
+         INNER JOIN Invernaderos i ON i.id_invernadero = s.id_invernadero
+         WHERE s.id_invernadero = @invId
+           AND i.id_empresa = @empresaId
+       )`,
+      { invId: invernaderoId, empresaId: session.empresaId }
     )) as Record<string, unknown>[]
     const harvestReadyCountRows = (await query(
       `SELECT COUNT(*) AS cnt
@@ -80,7 +110,7 @@ export async function GET(req: Request) {
        WHERE id_invernadero = @invId
          AND fecha_cosecha_estimada IS NOT NULL
          AND CONVERT(date, fecha_cosecha_estimada) <= CONVERT(date, GETDATE())`,
-      { invId: invernaderoId }
+      { invId: invernaderoId, empresaId: session.empresaId }
     )) as Record<string, unknown>[]
     const activeAlerts = (Number(alertCountRows[0]?.cnt) || 0) + (Number(harvestReadyCountRows[0]?.cnt) || 0)
 
@@ -97,9 +127,11 @@ export async function GET(req: Request) {
         CASE WHEN r.fecha_fin IS NULL THEN 'en_curso' ELSE 'completado' END AS estado
       FROM Riegos r
       JOIN ZonasRiego z ON z.id_zona = r.id_zona
+      JOIN Invernaderos i ON i.id_invernadero = z.id_invernadero
       WHERE z.id_invernadero = @invId
+        AND i.id_empresa = @empresaId
       ORDER BY r.fecha_inicio DESC`,
-      { invId: invernaderoId }
+      { invId: invernaderoId, empresaId: session.empresaId }
     )) as Record<string, unknown>[]
 
     const recentEvents = riegoRows.map((r) => ({
@@ -121,11 +153,13 @@ export async function GET(req: Request) {
         SUM(ISNULL(r.volumen_litros, 0)) AS litros
       FROM Riegos r
       JOIN ZonasRiego z ON z.id_zona = r.id_zona
+      JOIN Invernaderos i ON i.id_invernadero = z.id_invernadero
       WHERE z.id_invernadero = @invId
+        AND i.id_empresa = @empresaId
         AND r.fecha_inicio >= DATEADD(DAY, -7, GETDATE())
       GROUP BY DATENAME(WEEKDAY, r.fecha_inicio), DATEPART(WEEKDAY, r.fecha_inicio)
       ORDER BY DATEPART(WEEKDAY, r.fecha_inicio)`,
-      { invId: invernaderoId }
+      { invId: invernaderoId, empresaId: session.empresaId }
     )) as Record<string, unknown>[]
 
     const dayMap: Record<string, string> = {
@@ -139,8 +173,11 @@ export async function GET(req: Request) {
 
     // Greenhouse info
     const ghRows = (await query(
-      "SELECT nombre, ubicacion, superficie_m2 FROM Invernaderos WHERE id_invernadero = @invId",
-      { invId: invernaderoId }
+      `SELECT nombre, ubicacion, superficie_m2
+       FROM Invernaderos
+       WHERE id_invernadero = @invId
+         AND id_empresa = @empresaId`,
+      { invId: invernaderoId, empresaId: session.empresaId }
     )) as Record<string, unknown>[]
     const greenhouse = ghRows[0]
       ? {

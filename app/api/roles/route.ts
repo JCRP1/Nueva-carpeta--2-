@@ -1,21 +1,25 @@
 import { NextResponse } from "next/server"
 import { query } from "@/lib/db"
-import { requireAdmin } from "@/lib/auth"
+import { requirePermission } from "@/lib/auth"
 
 export async function GET() {
   try {
+    await requirePermission("roles")
     const roles = await query(`
       SELECT 
         RolID, 
         Nombre, 
         COALESCE(Descripcion, '') AS Descripcion, 
-        CAST(Activo AS INT) AS Activo
+        CAST(Activo AS INT) AS Activo,
+        COALESCE(Permisos, '[]') AS Permisos
       FROM Roles
       ORDER BY Nombre
     `)
 
     return NextResponse.json(roles)
-  } catch (error) {
+  } catch (error: any) {
+    if (error.message === "FORBIDDEN") return NextResponse.json({ error: "Sin permiso" }, { status: 403 })
+    if (error.message === "UNAUTHORIZED") return NextResponse.json({ error: "No autorizado" }, { status: 401 })
     console.error(error)
     return NextResponse.json({ error: "Error al obtener roles" }, { status: 500 })
   }
@@ -23,7 +27,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    await requireAdmin()
+    await requirePermission("roles")
     const data = await request.json()
 
     if (!data.nombre) {
@@ -48,7 +52,7 @@ export async function POST(request: Request) {
     `, {
       nombre,
       descripcion: data.descripcion || "",
-      permisos: data.permisos || "[]"
+      permisos: JSON.stringify(Array.isArray(data.permisos) ? data.permisos : [])
     })
 
     const newRole = result[0]

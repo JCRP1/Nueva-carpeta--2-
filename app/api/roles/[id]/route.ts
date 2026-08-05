@@ -1,12 +1,13 @@
 import { NextResponse } from "next/server"
 import { query } from "@/lib/db"
-import { requireAdmin } from "@/lib/auth"
+import { requirePermission } from "@/lib/auth"
 
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    await requirePermission("roles")
     const { id } = await params
     const rolId = parseInt(id)
 
@@ -30,7 +31,9 @@ export async function GET(
     }
 
     return NextResponse.json(roles[0])
-  } catch (error) {
+  } catch (error: any) {
+    if (error.message === "FORBIDDEN") return NextResponse.json({ error: "Sin permiso" }, { status: 403 })
+    if (error.message === "UNAUTHORIZED") return NextResponse.json({ error: "No autorizado" }, { status: 401 })
     console.error(error)
     return NextResponse.json({ error: "Error al obtener rol" }, { status: 500 })
   }
@@ -41,7 +44,7 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await requireAdmin()
+    await requirePermission("roles")
     const { id } = await params
     const rolId = parseInt(id)
     const data = await request.json()
@@ -67,11 +70,13 @@ export async function PATCH(
       UPDATE Roles 
       SET Nombre = @nombre, 
           Descripcion = @descripcion, 
+          Permisos = @permisos,
           Activo = @activo
       WHERE RolID = @id
     `, {
       nombre: data.nombre,
       descripcion: data.descripcion || "",
+      permisos: JSON.stringify(Array.isArray(data.permisos) ? data.permisos : []),
       activo: data.activo !== undefined ? (data.activo ? 1 : 0) : 1,
       id: rolId
     })
@@ -94,7 +99,7 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await requireAdmin()
+    await requirePermission("roles")
     const { id } = await params
     const rolId = parseInt(id)
 

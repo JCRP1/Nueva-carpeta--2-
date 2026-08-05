@@ -12,5 +12,8 @@ node_modules/
 .env*.local
 .DS_Store
 data/
+*.log
+cookies.txt
+cloudflared-*.exe
 
 yarn.lock

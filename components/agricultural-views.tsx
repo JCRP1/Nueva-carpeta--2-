@@ -81,6 +81,7 @@ type ZoneOption = {
   id: string
   nombre: string
   cultivoActual: string
+  idCultivo?: string
   invernaderoNombre: string
 }
 
@@ -164,6 +165,7 @@ type InventoryRow = {
   id: string
   nombre: string
   tipo: string
+  categoria: string
   composicion: string
   fabricante: string
   ph: number | null
@@ -175,6 +177,8 @@ type InventoryRow = {
   riesgos?: string
   cantidadDisponible?: number | null
   unidadMedida?: string
+  ubicacion?: string
+  notas?: string
 }
 
 type UserOption = {
@@ -228,6 +232,60 @@ function EmptyRows({ colSpan, label }: { colSpan: number; label: string }) {
       </TableCell>
     </TableRow>
   )
+}
+
+function isPlantApplicationProduct(product: InventoryRow) {
+  const text = [
+    product.tipo,
+    product.categoria,
+    product.formaAplicacion,
+    product.composicion,
+    product.nombre,
+  ].join(" ").toLowerCase()
+  const excluded = [
+    "herramienta",
+    "equipo",
+    "sensor",
+    "riego",
+    "material",
+    "accesorio",
+    "envase",
+    "guante",
+    "cinta",
+    "filtro",
+    "esp32",
+    "sustrato",
+  ]
+  const included = [
+    "fertilizante",
+    "abono",
+    "nutriente",
+    "micronutriente",
+    "insecticida",
+    "fungicida",
+    "acaricida",
+    "herbicida",
+    "plaguicida",
+    "pesticida",
+    "nematicida",
+    "bactericida",
+    "bioestimulante",
+    "enraizante",
+    "enmienda",
+    "acondicionador",
+    "compost",
+    "humus",
+    "materia organica",
+    "materia orgánica",
+    "desinfectante de suelo",
+    "tratamiento de suelo",
+    "suelo",
+    "regulador",
+    "foliar",
+    "micorriza",
+  ]
+
+  return included.some((word) => text.includes(word)) && !excluded.some((word) => text.includes(word))
 }
 
 function Loading() {
@@ -450,11 +508,24 @@ export function CostsView({ selectedGreenhouse }: ViewProps) {
   const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState<CostRow | null>(null)
   const [form, setForm] = useState({ idZona: "", idCultivo: "", concepto: "", monto: "", fecha: today(), descripcion: "" })
+  const selectedCostZone = useMemo(
+    () => (zones || []).find((zone) => zone.id === form.idZona),
+    [zones, form.idZona]
+  )
 
   function openCreate() {
     setEditing(null)
     setForm({ idZona: "", idCultivo: "", concepto: "", monto: "", fecha: today(), descripcion: "" })
     setOpen(true)
+  }
+
+  function selectCostZone(value: string) {
+    if (value === "none") {
+      setForm({ ...form, idZona: "", idCultivo: "" })
+      return
+    }
+    const zone = (zones || []).find((item) => item.id === value)
+    setForm({ ...form, idZona: value, idCultivo: zone?.idCultivo || "" })
   }
 
   function openEdit(row: CostRow) {
@@ -515,7 +586,7 @@ export function CostsView({ selectedGreenhouse }: ViewProps) {
                 <div className="grid grid-cols-2 gap-3">
                   <div className="grid gap-2">
                     <Label>Zona</Label>
-                    <Select value={form.idZona || "none"} onValueChange={(value) => setForm({ ...form, idZona: value === "none" ? "" : value })}>
+                    <Select value={form.idZona || "none"} onValueChange={selectCostZone}>
                       <SelectTrigger><SelectValue placeholder="Opcional" /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="none">Sin zona</SelectItem>
@@ -525,13 +596,22 @@ export function CostsView({ selectedGreenhouse }: ViewProps) {
                   </div>
                   <div className="grid gap-2">
                     <Label>Cultivo</Label>
-                    <Select value={form.idCultivo || "none"} onValueChange={(value) => setForm({ ...form, idCultivo: value === "none" ? "" : value })}>
-                      <SelectTrigger><SelectValue placeholder="Opcional" /></SelectTrigger>
+                    <Select
+                      value={form.idCultivo || "none"}
+                      onValueChange={(value) => setForm({ ...form, idCultivo: value === "none" ? "" : value })}
+                      disabled={Boolean(form.idZona)}
+                    >
+                      <SelectTrigger><SelectValue placeholder={selectedCostZone?.cultivoActual || "Opcional"} /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="none">Sin cultivo</SelectItem>
                         {(crops || []).map((crop) => <SelectItem key={crop.id} value={crop.id}>{crop.nombre}</SelectItem>)}
                       </SelectContent>
                     </Select>
+                    {selectedCostZone && (
+                      <p className="text-xs text-muted-foreground">
+                        Cultivo tomado de la zona: {selectedCostZone.cultivoActual || "Sin cultivo asignado"}
+                      </p>
+                    )}
                   </div>
                 </div>
                 <div className="grid gap-2"><Label>Concepto</Label><Input value={form.concepto} onChange={(e) => setForm({ ...form, concepto: e.target.value })} /></div>
@@ -762,11 +842,17 @@ export function AgronomicPlanView({ selectedGreenhouse }: ViewProps) {
 export function ApplicationsView({ selectedGreenhouse }: ViewProps) {
   const { data, isLoading, mutate } = useSWR<ApplicationRow[]>(scoped("/api/applications", selectedGreenhouse), fetcher)
   const { data: details } = useSWR<DetailOption[]>(scoped("/api/harvests?mode=details", selectedGreenhouse), fetcher)
+  const { data: zones } = useSWR<ZoneOption[]>(scoped("/api/harvests?mode=zones", selectedGreenhouse), fetcher)
   const { data: inventory, mutate: mutateInventory } = useSWR<InventoryRow[]>("/api/inventory", fetcher)
   const rows = data || []
+  const applicationProducts = useMemo(
+    () => (inventory || []).filter(isPlantApplicationProduct),
+    [inventory]
+  )
   const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState<ApplicationRow | null>(null)
   const [form, setForm] = useState({
+    idZona: "",
     idDetalle: "",
     tipoPlaga: "",
     idProducto: "",
@@ -780,13 +866,26 @@ export function ApplicationsView({ selectedGreenhouse }: ViewProps) {
     () => (inventory || []).find((product) => product.id === form.idProducto),
     [inventory, form.idProducto]
   )
+  const selectedZone = useMemo(
+    () => (zones || []).find((zone) => zone.id === form.idZona),
+    [zones, form.idZona]
+  )
+  const selectedZoneDetail = useMemo(
+    () => selectedZone
+      ? (details || []).find((detail) =>
+          detail.cultivoNombre === selectedZone.cultivoActual &&
+          detail.invernaderoNombre === selectedZone.invernaderoNombre
+        )
+      : null,
+    [details, selectedZone]
+  )
   const availableProductQuantity = selectedProduct
     ? Number(selectedProduct.cantidadDisponible || 0) + (editing?.idProducto === selectedProduct.id ? Number(editing.cantidad || 0) : 0)
     : 0
 
   function openCreate() {
     setEditing(null)
-    setForm({ idDetalle: "", tipoPlaga: "", idProducto: "", producto: "", dosis: "", cantidad: "", fecha: today(), notas: "" })
+    setForm({ idZona: "", idDetalle: "", tipoPlaga: "", idProducto: "", producto: "", dosis: "", cantidad: "", fecha: today(), notas: "" })
     setOpen(true)
   }
 
@@ -797,6 +896,7 @@ export function ApplicationsView({ selectedGreenhouse }: ViewProps) {
     }
     setEditing(row)
     setForm({
+      idZona: "",
       idDetalle: row.idDetalle,
       tipoPlaga: row.tipoPlaga || "",
       idProducto: row.idProducto || "",
@@ -807,6 +907,17 @@ export function ApplicationsView({ selectedGreenhouse }: ViewProps) {
       notas: row.notas || "",
     })
     setOpen(true)
+  }
+
+  function selectZone(value: string) {
+    const zone = (zones || []).find((item) => item.id === value)
+    const detail = zone
+      ? (details || []).find((item) =>
+          item.cultivoNombre === zone.cultivoActual &&
+          item.invernaderoNombre === zone.invernaderoNombre
+        )
+      : null
+    setForm({ ...form, idZona: value, idDetalle: detail?.id || "" })
   }
 
   async function save() {
@@ -863,13 +974,34 @@ export function ApplicationsView({ selectedGreenhouse }: ViewProps) {
               <DialogHeader><DialogTitle>{editing ? "Editar aplicacion" : "Registrar aplicacion"}</DialogTitle></DialogHeader>
               <div className="grid gap-4 py-3">
                 <div className="grid gap-2">
-                  <Label>Cultivo</Label>
-                  <Select value={form.idDetalle} onValueChange={(value) => setForm({ ...form, idDetalle: value })}>
-                    <SelectTrigger><SelectValue placeholder="Seleccionar cultivo" /></SelectTrigger>
+                  <Label>Zona de riego</Label>
+                  <Select value={form.idZona} onValueChange={selectZone}>
+                    <SelectTrigger><SelectValue placeholder="Seleccionar zona" /></SelectTrigger>
                     <SelectContent>
-                      {(details || []).map((detail) => <SelectItem key={detail.id} value={detail.id}>{detail.cultivoNombre} - {detail.invernaderoNombre}</SelectItem>)}
+                      {(zones || []).map((zone) => (
+                        <SelectItem key={zone.id} value={zone.id}>
+                          {zone.nombre} - {zone.cultivoActual || "Sin cultivo"}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
+                  {selectedZone && (
+                    <div className="rounded-md border bg-muted/30 p-3 text-sm">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-muted-foreground">Cultivo de la zona</span>
+                        <span className="font-medium">{selectedZone.cultivoActual || "Sin cultivo"}</span>
+                      </div>
+                      <div className="mt-1 flex items-center justify-between gap-3">
+                        <span className="text-muted-foreground">Invernadero</span>
+                        <span>{selectedZone.invernaderoNombre || "-"}</span>
+                      </div>
+                      {!selectedZoneDetail && (
+                        <p className="mt-2 text-xs text-muted-foreground">
+                          Al guardar se creara el detalle del cultivo si aun no existe.
+                        </p>
+                      )}
+                    </div>
+                  )}
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="grid gap-2"><Label>Tipo plaga/enfermedad</Label><Input value={form.tipoPlaga} onChange={(e) => setForm({ ...form, tipoPlaga: e.target.value })} /></div>
@@ -881,13 +1013,13 @@ export function ApplicationsView({ selectedGreenhouse }: ViewProps) {
                     <Select
                       value={form.idProducto}
                       onValueChange={(value) => {
-                        const product = (inventory || []).find((item) => item.id === value)
+                        const product = applicationProducts.find((item) => item.id === value)
                         setForm({ ...form, idProducto: value, producto: product?.nombre || "" })
                       }}
                     >
                       <SelectTrigger><SelectValue placeholder="Seleccionar producto" /></SelectTrigger>
                       <SelectContent>
-                        {(inventory || []).map((product) => (
+                        {applicationProducts.map((product) => (
                           <SelectItem key={product.id} value={product.id}>
                             {product.nombre}
                           </SelectItem>
@@ -1101,6 +1233,7 @@ export function InventoryView({}: ViewProps) {
   const [form, setForm] = useState({
     nombre: "",
     tipo: "",
+    categoria: "",
     composicion: "",
     fabricante: "",
     ph: "",
@@ -1112,11 +1245,13 @@ export function InventoryView({}: ViewProps) {
     riesgos: "",
     cantidadDisponible: "",
     unidadMedida: "",
+    ubicacion: "",
+    notas: "",
   })
 
   function openCreate() {
     setEditing(null)
-    setForm({ nombre: "", tipo: "", composicion: "", fabricante: "", ph: "", nitrogeno: "", fosforo: "", potasio: "", micronutrientes: "", formaAplicacion: "", riesgos: "", cantidadDisponible: "", unidadMedida: "" })
+    setForm({ nombre: "", tipo: "", categoria: "", composicion: "", fabricante: "", ph: "", nitrogeno: "", fosforo: "", potasio: "", micronutrientes: "", formaAplicacion: "", riesgos: "", cantidadDisponible: "", unidadMedida: "", ubicacion: "", notas: "" })
     setOpen(true)
   }
 
@@ -1125,6 +1260,7 @@ export function InventoryView({}: ViewProps) {
     setForm({
       nombre: row.nombre,
       tipo: row.tipo,
+      categoria: row.categoria || "",
       composicion: row.composicion || "",
       fabricante: row.fabricante || "",
       ph: row.ph != null ? String(row.ph) : "",
@@ -1136,6 +1272,8 @@ export function InventoryView({}: ViewProps) {
       riesgos: row.riesgos || "",
       cantidadDisponible: row.cantidadDisponible != null ? String(row.cantidadDisponible) : "",
       unidadMedida: row.unidadMedida || "",
+      ubicacion: row.ubicacion || "",
+      notas: row.notas || "",
     })
     setOpen(true)
   }
@@ -1169,7 +1307,7 @@ export function InventoryView({}: ViewProps) {
         <div className="flex items-center justify-between gap-3">
           <div>
             <h2 className="text-lg font-semibold">Inventario Agricola</h2>
-            <p className="text-sm text-muted-foreground">Fertilizantes y productos disponibles en el sistema</p>
+            <p className="text-sm text-muted-foreground">Control general de productos, insumos y materiales disponibles</p>
           </div>
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
@@ -1180,11 +1318,15 @@ export function InventoryView({}: ViewProps) {
               <div className="grid gap-4 py-3">
                 <div className="grid grid-cols-2 gap-3">
                   <div className="grid gap-2"><Label>Nombre</Label><Input value={form.nombre} onChange={(e) => setForm({ ...form, nombre: e.target.value })} /></div>
-                  <div className="grid gap-2"><Label>Tipo</Label><Input value={form.tipo} onChange={(e) => setForm({ ...form, tipo: e.target.value })} /></div>
+                  <div className="grid gap-2"><Label>Tipo</Label><Input value={form.tipo} placeholder="Semilla, herramienta, fertilizante..." onChange={(e) => setForm({ ...form, tipo: e.target.value })} /></div>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
-                  <div className="grid gap-2"><Label>Composicion</Label><Input value={form.composicion} onChange={(e) => setForm({ ...form, composicion: e.target.value })} /></div>
-                  <div className="grid gap-2"><Label>Fabricante</Label><Input value={form.fabricante} onChange={(e) => setForm({ ...form, fabricante: e.target.value })} /></div>
+                  <div className="grid gap-2"><Label>Categoria</Label><Input value={form.categoria} placeholder="Insumo, material, equipo..." onChange={(e) => setForm({ ...form, categoria: e.target.value })} /></div>
+                  <div className="grid gap-2"><Label>Fabricante / marca</Label><Input value={form.fabricante} onChange={(e) => setForm({ ...form, fabricante: e.target.value })} /></div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="grid gap-2"><Label>Descripcion / composicion</Label><Input value={form.composicion} onChange={(e) => setForm({ ...form, composicion: e.target.value })} /></div>
+                  <div className="grid gap-2"><Label>Ubicacion</Label><Input value={form.ubicacion} placeholder="Almacen, zona, estante..." onChange={(e) => setForm({ ...form, ubicacion: e.target.value })} /></div>
                 </div>
                 <div className="grid grid-cols-4 gap-3">
                   <div className="grid gap-2"><Label>pH</Label><Input type="number" step="0.1" value={form.ph} onChange={(e) => setForm({ ...form, ph: e.target.value })} /></div>
@@ -1199,6 +1341,7 @@ export function InventoryView({}: ViewProps) {
                   <div className="grid gap-2"><Label>Unidad</Label><Input value={form.unidadMedida} placeholder="kg, L, unidad..." onChange={(e) => setForm({ ...form, unidadMedida: e.target.value })} /></div>
                 </div>
                 <div className="grid gap-2"><Label>Riesgos</Label><Textarea value={form.riesgos} onChange={(e) => setForm({ ...form, riesgos: e.target.value })} /></div>
+                <div className="grid gap-2"><Label>Notas</Label><Textarea value={form.notas} onChange={(e) => setForm({ ...form, notas: e.target.value })} /></div>
               </div>
               <DialogFooter><Button onClick={save}>Guardar</Button></DialogFooter>
             </DialogContent>
@@ -1212,10 +1355,10 @@ export function InventoryView({}: ViewProps) {
               <TableRow>
                 <TableHead>Producto</TableHead>
                 <TableHead>Tipo</TableHead>
-                <TableHead>Composicion</TableHead>
+                <TableHead>Categoria</TableHead>
+                <TableHead>Descripcion</TableHead>
                 <TableHead>Disponible</TableHead>
-                <TableHead>NPK</TableHead>
-                <TableHead>Aplicacion</TableHead>
+                <TableHead>Ubicacion</TableHead>
                 <TableHead className="w-24">Acciones</TableHead>
               </TableRow>
             </TableHeader>
@@ -1229,12 +1372,10 @@ export function InventoryView({}: ViewProps) {
                     </div>
                   </TableCell>
                   <TableCell>{row.tipo}</TableCell>
+                  <TableCell>{row.categoria || "-"}</TableCell>
                   <TableCell>{row.composicion || "-"}</TableCell>
                   <TableCell>{row.cantidadDisponible != null ? number(row.cantidadDisponible, row.unidadMedida ? ` ${row.unidadMedida}` : "") : "-"}</TableCell>
-                  <TableCell>
-                    {row.nitrogeno ?? "-"} / {row.fosforo ?? "-"} / {row.potasio ?? "-"}
-                  </TableCell>
-                  <TableCell>{row.formaAplicacion || "-"}</TableCell>
+                  <TableCell>{row.ubicacion || "-"}</TableCell>
                   <TableCell>
                     <div className="flex gap-1">
                       <Button variant="ghost" size="icon" onClick={() => openEdit(row)}><Pencil className="h-4 w-4" /></Button>

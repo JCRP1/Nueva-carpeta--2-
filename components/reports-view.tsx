@@ -16,6 +16,14 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
+import {
   BarChart3,
   Download,
   Save,
@@ -27,6 +35,10 @@ import {
   Calendar,
   Loader2,
   FileSpreadsheet,
+  Warehouse,
+  Package,
+  ReceiptText,
+  Users,
 } from "lucide-react"
 import {
   Bar,
@@ -78,6 +90,56 @@ interface CropOption {
   variedad?: string
 }
 
+interface GreenhouseReportRow {
+  id: string
+  nombre: string
+  ubicacion?: string
+  area?: number
+  estado?: string
+}
+
+interface InventoryReportRow {
+  id: string
+  nombre: string
+  tipo: string
+  categoria?: string
+  cantidadDisponible: number
+  unidadMedida?: string
+  ubicacion?: string
+}
+
+interface SaleReportRow {
+  id: string
+  fechaVenta: string
+  cultivoNombre: string
+  invernaderoNombre: string
+  cantidadKg: number
+  precioKg: number
+  ingresoTotal: number
+  comprador: string
+}
+
+interface CostReportRow {
+  id: string
+  fecha: string
+  concepto: string
+  monto: number
+  zonaNombre?: string
+  cultivoNombre?: string
+  invernaderoNombre?: string
+}
+
+interface PersonalReportRow {
+  id: string
+  nombre: string
+  email?: string
+  puesto?: string
+  telefono?: string
+  cedula?: string
+  registrado?: string
+  fechaContrato?: string
+}
+
 const tooltipStyle = {
   background: "hsl(150, 14%, 9%)",
   border: "1px solid hsl(150, 10%, 16%)",
@@ -88,16 +150,147 @@ const tooltipStyle = {
 const axisTickStyle = { fontSize: 10, fill: "hsl(150, 5%, 55%)" }
 const gridStroke = "hsl(150, 10%, 16%)"
 
-function downloadCSV(filename: string, headers: string[], rows: string[][]) {
-  const bom = "\uFEFF"
-  const csvContent = bom + [headers.join(","), ...rows.map((r) => r.join(","))].join("\n")
-  const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" })
+function escapeExcelCell(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+}
+
+function downloadExcel(filename: string, title: string, headers: string[], rows: string[][]) {
+  const safeFilename = filename.endsWith(".xls") ? filename : filename.replace(/\.[^.]+$/, "") + ".xls"
+  const generatedAt = new Date().toLocaleString("es-DO", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  })
+  const colSpan = Math.max(headers.length, 1)
+  const html = `
+    <html>
+      <head>
+        <meta charset="utf-8" />
+        <style>
+          body { font-family: Arial, sans-serif; color: #1f2933; }
+          table { border-collapse: collapse; width: 100%; }
+          .title { background: #13795b; color: #ffffff; font-size: 18px; font-weight: 700; }
+          .subtitle { background: #e8f3ee; color: #4b5563; font-size: 11px; }
+          th { background: #1f8f68; color: #ffffff; font-weight: 700; border: 1px solid #d9e2dd; padding: 8px; }
+          td { border: 1px solid #d9e2dd; padding: 7px; }
+          .row-even { background: #f7fbf9; }
+          .row-odd { background: #ffffff; }
+          .empty { color: #6b7280; font-style: italic; text-align: center; }
+        </style>
+      </head>
+      <body>
+        <table>
+          <tr><td class="title" colspan="${colSpan}">GreenSense SRL - ${escapeExcelCell(title)}</td></tr>
+          <tr><td class="subtitle" colspan="${colSpan}">Generado: ${escapeExcelCell(generatedAt)}</td></tr>
+          <tr>${headers.map((header) => `<th>${escapeExcelCell(header)}</th>`).join("")}</tr>
+          ${
+            rows.length > 0
+              ? rows
+                  .map(
+                    (row, index) =>
+                      `<tr class="${index % 2 === 0 ? "row-even" : "row-odd"}">${row
+                        .map((cell) => `<td>${escapeExcelCell(cell)}</td>`)
+                        .join("")}</tr>`
+                  )
+                  .join("")
+              : `<tr><td class="empty" colspan="${colSpan}">No hay datos disponibles</td></tr>`
+          }
+        </table>
+      </body>
+    </html>
+  `
+  const blob = new Blob(["\uFEFF", html], { type: "application/vnd.ms-excel;charset=utf-8;" })
   const url = URL.createObjectURL(blob)
   const link = document.createElement("a")
   link.href = url
-  link.download = filename
+  link.download = safeFilename
   link.click()
   URL.revokeObjectURL(url)
+}
+
+function formatMoney(value: number) {
+  return `RD$ ${Number(value || 0).toLocaleString("es-DO", { maximumFractionDigits: 2 })}`
+}
+
+function formatNumber(value: number) {
+  return Number(value || 0).toLocaleString("es-DO", { maximumFractionDigits: 2 })
+}
+
+function formatReportDate(value?: string) {
+  if (!value) return "--"
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return String(value)
+  return date.toLocaleDateString("es-DO", { year: "numeric", month: "2-digit", day: "2-digit" })
+}
+
+function ReportTable({
+  title,
+  icon: Icon,
+  headers,
+  rows,
+  filename,
+}: {
+  title: string
+  icon: React.ElementType
+  headers: string[]
+  rows: string[][]
+  filename: string
+}) {
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between gap-3">
+          <CardTitle className="flex items-center gap-2 text-sm font-medium text-foreground">
+            <Icon className="h-4 w-4 text-primary" />
+            {title}
+          </CardTitle>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              downloadExcel(filename, title, headers, rows)
+              toast.success("Excel descargado", { description: filename })
+            }}
+          >
+            <FileSpreadsheet className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              {headers.map((header) => (
+                <TableHead key={header}>{header}</TableHead>
+              ))}
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {rows.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={headers.length} className="py-8 text-center text-sm text-muted-foreground">
+                  No hay datos disponibles
+                </TableCell>
+              </TableRow>
+            ) : (
+              rows.map((row, rowIndex) => (
+                <TableRow key={`${title}-${rowIndex}`}>
+                  {row.map((cell, cellIndex) => (
+                    <TableCell key={`${title}-${rowIndex}-${cellIndex}`}>
+                      {cell || "--"}
+                    </TableCell>
+                  ))}
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
+      </CardContent>
+    </Card>
+  )
 }
 
 interface ReportsViewProps {
@@ -133,6 +326,20 @@ export function ReportsView({ userRole, selectedGreenhouse }: ReportsViewProps) 
     selectedGreenhouse ? `/api/crops?greenhouse=${selectedGreenhouse}` : null,
     fetcher
   )
+  const { data: greenhouses = [] } = useSWR<GreenhouseReportRow[]>("/api/greenhouses", fetcher)
+  const { data: inventory = [] } = useSWR<InventoryReportRow[]>("/api/inventory", fetcher)
+  const { data: sales = [] } = useSWR<SaleReportRow[]>(
+    selectedGreenhouse ? `/api/sales?greenhouse=${selectedGreenhouse}` : null,
+    fetcher
+  )
+  const { data: costs = [] } = useSWR<CostReportRow[]>(
+    selectedGreenhouse ? `/api/costs?greenhouse=${selectedGreenhouse}` : null,
+    fetcher
+  )
+  const { data: personal = [] } = useSWR<PersonalReportRow[]>(
+    isAdmin ? "/api/people" : null,
+    fetcher
+  )
 
   const today = useMemo(() => new Date().toISOString().slice(0, 10), [])
   const weeklyWater = reportData?.consumoAgua || []
@@ -145,6 +352,59 @@ export function ReportsView({ userRole, selectedGreenhouse }: ReportsViewProps) 
   const temperaturaStats = reportData?.sensores?.find((s) => s.tipo === "temperatura")
   const currentEfficiency = reportData?.eficiencia?.[reportData.eficiencia.length - 1]?.eficiencia || 0
   const bestGreenhouse = greenhouseComparison[0]
+  const greenhouseRows = useMemo(
+    () => greenhouses.map((row) => [
+      row.nombre,
+      row.ubicacion || "--",
+      `${formatNumber(Number(row.area || 0))} m2`,
+      row.estado || "--",
+    ]),
+    [greenhouses]
+  )
+  const inventoryRows = useMemo(
+    () => inventory.map((row) => [
+      row.nombre,
+      row.tipo,
+      row.categoria || "--",
+      formatNumber(row.cantidadDisponible),
+      row.unidadMedida || "--",
+      row.ubicacion || "--",
+    ]),
+    [inventory]
+  )
+  const salesRows = useMemo(
+    () => sales.map((row) => [
+      formatReportDate(row.fechaVenta),
+      row.cultivoNombre,
+      row.invernaderoNombre,
+      `${formatNumber(row.cantidadKg)} kg`,
+      formatMoney(row.precioKg),
+      formatMoney(row.ingresoTotal),
+      row.comprador || "--",
+    ]),
+    [sales]
+  )
+  const costsRows = useMemo(
+    () => costs.map((row) => [
+      formatReportDate(row.fecha),
+      row.concepto,
+      row.invernaderoNombre || "--",
+      row.zonaNombre || row.cultivoNombre || "--",
+      formatMoney(row.monto),
+    ]),
+    [costs]
+  )
+  const personalRows = useMemo(
+    () => personal.map((row) => [
+      row.nombre,
+      row.puesto || "--",
+      row.telefono || "--",
+      row.email || "--",
+      row.cedula || "--",
+      formatReportDate(row.fechaContrato || row.registrado),
+    ]),
+    [personal]
+  )
 
   const totalWater = useMemo(
     () => weeklyWater.reduce((acc, e) => acc + e.litros, 0),
@@ -180,36 +440,59 @@ export function ReportsView({ userRole, selectedGreenhouse }: ReportsViewProps) 
     setTimeout(() => {
       switch (activeTab) {
         case "consumo": {
-          downloadCSV(
-            `greensense-consumo-${period}.csv`,
+          downloadExcel(
+            `greensense-consumo-${period}.xls`,
+            `Consumo de Agua - ${periodLabel}`,
             ["Periodo", "Litros"],
             waterData.map((d) => [d.dia, String(d.litros)])
           )
           break
         }
         case "nutrientes": {
-          downloadCSV(
-            `greensense-nutrientes-${period}.csv`,
+          downloadExcel(
+            `greensense-nutrientes-${period}.xls`,
+            `Uso de Nutrientes - ${periodLabel}`,
             ["Dia", "Aplicaciones", "Cantidad registrada"],
             nutrientUsage.map((d) => [d.dia, String(d.aplicaciones), String(d.cantidad)])
           )
           break
         }
         case "eficiencia": {
-          downloadCSV(
-            `greensense-eficiencia.csv`,
+          downloadExcel(
+            "greensense-eficiencia.xls",
+            "Eficiencia del Sistema",
             ["Mes", "Eficiencia (%)"],
             monthlyEfficiency.map((d) => [d.mes, String(d.eficiencia)])
           )
           break
         }
+        case "invernaderos": {
+          downloadExcel("greensense-invernaderos.xls", "Reporte de Invernaderos", ["Nombre", "Ubicacion", "Area", "Estado"], greenhouseRows)
+          break
+        }
+        case "inventario": {
+          downloadExcel("greensense-inventario.xls", "Reporte de Inventario", ["Producto", "Tipo", "Categoria", "Cantidad", "Unidad", "Ubicacion"], inventoryRows)
+          break
+        }
+        case "ventas": {
+          downloadExcel("greensense-ventas.xls", "Reporte de Ventas", ["Fecha", "Cultivo", "Invernadero", "Cantidad", "Precio", "Ingreso", "Comprador"], salesRows)
+          break
+        }
+        case "costos": {
+          downloadExcel("greensense-costos.xls", "Reporte de Costos", ["Fecha", "Concepto", "Invernadero", "Zona/Cultivo", "Monto"], costsRows)
+          break
+        }
+        case "personal": {
+          downloadExcel("greensense-personal.xls", "Reporte de Personal", ["Nombre", "Puesto", "Telefono", "Email", "Cedula", "Fecha de contrato"], personalRows)
+          break
+        }
       }
       setExporting(false)
       toast.success("Reporte exportado", {
-        description: `Archivo CSV generado para ${activeTab} (${periodLabel})`,
+        description: `Archivo Excel generado para ${activeTab} (${periodLabel})`,
       })
     }, 600)
-  }, [activeTab, period, waterData, nutrientUsage, monthlyEfficiency, periodLabel])
+  }, [activeTab, period, waterData, nutrientUsage, monthlyEfficiency, periodLabel, greenhouseRows, inventoryRows, salesRows, costsRows, personalRows])
 
   function handlePeriodChange(value: string) {
     setPeriod(value)
@@ -355,7 +638,7 @@ export function ReportsView({ userRole, selectedGreenhouse }: ReportsViewProps) 
               ) : (
                 <>
                   <Download className="mr-2 h-4 w-4" />
-                  Exportar CSV
+                  Exportar Excel
                 </>
               )}
             </Button>
@@ -388,7 +671,7 @@ export function ReportsView({ userRole, selectedGreenhouse }: ReportsViewProps) 
               {totalEvents}
             </p>
             <p className="text-xs text-muted-foreground mt-1">
-              {autoEvents} automaticos, {totalEvents - autoEvents} manuales
+              {autoEvents} activaciones automaticas, {totalEvents - autoEvents} manuales
             </p>
           </CardContent>
         </Card>
@@ -413,7 +696,7 @@ export function ReportsView({ userRole, selectedGreenhouse }: ReportsViewProps) 
             <p className="text-2xl font-bold text-foreground">{currentEfficiency}%</p>
             <p className="text-xs text-muted-foreground mt-1">
               <TrendingUp className="mr-1 inline h-3 w-3" />
-              Calculada por eventos automaticos
+              Calculada por activaciones automaticas
             </p>
           </CardContent>
         </Card>
@@ -467,7 +750,7 @@ export function ReportsView({ userRole, selectedGreenhouse }: ReportsViewProps) 
       </Card>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList>
+        <TabsList className="h-auto flex-wrap justify-start">
           <TabsTrigger value="consumo" className="gap-1.5">
             <Droplets className="h-3.5 w-3.5" />
             Consumo de Agua
@@ -480,6 +763,28 @@ export function ReportsView({ userRole, selectedGreenhouse }: ReportsViewProps) 
             <BarChart3 className="h-3.5 w-3.5" />
             Eficiencia
           </TabsTrigger>
+          <TabsTrigger value="invernaderos" className="gap-1.5">
+            <Warehouse className="h-3.5 w-3.5" />
+            Invernaderos
+          </TabsTrigger>
+          <TabsTrigger value="inventario" className="gap-1.5">
+            <Package className="h-3.5 w-3.5" />
+            Inventario
+          </TabsTrigger>
+          <TabsTrigger value="ventas" className="gap-1.5">
+            <TrendingUp className="h-3.5 w-3.5" />
+            Ventas
+          </TabsTrigger>
+          <TabsTrigger value="costos" className="gap-1.5">
+            <ReceiptText className="h-3.5 w-3.5" />
+            Costos
+          </TabsTrigger>
+          {isAdmin && (
+            <TabsTrigger value="personal" className="gap-1.5">
+              <Users className="h-3.5 w-3.5" />
+              Personal
+            </TabsTrigger>
+          )}
         </TabsList>
 
         <TabsContent value="consumo" className="mt-4">
@@ -565,12 +870,13 @@ export function ReportsView({ userRole, selectedGreenhouse }: ReportsViewProps) 
                       variant="ghost"
                       size="sm"
                       onClick={() => {
-                        downloadCSV(
-                          `consumo-agua-${period}.csv`,
+                        downloadExcel(
+                          `consumo-agua-${period}.xls`,
+                          `Consumo de Agua - ${periodLabel}`,
                           ["Periodo", "Litros"],
                           waterData.map((d) => [d.dia, String(d.litros)])
                         )
-                        toast.success("CSV descargado", { description: "consumo-agua.csv" })
+                        toast.success("Excel descargado", { description: `consumo-agua-${period}.xls` })
                       }}
                     >
                       <FileSpreadsheet className="h-3.5 w-3.5" />
@@ -602,12 +908,13 @@ export function ReportsView({ userRole, selectedGreenhouse }: ReportsViewProps) 
                       variant="ghost"
                       size="sm"
                       onClick={() => {
-                        downloadCSV(
-                          "resumen-riego-semanal.csv",
-                          ["Semana", "Automatico", "Manual", "Agua Total (L)"],
+                        downloadExcel(
+                          "resumen-riego-semanal.xls",
+                          "Resumen Semanal de Riegos",
+                          ["Semana", "Activaciones automaticas", "Riegos manuales", "Agua Total (L)"],
                           weeklyRiegoData.map((d) => [d.semana, String(d.riegoAuto), String(d.riegoManual), String(d.aguaTotal)])
                         )
-                        toast.success("CSV descargado", { description: "resumen-riego-semanal.csv" })
+                        toast.success("Excel descargado", { description: "resumen-riego-semanal.xls" })
                       }}
                     >
                       <FileSpreadsheet className="h-3.5 w-3.5" />
@@ -623,8 +930,8 @@ export function ReportsView({ userRole, selectedGreenhouse }: ReportsViewProps) 
                     <YAxis tick={axisTickStyle} stroke={gridStroke} />
                     <Tooltip contentStyle={tooltipStyle} />
                     <Legend wrapperStyle={{ fontSize: 11, color: "hsl(150, 5%, 55%)" }} />
-                    <Bar dataKey="riegoAuto" name="Automatico" fill="hsl(152, 60%, 42%)" radius={[4, 4, 0, 0]} />
-                    <Bar dataKey="riegoManual" name="Manual" fill="hsl(43, 74%, 56%)" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="riegoAuto" name="Activaciones automaticas" fill="hsl(152, 60%, 42%)" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="riegoManual" name="Riegos manuales" fill="hsl(43, 74%, 56%)" radius={[4, 4, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               </CardContent>
@@ -726,12 +1033,13 @@ export function ReportsView({ userRole, selectedGreenhouse }: ReportsViewProps) 
                     variant="ghost"
                     size="sm"
                     onClick={() => {
-                      downloadCSV(
-                        "nutrientes-semanal.csv",
+                      downloadExcel(
+                        "nutrientes-semanal.xls",
+                        "Uso de Nutrientes por Dia",
                         ["Dia", "Aplicaciones", "Cantidad registrada"],
                         nutrientUsage.map((d) => [d.dia, String(d.aplicaciones), String(d.cantidad)])
                       )
-                      toast.success("CSV descargado", { description: "nutrientes-semanal.csv" })
+                      toast.success("Excel descargado", { description: "nutrientes-semanal.xls" })
                     }}
                   >
                     <FileSpreadsheet className="h-3.5 w-3.5" />
@@ -768,12 +1076,13 @@ export function ReportsView({ userRole, selectedGreenhouse }: ReportsViewProps) 
                     variant="ghost"
                     size="sm"
                     onClick={() => {
-                      downloadCSV(
-                        "eficiencia-6-meses.csv",
+                      downloadExcel(
+                        "eficiencia-6-meses.xls",
+                        "Eficiencia del Sistema",
                         ["Mes", "Eficiencia (%)"],
                         monthlyEfficiency.map((d) => [d.mes, String(d.eficiencia)])
                       )
-                      toast.success("CSV descargado", { description: "eficiencia-6-meses.csv" })
+                      toast.success("Excel descargado", { description: "eficiencia-6-meses.xls" })
                     }}
                   >
                     <FileSpreadsheet className="h-3.5 w-3.5" />
@@ -794,6 +1103,58 @@ export function ReportsView({ userRole, selectedGreenhouse }: ReportsViewProps) 
             </CardContent>
           </Card>
         </TabsContent>
+
+        <TabsContent value="invernaderos" className="mt-4">
+          <ReportTable
+            title="Reporte de Invernaderos"
+            icon={Warehouse}
+            headers={["Nombre", "Ubicacion", "Area", "Estado"]}
+            rows={greenhouseRows}
+            filename="greensense-invernaderos.xls"
+          />
+        </TabsContent>
+
+        <TabsContent value="inventario" className="mt-4">
+          <ReportTable
+            title="Reporte de Inventario"
+            icon={Package}
+            headers={["Producto", "Tipo", "Categoria", "Cantidad", "Unidad", "Ubicacion"]}
+            rows={inventoryRows}
+            filename="greensense-inventario.xls"
+          />
+        </TabsContent>
+
+        <TabsContent value="ventas" className="mt-4">
+          <ReportTable
+            title="Reporte de Ventas"
+            icon={TrendingUp}
+            headers={["Fecha", "Cultivo", "Invernadero", "Cantidad", "Precio", "Ingreso", "Comprador"]}
+            rows={salesRows}
+            filename="greensense-ventas.xls"
+          />
+        </TabsContent>
+
+        <TabsContent value="costos" className="mt-4">
+          <ReportTable
+            title="Reporte de Costos"
+            icon={ReceiptText}
+            headers={["Fecha", "Concepto", "Invernadero", "Zona/Cultivo", "Monto"]}
+            rows={costsRows}
+            filename="greensense-costos.xls"
+          />
+        </TabsContent>
+
+        {isAdmin && (
+          <TabsContent value="personal" className="mt-4">
+            <ReportTable
+              title="Reporte de Personal"
+              icon={Users}
+              headers={["Nombre", "Puesto", "Telefono", "Email", "Cedula", "Fecha de contrato"]}
+              rows={personalRows}
+              filename="greensense-personal.xls"
+            />
+          </TabsContent>
+        )}
       </Tabs>
     </div>
   )

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 import { hashSync } from "bcryptjs"
 import { generateCompanyCode, normalizeCompanyCode, parseCompanyCode } from "@/lib/company-code"
-import { createSession, sanitizeUser, type DbUser } from "@/lib/auth"
+import { createSession, findEmailCompanyAssignment, sanitizeUser, type DbUser } from "@/lib/auth"
 import { query } from "@/lib/db"
 
 const SUPER_ADMIN_EMAIL = process.env.SUPER_ADMIN_EMAIL?.trim().toLowerCase() || ""
@@ -72,7 +72,7 @@ async function ensureCompanyAdminUser({
   )
 
   if (Number(existing[0]?.total || 0) > 0) {
-    throw new Error("Ya existe un usuario administrador con ese correo para esta empresa")
+    throw new Error("Ya existe un usuario con ese correo")
   }
 
   await query(
@@ -357,6 +357,14 @@ export async function POST(request: Request) {
     if (adminUserPassword.length < 8) {
       return NextResponse.json(
         { error: "La contrasena del usuario administrador debe tener al menos 8 caracteres" },
+        { status: 400 }
+      )
+    }
+
+    const assignedEmail = await findEmailCompanyAssignment(adminUserEmail)
+    if (assignedEmail) {
+      return NextResponse.json(
+        { error: "Este correo ya esta asignado a otra empresa. Use un correo diferente." },
         { status: 400 }
       )
     }

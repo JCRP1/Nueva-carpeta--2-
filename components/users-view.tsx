@@ -77,6 +77,8 @@ interface UserData {
   empresaId: string
   activo: boolean
   ultimoAcceso: string
+  fechaCreacion?: string
+  fecha_registro?: string
 }
 
 interface RoleData {
@@ -129,6 +131,13 @@ function formatRoleLabel(rol: string) {
 function formatDate(ts: string) {
   if (!ts) return "--"
   return new Date(ts).toLocaleString("es-DO", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
+}
+
+function formatDateOnly(ts?: string) {
+  if (!ts) return "--"
+  const date = new Date(ts)
+  if (Number.isNaN(date.getTime())) return "--"
+  return date.toLocaleDateString("es-DO", { year: "numeric", month: "short", day: "numeric" })
 }
 
 export function UsersView() {
@@ -396,6 +405,7 @@ export function UsersView() {
                 <TableHead>Usuario</TableHead>
                 <TableHead>Rol</TableHead>
                 <TableHead>Estado</TableHead>
+                <TableHead>Creado</TableHead>
                 <TableHead>Ultimo Acceso</TableHead>
                 <TableHead className="w-10"><span className="sr-only">Acciones</span></TableHead>
               </TableRow>
@@ -429,6 +439,7 @@ export function UsersView() {
                         {user.activo ? "Activo" : "Inactivo"}
                       </Badge>
                     </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">{formatDateOnly(user.fechaCreacion || user.fecha_registro)}</TableCell>
                     <TableCell className="text-sm text-muted-foreground">{formatDate(user.ultimoAcceso)}</TableCell>
                     <TableCell>
                       <DropdownMenu>
@@ -456,7 +467,7 @@ export function UsersView() {
               })}
               {filtered.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
                     No se encontraron usuarios
                   </TableCell>
                 </TableRow>
